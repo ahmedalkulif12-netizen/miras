@@ -27,6 +27,7 @@ import {
   sendOperationalDigestEmail,
   startSupportInboxWatcher,
   supportEmail,
+  verifyImapConnection,
   verifyMailTransport,
 } from './email.js';
 import { startPayoutWatcher } from './payouts.js';
@@ -85,14 +86,22 @@ async function onInboundSupportMail(mail) {
   const decision = extractDecision(mail?.text);
   if (from && from === normalizeAddress(adminEmail())) {
     if (pendingApproval && (isApprovalReply(decision) || isRejectionReply(decision))) {
+      console.log(`[imap] ADMIN DECISION from=${from} decision=${decision}`);
       await handleAdminText(decision);
       return;
     }
   }
-  console.log(`[agents] inbound support mail from ${mail.from}: ${mail.subject}`);
+  console.log(`[imap] CUSTOMER MAIL from=${mail.from} subject=${mail.subject}`);
   const routed = await handleInboundCustomerEmail(mail);
+  console.log(
+    `[ack] customer auto-reply ${routed?.acked ? 'SENT' : 'SKIPPED'} from=${mail.from}`
+  );
+  console.log(
+    `[admin] ticket brief ${routed?.brief?.ok ? 'SENT' : 'PENDING'} thread=${routed?.threadId || 'n/a'} urgency=${routed?.evaluation?.urgency || 'n/a'}`
+  );
   if (routed?.result?.status === 'interrupted') {
     pendingApproval = { threadId: routed.threadId };
+    console.log(`[admin] HITL approval waiting thread=${routed.threadId}`);
   }
 }
 
@@ -158,6 +167,9 @@ function startOperationalDigestTimer() {
  * Boot env, verify SMTP/IMAP, notify admin, watch support@miras.com, payouts.
  */
 export async function startAgentRuntime() {
+  process.on('unhandledRejection', (reason) => {
+    console.error('[agents] unhandledRejection:', reason);
+  });
   const { loadServerEnv } = await import('../../server/config/env.ts');
   loadServerEnv();
 
@@ -171,6 +183,7 @@ export async function startAgentRuntime() {
 
   await listenHealthServer();
   await verifyMailTransport();
+  await verifyImapConnection();
 
   if (process.env.MIRAS_AGENTS_SKIP_BOOT_EMAIL === 'true') {
     console.log('[agents] skipping boot operational email (MIRAS_AGENTS_SKIP_BOOT_EMAIL)');

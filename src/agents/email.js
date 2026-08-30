@@ -7,6 +7,13 @@
 import nodemailer from 'nodemailer';
 import { SUPPORT_EMAIL } from '../lib/supportContact.ts';
 
+function mailLog(channel, event, details = {}) {
+  const parts = Object.entries(details)
+    .filter(([, value]) => value !== undefined && value !== '')
+    .map(([key, value]) => `${key}=${String(value).replace(/\s+/g, ' ').slice(0, 160)}`);
+  console.log(`[${channel}] ${event}${parts.length ? ` — ${parts.join(' ')}` : ''}`);
+}
+
 export function supportEmail() {
   return String(
     process.env.MIRAS_SUPPORT_EMAIL || SUPPORT_EMAIL || 'support@miras.com'
@@ -68,7 +75,7 @@ export async function verifyMailTransport() {
   const cfg = getMailConfig();
   const transport = await createMailTransport();
   await transport.verify();
-  console.log(`[email] SMTP login OK for ${cfg.user} (From: ${cfg.from}, Reply-To: ${cfg.replyTo})`);
+  mailLog('smtp', 'LOGIN OK', { user: cfg.user, from: cfg.from, replyTo: cfg.replyTo });
   return cfg;
 }
 
@@ -78,10 +85,16 @@ export async function verifyMailTransport() {
 export async function sendMail(mail) {
   const to = String(mail?.to || '').trim();
   if (!to) throw new Error('Cannot send: missing recipient');
+  const kind = String(mail.kind || 'smtp');
   const cfg = getMailConfig();
   const transport = await createMailTransport();
   const fromAddress = cfg.from;
   const replyTo = mail.replyTo || cfg.replyTo || supportEmail();
+  mailLog(kind === 'auto-ack' ? 'ack' : kind.startsWith('admin') ? 'admin' : 'smtp', 'DISPATCH', {
+    kind,
+    to,
+    subject: mail.subject || 'Miras',
+  });
   const info = await transport.sendMail({
     from: `"Miras Support" <${fromAddress}>`,
     to,
@@ -92,8 +105,13 @@ export async function sendMail(mail) {
   });
   const previewUrl = nodemailer.getTestMessageUrl(info) || null;
   if (previewUrl) {
-    console.log('[email] Ethereal preview:', previewUrl);
+    mailLog('smtp', 'ETHEREAL PREVIEW', { url: previewUrl });
   }
+  mailLog(kind === 'auto-ack' ? 'ack' : kind.startsWith('admin') ? 'admin' : 'smtp', 'DELIVERED', {
+    kind,
+    to,
+    id: info.messageId,
+  });
   return {
     ok: true,
     messageId: info.messageId,
@@ -113,6 +131,7 @@ export async function sendToAdmin(text, options = {}) {
     subject: options.subject || 'Miras supervisor',
     text: String(text || ''),
     html: options.html,
+    kind: options.kind || 'admin-alert',
   });
 }
 
@@ -189,6 +208,37 @@ export function requireMailSecrets() {
   return { smtp, imap, admin: adminEmail(), support: supportEmail() };
 }
 
+export async function verifyImapConnection() {
+  const cfg = getImapConfig();
+  const { ImapFlow } = await import('imapflow');
+  const client = new ImapFlow({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
+    logger: false,
+  });
+  try {
+    await client.connect();
+    const box = await client.mailboxOpen('INBOX');
+    mailLog('imap', 'CONNECT OK', {
+      user: cfg.user,
+      host: `${cfg.host}:${cfg.port}`,
+      messages: box.exists,
+    });
+    return { ok: true, exists: box.exists };
+  } catch (error) {
+    mailLog('imap', 'CONNECT FAILED', { error: error?.message || error });
+    throw error;
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export function autoAckEnabled() {
   const raw = String(process.env.MIRAS_AUTO_ACK ?? 'true').trim().toLowerCase();
   return raw !== 'false' && raw !== '0' && raw !== 'off';
@@ -232,6 +282,7 @@ export async function sendCustomerAcknowledgement(mail) {
     sameMailbox(to, supportEmail()) ||
     sameMailbox(to, getMailConfig().from)
   ) {
+    mailLog('ack', 'SKIP self/admin sender', { to });
     return null;
   }
   const subject = String(mail?.subject || '').trim();
@@ -252,8 +303,9 @@ export async function sendCustomerAcknowledgement(mail) {
     subject: re,
     text,
     replyTo: supportEmail(),
+    kind: 'auto-ack',
   });
-  console.log(`[email] auto-ack sent to ${to} (${result.messageId})`);
+  mailLog('ack', 'AUTO-REPLY SENT', { to, subject: re, id: result.messageId });
   return result;
 }
 
@@ -302,8 +354,9 @@ export async function sendOperationalDigestEmail(options = {}) {
     to,
     subject: `[Miras] Operational ${reason === 'boot' ? 'startup' : 'digest'} — ${stats.ticketsHandled} ticket(s)`,
     text,
+    kind: 'admin-report',
   });
-  console.log(`[email] operational ${reason} report sent to ${to} (${result.messageId})`);
+  mailLog('admin', 'REPORT SENT', { reason, to, tickets: stats.ticketsHandled, id: result.messageId });
   return result;
 }
 
@@ -418,7 +471,19 @@ export function formatAdminSupportBrief({ mail, evaluation, threadId }) {
 export async function sendAdminSupportBrief(payload) {
   const evaluation = payload.evaluation || {};
   const subject = `[Miras support] ${evaluation.urgency === 'high' ? 'HIGH — ' : ''}${payload.mail?.subject || 'Customer ticket'}`;
-  return sendToAdmin(formatAdminSupportBrief(payload), { subject });
+  mailLog('admin', 'ALERT DISPATCH', {
+    to: adminEmail(),
+    from: payload.mail?.from,
+    urgency: evaluation.urgency || 'normal',
+    thread: payload.threadId,
+    subject: payload.mail?.subject,
+  });
+  const result = await sendToAdmin(formatAdminSupportBrief(payload), {
+    subject,
+    kind: 'admin-alert',
+  });
+  mailLog('admin', 'ALERT DELIVERED', { to: adminEmail(), id: result.messageId, thread: payload.threadId });
+  return result;
 }
 
 const processedMessageIds = new Set();
@@ -446,47 +511,65 @@ async function parseImapMessage(message) {
 export async function startSupportInboxWatcher(onMail) {
   const cfg = getImapConfig();
   if (!cfg.host || !cfg.user || !cfg.pass) {
-    console.warn(
-      '[email] IMAP not configured — set IMAP_USER / IMAP_PASS (or SMTP_USER / SMTP_PASS) to watch the Gmail inbox.'
-    );
+    mailLog('imap', 'NOT CONFIGURED', { hint: 'set IMAP_USER/IMAP_PASS or SMTP_USER/SMTP_PASS' });
     return () => {};
   }
 
   const { ImapFlow } = await import('imapflow');
   let stopped = false;
   let client = null;
+  let pollCount = 0;
 
   const drainUnseen = async (imap) => {
     const lock = await imap.getMailboxLock('INBOX');
+    let fetched = 0;
     try {
       for await (const message of imap.fetch({ seen: false }, { envelope: true, source: true, uid: true })) {
         if (stopped) break;
+        fetched += 1;
         let mail;
         try {
           mail = await parseImapMessage(message);
         } catch (error) {
-          console.warn('[email] failed to parse inbound message:', error?.message || error);
+          mailLog('imap', 'PARSE FAILED', { uid: message.uid, error: error?.message || error });
           continue;
         }
         const id = mail.messageId || `uid-${message.uid}`;
-        if (processedMessageIds.has(id)) continue;
+        if (processedMessageIds.has(id)) {
+          mailLog('imap', 'SKIP duplicate', { from: mail.from, subject: mail.subject, id });
+          continue;
+        }
         processedMessageIds.add(id);
         try {
           await imap.messageFlagsAdd({ uid: message.uid }, ['\\Seen'], { uid: true });
         } catch {
           /* mark-seen is best-effort */
         }
-        if (sameMailbox(mail.from, supportEmail())) continue;
+        if (sameMailbox(mail.from, supportEmail())) {
+          mailLog('imap', 'SKIP support-self', { from: mail.from, subject: mail.subject });
+          continue;
+        }
         if (sameMailbox(mail.from, getMailConfig().from)) {
           const hitlSubject = /\[Miras /i.test(mail.subject || '');
           const hitlBody = /^\s*(ok|yes|approve|no|reject|قبول|رفض)\b/i.test(mail.text || '');
-          if (!hitlSubject && !hitlBody) continue;
+          if (!hitlSubject && !hitlBody) {
+            mailLog('imap', 'SKIP outbound echo', { from: mail.from, subject: mail.subject });
+            continue;
+          }
+          mailLog('imap', 'ADMIN HITL REPLY', { from: mail.from, subject: mail.subject });
+        } else {
+          mailLog('imap', 'INCOMING DETECTED', {
+            from: mail.from,
+            subject: mail.subject,
+            uid: message.uid,
+          });
         }
         await onMail(mail);
       }
     } finally {
       lock.release();
     }
+    return fetched;
   };
 
   const loop = async () => {
@@ -501,13 +584,21 @@ export async function startSupportInboxWatcher(onMail) {
         });
         await client.connect();
         await client.mailboxOpen('INBOX');
-        console.log(`[email] watching ${cfg.user} on ${cfg.host}:${cfg.port}`);
+        mailLog('imap', 'WATCHING', { user: cfg.user, host: `${cfg.host}:${cfg.port}`, pollMs: cfg.pollMs });
         while (!stopped && client.usable) {
-          await drainUnseen(client);
+          const fetched = await drainUnseen(client);
+          pollCount += 1;
+          if (pollCount === 1 || pollCount % 4 === 0) {
+            mailLog('imap', 'POLL heartbeat', {
+              n: pollCount,
+              unseenBatch: fetched,
+              inbox: cfg.user,
+            });
+          }
           await new Promise((resolve) => setTimeout(resolve, cfg.pollMs));
         }
       } catch (error) {
-        console.warn('[email] IMAP watcher error:', error?.message || error);
+        mailLog('imap', 'WATCHER ERROR', { error: error?.message || error });
       } finally {
         try {
           await client?.logout();
@@ -608,5 +699,6 @@ export async function executeEmailAction(action) {
     subject: draft.subject,
     text: draft.text,
     replyTo: draft.from || supportEmail(),
+    kind: 'follow-up',
   });
 }

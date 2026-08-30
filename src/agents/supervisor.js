@@ -417,6 +417,9 @@ export async function handleInboundCustomerEmail(mail) {
   const threadId = `support-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const customer = mail?.from || evaluation.from || '';
   const subject = mail?.subject || evaluation.subject || 'Miras support';
+  console.log(
+    `[imap] evaluated from=${customer} urgency=${evaluation.urgency} subject=${subject}`
+  );
 
   let acked = false;
   if (autoAckEnabled()) {
