@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #F8C31E; /* Miras brand yellow (approved badge) */
+  --color-dark: #0A0A0A;
+  --color-background: #F8F9FB;
+  --color-success: #10B981;
+  --font-sans: 'DM Sans', 'Inter', system-ui, sans-serif;
+  --font-brand-ar: 'Aref Ruqaa', 'Traditional Arabic', serif;
+  --font-brand-en: 'DM Sans', system-ui, sans-serif;
+}
+
+@layer utilities {
+  .font-brand-ar {
+    font-family: var(--font-brand-ar);
+    font-weight: 700;
+  }
+  .font-brand-en {
+    font-family: var(--font-brand-en);
+    font-weight: 800;
+  }
+
+  .app-header-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .app-bottom-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .app-start-safe {
+    padding-inline-start: env(safe-area-inset-left, 0px);
+  }
+
+  .app-card {
+    @apply bg-white border border-gray-100 shadow-sm;
+    border-radius: 1.75rem;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-[var(--color-background)] text-[var(--color-dark)];
+    min-height: 100dvh;
+    /* Safe-area is applied on chrome (headers / sidebars), not body —
+       body padding + h-screen dashboards caused double inset and clipped maps. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Native shell: avoid rubber-band scroll fighting the WebView */
+  html.capacitor-native,
+  html.capacitor-native body {
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+
+  html.capacitor-native input,
+  html.capacitor-native textarea,
+  html.capacitor-native select {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
+
+/* Google Maps Autocomplete Styling */
+gmp-place-autocomplete {
+  width: 100%;
+}
+
+gmp-place-autocomplete::part(input) {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 0.875rem; /* text-sm */
+  font-weight: 500; /* font-medium */
+}
+
+.dark gmp-place-autocomplete::part(input) {
+  color: white;
+}

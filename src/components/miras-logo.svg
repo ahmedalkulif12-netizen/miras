@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="مَرَاس Miras">
+  <defs>
+    <clipPath id="badge">
+      <circle cx="64" cy="64" r="64"/>
+    </clipPath>
+  </defs>
+  <!-- 1. Solid yellow circular badge -->
+  <circle cx="64" cy="64" r="64" fill="#F8C31E"/>
+  <g clip-path="url(#badge)">
+    <!-- 2. Bold modern black capital M -->
+    <path
+      fill="#0A0A0A"
+      d="M22 102V26h18.5L64 78 87.5 26H106v76H90.5V48.5L71.5 102H56.5L37.5 48.5V102H22z"
+    />
+    <!-- 3. White road cutting diagonally across M + circle (perspective) -->
+    <path
+      fill="#FFFFFF"
+      d="M-8 18 L52 8 L148 118 L148 148 L100 148 Z"
+    />
+    <!-- Road edge lines -->
+    <path
+      fill="none"
+      stroke="#0A0A0A"
+      stroke-width="1.2"
+      stroke-opacity="0.35"
+      d="M2 22 L58 12"
+    />
+    <path
+      fill="none"
+      stroke="#0A0A0A"
+      stroke-width="1.2"
+      stroke-opacity="0.35"
+      d="M108 128 L148 148"
+    />
+    <!-- Dashed lane markings along road center -->
+    <path
+      fill="none"
+      stroke="#0A0A0A"
+      stroke-width="3.2"
+      stroke-linecap="round"
+      stroke-dasharray="7 8"
+      d="M18 28 C48 22 78 58 118 118"
+    />
+  </g>
+</svg>

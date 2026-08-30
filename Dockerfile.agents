@@ -1,0 +1,22 @@
+# Miras email / payout HITL worker — always-on (not the public API).
+# IMAP polling needs a process that never sleeps. Do not merge this into hamula-api
+# (that service uses --min-instances=0 and CPU throttling).
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV MIRAS_PROCESS_ROLE=agents
+
+COPY package.json package-lock.json ./
+# tsx lives in devDependencies; agents start via `npx tsx`.
+RUN npm ci --include=dev
+
+COPY tsconfig.json ./
+COPY server ./server
+COPY src ./src
+
+EXPOSE 8080
+
+CMD ["npx", "tsx", "src/agents/whatsapp.js"]

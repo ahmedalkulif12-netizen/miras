@@ -1,0 +1,58 @@
+# Render Blueprint — always-on email/payout worker (not the public API).
+# Dashboard: New → Blueprint → this repo. Fill SMTP_PASS / IMAP_PASS as secrets.
+# Use a paid instance (Starter+). Free web services sleep and will drop IMAP.
+#
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: worker
+    name: miras-agents
+    runtime: docker
+    dockerfilePath: ./Dockerfile.agents
+    plan: starter
+    region: frankfurt
+    numInstances: 1
+    dockerCommand: npx tsx src/agents/whatsapp.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: MIRAS_PROCESS_ROLE
+        value: agents
+      - key: MIRAS_DEPLOY_ENV
+        value: staging
+      - key: FIREBASE_PROJECT_ID
+        value: hamula-cfc6c
+      - key: APP_URL
+        value: https://hamula-cfc6c.web.app
+      - key: MIRAS_SUPPORT_EMAIL
+        value: support@miras.com
+      - key: MIRAS_ADMIN_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        value: support@miras.com
+      - key: IMAP_HOST
+        value: imap.gmail.com
+      - key: IMAP_PORT
+        value: "993"
+      - key: IMAP_SECURE
+        value: "true"
+      - key: IMAP_USER
+        sync: false
+      - key: IMAP_PASS
+        sync: false
+      - key: IMAP_POLL_MS
+        value: "15000"
+      - key: MIRAS_AGENTS_SKIP_BOOT_EMAIL
+        value: "true"
