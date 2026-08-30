@@ -259,6 +259,9 @@ export function recordSupportTicket(entry = {}) {
     subject: String(entry.subject || ''),
     urgency: String(entry.urgency || 'normal'),
     acked: Boolean(entry.acked),
+    snippet: String(entry.snippet || '').replace(/\s+/g, ' ').trim().slice(0, 400),
+    actions: Array.isArray(entry.actions) ? entry.actions.map(String) : [],
+    source: entry.source === 'historical' ? 'historical' : 'live',
   });
   if (handledTickets.length > 200) handledTickets.shift();
 }
@@ -322,11 +325,19 @@ export async function sendOperationalDigestEmail(options = {}) {
   const extra = String(options.extra || '').trim();
   const recent = handledTickets.slice(-20);
   const ticketLines = recent.length
-    ? recent.map(
-        (ticket, index) =>
-          `${index + 1}. ${ticket.at} | ${ticket.urgency} | ${ticket.from} | ${ticket.subject}` +
-          (ticket.acked ? ' | auto-ack sent' : '')
-      )
+    ? recent.map((ticket, index) => {
+        const actions = (ticket.actions || []).map((item) => `     - ${item}`).join('\n');
+        return [
+          `${index + 1}. [${ticket.source || 'live'}] ${ticket.at}`,
+          `   From: ${ticket.from}`,
+          `   Subject: ${ticket.subject}`,
+          `   Urgency: ${ticket.urgency} | Auto-ack: ${ticket.acked ? 'sent' : 'skipped'}`,
+          ticket.snippet ? `   Content: ${ticket.snippet}` : '',
+          actions ? `   Actions:\n${actions}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+      })
     : ['(no customer tickets in this process yet)'];
   const text = [
     `Miras Supervisor — operational ${reason === 'boot' ? 'startup' : 'digest'} report`,
@@ -488,6 +499,202 @@ export async function sendAdminSupportBrief(payload) {
 
 const processedMessageIds = new Set();
 
+function shouldSkipInboundMail(mail) {
+  if (sameMailbox(mail.from, supportEmail())) {
+    return 'support-self';
+  }
+  if (sameMailbox(mail.from, getMailConfig().from)) {
+    const hitlSubject = /\[Miras /i.test(mail.subject || '');
+    const hitlBody = /^\s*(ok|yes|approve|no|reject|قبول|رفض)\b/i.test(mail.text || '');
+    if (!hitlSubject && !hitlBody) return 'outbound-echo';
+    return '';
+  }
+  return '';
+}
+
+/**
+ * Connect once, fetch every UNSEEN inbox message, mark seen, return processable mail.
+ * Used for boot catch-up so no unread customer mail is left behind.
+ */
+export async function fetchUnreadInboxMessages(options = {}) {
+  const source = options.historical ? 'historical' : 'live';
+  const cfg = getImapConfig();
+  if (!cfg.host || !cfg.user || !cfg.pass) {
+    throw new Error('IMAP is not configured — cannot fetch unread messages');
+  }
+  const { ImapFlow } = await import('imapflow');
+  const client = new ImapFlow({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
+    logger: false,
+  });
+  const collected = [];
+  let skipped = 0;
+  try {
+    await client.connect();
+    const box = await client.mailboxOpen('INBOX');
+    mailLog('imap', 'HISTORICAL FETCH START', {
+      user: cfg.user,
+      inboxMessages: box.exists,
+      source,
+    });
+    const lock = await client.getMailboxLock('INBOX');
+    try {
+      for await (const message of client.fetch(
+        { seen: false },
+        { envelope: true, source: true, uid: true }
+      )) {
+        let mail;
+        try {
+          mail = await parseImapMessage(message);
+        } catch (error) {
+          skipped += 1;
+          mailLog('imap', 'HISTORICAL PARSE FAILED', {
+            uid: message.uid,
+            error: error?.message || error,
+          });
+          continue;
+        }
+        const id = mail.messageId || `uid-${message.uid}`;
+        try {
+          await client.messageFlagsAdd({ uid: message.uid }, ['\\Seen'], { uid: true });
+        } catch {
+          /* mark-seen is best-effort */
+        }
+        if (processedMessageIds.has(id)) {
+          skipped += 1;
+          mailLog('imap', 'HISTORICAL SKIP duplicate', { from: mail.from, subject: mail.subject });
+          continue;
+        }
+        processedMessageIds.add(id);
+        const skip = shouldSkipInboundMail(mail);
+        if (skip) {
+          skipped += 1;
+          mailLog('imap', `HISTORICAL SKIP ${skip}`, { from: mail.from, subject: mail.subject });
+          continue;
+        }
+        collected.push({
+          ...mail,
+          uid: message.uid,
+          source,
+        });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try {
+      await client.logout();
+    } catch {
+      /* ignore */
+    }
+  }
+  mailLog('imap', 'HISTORICAL FETCH DONE', {
+    queued: collected.length,
+    skipped,
+    source,
+  });
+  return collected;
+}
+
+export async function sendUnreadCatchupReport(processed = []) {
+  const to = adminEmail();
+  if (!to) throw new Error('MIRAS_ADMIN_EMAIL is not set');
+  const ok = processed.filter((item) => item.ok);
+  const failed = processed.filter((item) => !item.ok);
+  const blocks = processed.length
+    ? processed.map((item, index) => {
+        const mail = item.mail || {};
+        const evaln = item.result?.evaluation || {};
+        const snippet = String(mail.text || evaln.summary || '')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 400);
+        const actions = (evaln.actions || []).map((action) => `   - ${action}`).join('\n');
+        return [
+          `${index + 1}. From: ${mail.from || evaln.from || 'unknown'}`,
+          `   Subject: ${mail.subject || '(no subject)'}`,
+          `   Status: ${item.ok ? 'processed' : `FAILED — ${item.error || 'unknown error'}`}`,
+          `   Auto-ack: ${item.result?.acked ? 'sent via SMTP' : 'skipped'}`,
+          `   Admin brief: ${item.result?.brief?.ok ? 'sent' : item.ok ? 'see HITL' : 'not sent'}`,
+          `   Urgency: ${evaln.urgency || 'n/a'}`,
+          snippet ? `   Content: ${snippet}` : '   Content: (empty)',
+          actions ? `   Actions taken / requested:\n${actions}` : '   Actions: auto-ack + admin notification',
+        ].join('\n');
+      })
+    : ['(inbox had no processable unread customer messages)'];
+
+  const text = [
+    'Miras Supervisor — unread inbox catch-up report',
+    '',
+    `Admin: ${to}`,
+    `Support: ${supportEmail()}`,
+    `Historical unread processed: ${ok.length}`,
+    `Failed: ${failed.length}`,
+    '',
+    'Messages',
+    '--------',
+    ...blocks,
+    '',
+    'Each customer above received an automated acknowledgement (when auto-ack is on).',
+    'Reply OK / NO on individual [Miras support] emails to send the drafted follow-up.',
+  ].join('\n');
+
+  const result = await sendMail({
+    to,
+    subject: `[Miras] Unread catch-up — ${ok.length} processed, ${failed.length} failed`,
+    text,
+    kind: 'admin-report',
+  });
+  mailLog('admin', 'REPORT SENT', {
+    reason: 'historical-unread',
+    to,
+    processed: ok.length,
+    failed: failed.length,
+    id: result.messageId,
+  });
+  return result;
+}
+
+/**
+ * Fetch all UNSEEN mail, run the same customer pipeline (auto-ack + admin brief), then report.
+ */
+export async function processHistoricalUnreadMail(onMail) {
+  mailLog('imap', 'HISTORICAL CATCH-UP START', { inbox: getImapConfig().user });
+  const unread = await fetchUnreadInboxMessages({ historical: true });
+  mailLog('imap', 'HISTORICAL UNREAD FOUND', { count: unread.length });
+  const processed = [];
+  for (const mail of unread) {
+    mailLog('imap', 'HISTORICAL PROCESSING', {
+      from: mail.from,
+      subject: mail.subject,
+      uid: mail.uid,
+    });
+    try {
+      const result = await onMail(mail);
+      processed.push({ mail, result, ok: true });
+      mailLog('imap', 'HISTORICAL PROCESSED', {
+        from: mail.from,
+        acked: result?.acked,
+        thread: result?.threadId,
+      });
+    } catch (error) {
+      processed.push({ mail, ok: false, error: error?.message || String(error) });
+      mailLog('imap', 'HISTORICAL FAILED', {
+        from: mail.from,
+        error: error?.message || error,
+      });
+    }
+  }
+  mailLog('imap', 'HISTORICAL CATCH-UP DONE', {
+    processed: processed.filter((item) => item.ok).length,
+    failed: processed.filter((item) => !item.ok).length,
+  });
+  return processed;
+}
+
 async function parseImapMessage(message) {
   const { simpleParser } = await import('mailparser');
   const parsed = await simpleParser(message.source || Buffer.from(''));
@@ -545,26 +752,25 @@ export async function startSupportInboxWatcher(onMail) {
         } catch {
           /* mark-seen is best-effort */
         }
-        if (sameMailbox(mail.from, supportEmail())) {
+        const skip = shouldSkipInboundMail(mail);
+        if (skip === 'support-self') {
           mailLog('imap', 'SKIP support-self', { from: mail.from, subject: mail.subject });
           continue;
         }
+        if (skip === 'outbound-echo') {
+          mailLog('imap', 'SKIP outbound echo', { from: mail.from, subject: mail.subject });
+          continue;
+        }
         if (sameMailbox(mail.from, getMailConfig().from)) {
-          const hitlSubject = /\[Miras /i.test(mail.subject || '');
-          const hitlBody = /^\s*(ok|yes|approve|no|reject|قبول|رفض)\b/i.test(mail.text || '');
-          if (!hitlSubject && !hitlBody) {
-            mailLog('imap', 'SKIP outbound echo', { from: mail.from, subject: mail.subject });
-            continue;
-          }
           mailLog('imap', 'ADMIN HITL REPLY', { from: mail.from, subject: mail.subject });
         } else {
-          mailLog('imap', 'INCOMING DETECTED', {
+          mailLog('imap', mail.source === 'historical' ? 'HISTORICAL INCOMING' : 'INCOMING DETECTED', {
             from: mail.from,
             subject: mail.subject,
             uid: message.uid,
           });
         }
-        await onMail(mail);
+        await onMail({ ...mail, source: mail.source || 'live', uid: message.uid });
       }
     } finally {
       lock.release();

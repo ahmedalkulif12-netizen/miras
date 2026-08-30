@@ -23,8 +23,10 @@ import {
   getWorkerStats,
   markWorkerStarted,
   normalizeAddress,
+  processHistoricalUnreadMail,
   requireMailSecrets,
   sendOperationalDigestEmail,
+  sendUnreadCatchupReport,
   startSupportInboxWatcher,
   supportEmail,
   verifyImapConnection,
@@ -84,17 +86,20 @@ export async function handleAdminText(text, options = {}) {
 async function onInboundSupportMail(mail) {
   const from = normalizeAddress(mail?.from);
   const decision = extractDecision(mail?.text);
+  const historical = mail?.source === 'historical';
   if (from && from === normalizeAddress(adminEmail())) {
     if (pendingApproval && (isApprovalReply(decision) || isRejectionReply(decision))) {
       console.log(`[imap] ADMIN DECISION from=${from} decision=${decision}`);
       await handleAdminText(decision);
-      return;
+      return { acked: false, historical, adminDecision: true };
     }
   }
-  console.log(`[imap] CUSTOMER MAIL from=${mail.from} subject=${mail.subject}`);
+  console.log(
+    `[imap] ${historical ? 'HISTORICAL' : 'LIVE'} CUSTOMER MAIL from=${mail.from} subject=${mail.subject}`
+  );
   const routed = await handleInboundCustomerEmail(mail);
   console.log(
-    `[ack] customer auto-reply ${routed?.acked ? 'SENT' : 'SKIPPED'} from=${mail.from}`
+    `[ack] customer auto-reply ${routed?.acked ? 'SENT' : 'SKIPPED'} source=${historical ? 'historical' : 'live'} from=${mail.from}`
   );
   console.log(
     `[admin] ticket brief ${routed?.brief?.ok ? 'SENT' : 'PENDING'} thread=${routed?.threadId || 'n/a'} urgency=${routed?.evaluation?.urgency || 'n/a'}`
@@ -103,6 +108,7 @@ async function onInboundSupportMail(mail) {
     pendingApproval = { threadId: routed.threadId };
     console.log(`[admin] HITL approval waiting thread=${routed.threadId}`);
   }
+  return routed;
 }
 
 function listenHealthServer() {
@@ -185,20 +191,6 @@ export async function startAgentRuntime() {
   await verifyMailTransport();
   await verifyImapConnection();
 
-  if (process.env.MIRAS_AGENTS_SKIP_BOOT_EMAIL === 'true') {
-    console.log('[agents] skipping boot operational email (MIRAS_AGENTS_SKIP_BOOT_EMAIL)');
-  } else {
-    const test = await sendOperationalDigestEmail({
-      reason: 'boot',
-      extra: 'Status: multi-agent supervisor is online. IMAP watcher starting.',
-    });
-    console.log('[agents] startup operational report sent', {
-      from: test.from,
-      to: test.to,
-      messageId: test.messageId,
-    });
-  }
-
   try {
     const { getServerConfig } = await import('../../server/config/env.ts');
     const { initFirebaseAdmin } = await import('../../server/lib/firebaseAdmin.ts');
@@ -206,6 +198,28 @@ export async function startAgentRuntime() {
     initFirebaseAdmin(config.firebaseProjectId);
   } catch (error) {
     console.warn('[agents] Firebase Admin init skipped:', error?.message || error);
+  }
+
+  const historical = await processHistoricalUnreadMail(async (mail) => onInboundSupportMail(mail));
+  const catchupReport = await sendUnreadCatchupReport(historical);
+  console.log('[admin] REPORT SENT historical unread catch-up', {
+    to: catchupReport.to,
+    messageId: catchupReport.messageId,
+    processed: historical.filter((item) => item.ok).length,
+  });
+
+  if (process.env.MIRAS_AGENTS_SKIP_BOOT_EMAIL === 'true') {
+    console.log('[agents] skipping extra boot operational email (MIRAS_AGENTS_SKIP_BOOT_EMAIL)');
+  } else {
+    const test = await sendOperationalDigestEmail({
+      reason: 'boot',
+      extra: `Unread catch-up complete. Processed ${historical.filter((item) => item.ok).length} historical message(s). Live IMAP watcher starting.`,
+    });
+    console.log('[agents] startup operational report sent', {
+      from: test.from,
+      to: test.to,
+      messageId: test.messageId,
+    });
   }
 
   await startSupportInboxWatcher(async (mail) => {

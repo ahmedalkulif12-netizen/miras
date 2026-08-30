@@ -441,6 +441,9 @@ export async function handleInboundCustomerEmail(mail) {
     subject,
     urgency: evaluation.urgency,
     acked,
+    snippet: String(mail?.text || evaluation.summary || ''),
+    actions: evaluation.actions,
+    source: mail?.source === 'historical' ? 'historical' : 'live',
   });
   return { evaluation, threadId, result, brief, acked };
 }
