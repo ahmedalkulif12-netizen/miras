@@ -40,6 +40,7 @@
     "deploy:cloud-run:agents": "powershell -ExecutionPolicy Bypass -File scripts/deploy-cloud-run-agents.ps1",
     "agents": "tsx src/agents/whatsapp.js",
     "start:agents": "tsx src/agents/whatsapp.js",
+    "dev:agents": "tsx src/agents/whatsapp.js",
     "verify:mail": "tsx scripts/verify-mail.mjs"
   },
   "engines": {

@@ -20,8 +20,11 @@ import {
 } from './supervisor.js';
 import {
   adminEmail,
+  getWorkerStats,
+  markWorkerStarted,
   normalizeAddress,
-  sendTestOperationalSummaryEmail,
+  requireMailSecrets,
+  sendOperationalDigestEmail,
   startSupportInboxWatcher,
   supportEmail,
   verifyMailTransport,
@@ -105,11 +108,12 @@ function listenHealthServer() {
       if (url === '/health' || url === '/' || url.startsWith('/health?')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(
-          JSON.stringify({
-            ok: true,
-            service: 'miras-agents',
-            support: supportEmail(),
-          })
+            JSON.stringify({
+              ok: true,
+              service: 'miras-agents',
+              support: supportEmail(),
+              ...getWorkerStats(),
+            })
         );
         return;
       }
@@ -136,19 +140,34 @@ function startTerminalApprovalListener() {
   return () => rl.close();
 }
 
+function startOperationalDigestTimer() {
+  const ms = Number(process.env.MIRAS_REPORT_INTERVAL_MS || 6 * 60 * 60 * 1000);
+  if (!Number.isFinite(ms) || ms <= 0) {
+    console.log('[agents] periodic admin digest disabled (MIRAS_REPORT_INTERVAL_MS<=0)');
+    return;
+  }
+  setInterval(() => {
+    void sendOperationalDigestEmail({ reason: 'interval' }).catch((error) => {
+      console.warn('[agents] digest email failed:', error?.message || error);
+    });
+  }, ms);
+  console.log(`[agents] admin digest every ${Math.round(ms / 60000)} minute(s)`);
+}
+
 /**
- * Boot env, send an operational summary to the admin, watch support@miras.com, payouts.
+ * Boot env, verify SMTP/IMAP, notify admin, watch support@miras.com, payouts.
  */
 export async function startAgentRuntime() {
   const { loadServerEnv } = await import('../../server/config/env.ts');
   loadServerEnv();
 
-  if (!adminEmail()) {
-    throw new Error('Set MIRAS_ADMIN_EMAIL before starting agents');
-  }
+  const mail = requireMailSecrets();
+  markWorkerStarted();
 
-  console.log(`[agents] support mailbox: ${supportEmail()}`);
-  console.log(`[agents] admin mailbox:   ${adminEmail()}`);
+  console.log(`[agents] support mailbox: ${mail.support}`);
+  console.log(`[agents] admin mailbox:   ${mail.admin}`);
+  console.log(`[agents] SMTP user:       ${mail.smtp.user}`);
+  console.log(`[agents] IMAP user:       ${mail.imap.user}`);
 
   await listenHealthServer();
   await verifyMailTransport();
@@ -156,12 +175,14 @@ export async function startAgentRuntime() {
   if (process.env.MIRAS_AGENTS_SKIP_BOOT_EMAIL === 'true') {
     console.log('[agents] skipping boot operational email (MIRAS_AGENTS_SKIP_BOOT_EMAIL)');
   } else {
-    const test = await sendTestOperationalSummaryEmail();
-    console.log('[agents] test operational summary email sent', {
+    const test = await sendOperationalDigestEmail({
+      reason: 'boot',
+      extra: 'Status: multi-agent supervisor is online. IMAP watcher starting.',
+    });
+    console.log('[agents] startup operational report sent', {
       from: test.from,
       to: test.to,
       messageId: test.messageId,
-      previewUrl: test.previewUrl || undefined,
     });
   }
 
@@ -196,6 +217,7 @@ export async function startAgentRuntime() {
     }
   });
 
+  startOperationalDigestTimer();
   startTerminalApprovalListener();
   console.log('[agents] Miras multi-agent supervisor is online (email HITL)');
   await new Promise(() => {});

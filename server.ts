@@ -100,9 +100,9 @@ import {
 async function startServer() {
   loadServerEnv();
 
-  // Render worker (`npm run dev` + MIRAS_PROCESS_ROLE=agents): IMAP/HITL only.
-  // Do not boot the payment API or require Moyasar secrets on this process.
-  if ((process.env.MIRAS_PROCESS_ROLE || '').trim() === 'agents') {
+  const { isAgentsProcess } = await import('./server/config/env.ts');
+  // Render worker (`npm run start:agents` or `npm run dev` + MIRAS_PROCESS_ROLE=agents).
+  if (isAgentsProcess()) {
     const { startAgentRuntime } = await import('./src/agents/whatsapp.js');
     await startAgentRuntime();
     return;

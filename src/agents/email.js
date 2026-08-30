@@ -144,40 +144,10 @@ export async function sendApprovalEmail(interruptValue, threadId) {
  * Boot-time check used by `npm run agents`.
  */
 export async function sendTestOperationalSummaryEmail(options = {}) {
-  const to = adminEmail();
-  if (!to) throw new Error('Set MIRAS_ADMIN_EMAIL before starting agents');
-  const from = getMailConfig().from;
-  const publicInbox = supportEmail();
-  const imap = getImapConfig();
-  const watching = Boolean(imap.host && imap.user && imap.pass);
-  const extra = String(options.extra || '').trim();
-  const text = [
-    'Miras Supervisor — operational summary (test)',
-    '',
-    `Transport From: ${from}`,
-    `Reply-To / public support: ${publicInbox}`,
-    `To: ${to}`,
-    '',
-    'Status: multi-agent supervisor is online.',
-    `Support inbox watch: ${imap.user || '(none)'}${watching ? ' — IMAP watcher active' : ' — IMAP not configured'}`,
-    'Workers: developer, firebase, email (support), payouts',
-    '',
-    'Customer mail to support@miras.com should be forwarded to the Gmail transport inbox.',
-    'The Supervisor emails you a summary so you do not need to open the support inbox.',
-    extra ? `\n${extra}` : '',
-    '',
-    'This is a test notification. No customer ticket was executed.',
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
-
-  const result = await sendMail({
-    to,
-    subject: '[Miras] Operational summary — multi-agent supervisor is online',
-    text,
+  return sendOperationalDigestEmail({
+    reason: 'boot',
+    extra: options.extra,
   });
-  console.log(`[email] operational summary sent from ${from} to ${to} (${result.messageId})`);
-  return result;
 }
 
 /** @deprecated use sendTestOperationalSummaryEmail */
@@ -197,6 +167,144 @@ export function getImapConfig() {
     pass: String(process.env.IMAP_PASS || process.env.SMTP_PASS || '').trim().replace(/\s+/g, ''),
     pollMs: Math.max(5000, Number(process.env.IMAP_POLL_MS || 15_000)),
   };
+}
+
+/** Fail fast on the 24/7 worker — missing mail secrets used to leave IMAP silently off. */
+export function requireMailSecrets() {
+  const smtp = getMailConfig();
+  if (!smtp.user || !smtp.pass) {
+    throw new Error(
+      'SMTP_USER / SMTP_PASS are required. Use a Gmail App Password, not the account login password.'
+    );
+  }
+  if (!adminEmail()) {
+    throw new Error('MIRAS_ADMIN_EMAIL is required so operational reports can be delivered.');
+  }
+  const imap = getImapConfig();
+  if (!imap.host || !imap.user || !imap.pass) {
+    throw new Error(
+      'IMAP_USER / IMAP_PASS are required (or set SMTP_USER / SMTP_PASS so IMAP can inherit them). Enable Gmail IMAP.'
+    );
+  }
+  return { smtp, imap, admin: adminEmail(), support: supportEmail() };
+}
+
+export function autoAckEnabled() {
+  const raw = String(process.env.MIRAS_AUTO_ACK ?? 'true').trim().toLowerCase();
+  return raw !== 'false' && raw !== '0' && raw !== 'off';
+}
+
+/** @type {{ at: string, from: string, subject: string, urgency: string, acked: boolean }[]} */
+const handledTickets = [];
+let workerStartedAt = null;
+
+export function markWorkerStarted() {
+  workerStartedAt = new Date();
+}
+
+export function recordSupportTicket(entry = {}) {
+  handledTickets.push({
+    at: new Date().toISOString(),
+    from: String(entry.from || ''),
+    subject: String(entry.subject || ''),
+    urgency: String(entry.urgency || 'normal'),
+    acked: Boolean(entry.acked),
+  });
+  if (handledTickets.length > 200) handledTickets.shift();
+}
+
+export function getWorkerStats() {
+  return {
+    startedAt: workerStartedAt ? workerStartedAt.toISOString() : null,
+    ticketsHandled: handledTickets.length,
+    lastTicket: handledTickets[handledTickets.length - 1] || null,
+    autoAck: autoAckEnabled(),
+    admin: adminEmail(),
+    support: supportEmail(),
+  };
+}
+
+export async function sendCustomerAcknowledgement(mail) {
+  const to = normalizeAddress(mail?.from);
+  if (!to) return null;
+  if (
+    sameMailbox(to, adminEmail()) ||
+    sameMailbox(to, supportEmail()) ||
+    sameMailbox(to, getMailConfig().from)
+  ) {
+    return null;
+  }
+  const subject = String(mail?.subject || '').trim();
+  const re = !subject ? 'Re: Miras Support' : subject.startsWith('Re:') ? subject : `Re: ${subject}`;
+  const text = [
+    'مرحباً / Hello,',
+    '',
+    'تم استلام رسالتك لدى دعم مِراس وسنراجعها قريباً.',
+    'Miras Support received your message. Our team is reviewing it and will follow up if needed.',
+    subject ? `\nRegarding: ${subject}` : '',
+    '',
+    `مع التحية،\nفريق دعم مِراس\n${supportEmail()}`,
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+  const result = await sendMail({
+    to,
+    subject: re,
+    text,
+    replyTo: supportEmail(),
+  });
+  console.log(`[email] auto-ack sent to ${to} (${result.messageId})`);
+  return result;
+}
+
+/**
+ * Admin operational report (boot, interval digest, or on-demand).
+ */
+export async function sendOperationalDigestEmail(options = {}) {
+  const to = adminEmail();
+  if (!to) throw new Error('Set MIRAS_ADMIN_EMAIL before sending operational reports');
+  const reason = options.reason || 'interval';
+  const stats = getWorkerStats();
+  const smtp = getMailConfig();
+  const imap = getImapConfig();
+  const extra = String(options.extra || '').trim();
+  const recent = handledTickets.slice(-20);
+  const ticketLines = recent.length
+    ? recent.map(
+        (ticket, index) =>
+          `${index + 1}. ${ticket.at} | ${ticket.urgency} | ${ticket.from} | ${ticket.subject}` +
+          (ticket.acked ? ' | auto-ack sent' : '')
+      )
+    : ['(no customer tickets in this process yet)'];
+  const text = [
+    `Miras Supervisor — operational ${reason === 'boot' ? 'startup' : 'digest'} report`,
+    '',
+    `Admin: ${to}`,
+    `Public support: ${supportEmail()}`,
+    `SMTP login: ${smtp.user}`,
+    `IMAP watch: ${imap.user} @ ${imap.host}:${imap.port}`,
+    `Worker started: ${stats.startedAt || 'now'}`,
+    `Tickets handled this process: ${stats.ticketsHandled}`,
+    `Customer auto-ack: ${autoAckEnabled() ? 'on' : 'off'}`,
+    extra ? `\n${extra}` : '',
+    '',
+    'Recent tickets',
+    '--------------',
+    ...ticketLines,
+    '',
+    'Customer mail to support@miras.com should be forwarded to the Gmail transport inbox.',
+    'Reply OK / NO on approval emails to send the drafted follow-up from support.',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+
+  const result = await sendMail({
+    to,
+    subject: `[Miras] Operational ${reason === 'boot' ? 'startup' : 'digest'} — ${stats.ticketsHandled} ticket(s)`,
+    text,
+  });
+  console.log(`[email] operational ${reason} report sent to ${to} (${result.messageId})`);
+  return result;
 }
 
 export function normalizeAddress(value) {
@@ -369,7 +477,11 @@ export async function startSupportInboxWatcher(onMail) {
           /* mark-seen is best-effort */
         }
         if (sameMailbox(mail.from, supportEmail())) continue;
-        if (sameMailbox(mail.from, getMailConfig().from) && /^\[Miras /i.test(mail.subject || '')) continue;
+        if (sameMailbox(mail.from, getMailConfig().from)) {
+          const hitlSubject = /\[Miras /i.test(mail.subject || '');
+          const hitlBody = /^\s*(ok|yes|approve|no|reject|قبول|رفض)\b/i.test(mail.text || '');
+          if (!hitlSubject && !hitlBody) continue;
+        }
         await onMail(mail);
       }
     } finally {

@@ -44,7 +44,7 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function isAgentsProcess(): boolean {
+export function isAgentsProcess(): boolean {
   const role = readEnv('MIRAS_PROCESS_ROLE').toLowerCase();
   if (role === 'agents' || role === 'worker') return true;
   const service = String(process.env.RENDER_SERVICE_NAME || '').toLowerCase();

@@ -1,6 +1,9 @@
 # Render Blueprint — 24/7 email / payout worker (not the public Firebase SPA).
-# Native Node so the dashboard start command `npm run dev` resolves server.ts.
+# Native Node. Start command is npm run start:agents (tsx src/agents/whatsapp.js).
 # Starter+ required: free web services sleep and IMAP drops.
+#
+# Secrets (sync: false) must be entered in the Render dashboard:
+#   MIRAS_ADMIN_EMAIL, SMTP_USER, SMTP_PASS, IMAP_USER, IMAP_PASS
 #
 # https://render.com/docs/blueprint-spec
 
@@ -12,7 +15,7 @@ services:
     region: frankfurt
     numInstances: 1
     buildCommand: npm ci
-    startCommand: npm run dev
+    startCommand: npm run start:agents
     envVars:
       - key: NODE_VERSION
         value: "20"
@@ -58,7 +61,11 @@ services:
         sync: false
       - key: IMAP_POLL_MS
         value: "15000"
-      - key: MIRAS_AGENTS_SKIP_BOOT_EMAIL
+      - key: MIRAS_AUTO_ACK
         value: "true"
+      - key: MIRAS_REPORT_INTERVAL_MS
+        value: "21600000"
+      - key: MIRAS_AGENTS_SKIP_BOOT_EMAIL
+        value: "false"
       - key: MIRAS_SKIP_PRODUCTION_SECRETS
         value: "true"

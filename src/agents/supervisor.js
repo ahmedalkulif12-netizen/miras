@@ -25,6 +25,9 @@ import {
   sendToAdmin,
   evaluateSupportIssue,
   sendAdminSupportBrief,
+  autoAckEnabled,
+  sendCustomerAcknowledgement,
+  recordSupportTicket,
 } from './email.js';
 import { runPayoutsAgent, executePayoutsAction } from './payouts.js';
 
@@ -414,10 +417,27 @@ export async function handleInboundCustomerEmail(mail) {
   const threadId = `support-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const customer = mail?.from || evaluation.from || '';
   const subject = mail?.subject || evaluation.subject || 'Miras support';
+
+  let acked = false;
+  if (autoAckEnabled()) {
+    try {
+      const ack = await sendCustomerAcknowledgement(mail);
+      acked = Boolean(ack?.ok);
+    } catch (error) {
+      console.warn('[supervisor] customer auto-ack failed:', error?.message || error);
+    }
+  }
+
   const task =
     `email: to=${customer} subject=${subject.startsWith('Re:') ? subject : `Re: ${subject}`} ` +
     `body=${evaluation.draftBody}`;
   const result = await invokeTask(task, threadId);
   const brief = await sendAdminSupportBrief({ mail, evaluation, threadId, result });
-  return { evaluation, threadId, result, brief };
+  recordSupportTicket({
+    from: customer,
+    subject,
+    urgency: evaluation.urgency,
+    acked,
+  });
+  return { evaluation, threadId, result, brief, acked };
 }
