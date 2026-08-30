@@ -1,0 +1,24 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "4TRJXRYK8A.com.miras.app"
+        ],
+        "appID": "4TRJXRYK8A.com.miras.app",
+        "paths": [
+          "/payment-callback",
+          "/payment-callback/*"
+        ],
+        "components": [
+          {
+            "/": "/payment-callback"
+          },
+          {
+            "/": "/payment-callback/*"
+          }
+        ]
+      }
+    ]
+  }
+}

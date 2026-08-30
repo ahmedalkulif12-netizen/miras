@@ -42,6 +42,9 @@
     "start:agents": "tsx src/agents/whatsapp.js",
     "verify:mail": "tsx scripts/verify-mail.mjs"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@capacitor-firebase/app-check": "^8.2.0",
     "@capacitor/android": "^8.3.1",
@@ -79,6 +82,7 @@
     "react-router-dom": "^7.14.2",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
+    "tsx": "^4.23.13",
     "vite": "^6.2.0"
   },
   "devDependencies": {
@@ -88,7 +92,6 @@
     "autoprefixer": "^10.4.21",
     "sharp": "^0.35.4",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

@@ -1,0 +1,23 @@
+node_modules/
+.wa-auth/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+
+# Secrets & local env (P0-15)
+.env*
+!.env.example
+!.env.staging.example
+!.env.production.example
+!.env.store.example
+firebase-applet-config.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/*serviceAccount*.json
+**/*-service-account*.json
+*.pem
+**/*.jks
+**/*.keystore
+**/keystore.properties

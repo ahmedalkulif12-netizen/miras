@@ -1,25 +1,29 @@
-# Render Blueprint — always-on email/payout worker (not the public API).
-# Dashboard: New → Blueprint → this repo. Fill SMTP_PASS / IMAP_PASS as secrets.
-# Use a paid instance (Starter+). Free web services sleep and will drop IMAP.
+# Render Blueprint — 24/7 email / payout worker (not the public Firebase SPA).
+# Native Node so the dashboard start command `npm run dev` resolves server.ts.
+# Starter+ required: free web services sleep and IMAP drops.
 #
 # https://render.com/docs/blueprint-spec
 
 services:
   - type: worker
     name: miras-agents
-    runtime: docker
-    dockerfilePath: ./Dockerfile.agents
+    runtime: node
     plan: starter
     region: frankfurt
     numInstances: 1
-    dockerCommand: npx tsx src/agents/whatsapp.js
+    buildCommand: npm ci
+    startCommand: npm run dev
     envVars:
+      - key: NODE_VERSION
+        value: "20"
       - key: NODE_ENV
         value: production
       - key: PORT
         value: "8080"
       - key: MIRAS_PROCESS_ROLE
         value: agents
+      - key: MIRAS_AGENTS_ENABLED
+        value: "true"
       - key: MIRAS_DEPLOY_ENV
         value: staging
       - key: FIREBASE_PROJECT_ID

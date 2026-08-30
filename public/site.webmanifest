@@ -1,0 +1,31 @@
+{
+  "name": "مَرَاس | Miras",
+  "short_name": "مَرَاس",
+  "description": "منصة مَرَاس للخدمات اللوجستية والنقل — Miras logistics platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F9FB",
+  "theme_color": "#F8C31E",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/miras-logo.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/miras-badge.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    },
+    {
+      "src": "/miras-app-icon.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "maskable"
+    }
+  ]
+}
