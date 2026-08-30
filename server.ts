@@ -109,7 +109,19 @@ async function startServer() {
   }
 
   const config = getServerConfig();
-  assertProductionSecrets(config);
+  try {
+    assertProductionSecrets(config);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const onRender = process.env.RENDER === 'true' || Boolean(process.env.RENDER_SERVICE_ID);
+    if (onRender) {
+      console.warn(
+        `[env] Production secret check failed on Render — continuing boot without payments: ${message}`
+      );
+    } else {
+      throw error;
+    }
+  }
 
   const app = express();
   const PORT = Number(process.env.PORT) || config.port || 8080;

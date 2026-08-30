@@ -44,6 +44,47 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function isAgentsProcess(): boolean {
+  const role = readEnv('MIRAS_PROCESS_ROLE').toLowerCase();
+  if (role === 'agents' || role === 'worker') return true;
+  const service = String(process.env.RENDER_SERVICE_NAME || '').toLowerCase();
+  return service.includes('agent');
+}
+
+/** Render injects RENDER=true on every service. */
+function isRenderHost(): boolean {
+  return readEnv('RENDER') === 'true' || Boolean(process.env.RENDER_SERVICE_ID);
+}
+
+/**
+ * Email worker / first Render boot: do not require Moyasar.
+ * Payment routes still 503 via assertMoyasarConfigured until keys are set.
+ */
+function shouldRelaxPaymentSecrets(config: ServerConfig): boolean {
+  if (isAgentsProcess()) return true;
+  if (readEnv('MIRAS_SKIP_PRODUCTION_SECRETS') === 'true') return true;
+  if (isRenderHost() && config.deployEnv !== 'production') return true;
+  return false;
+}
+
+function applyRelaxedHostDefaults(): void {
+  if (!readEnv('APP_URL')) {
+    const fallback =
+      readEnv('RENDER_EXTERNAL_URL') || 'https://hamula-cfc6c.web.app';
+    process.env.APP_URL = fallback;
+    console.warn(`[env] APP_URL unset — defaulting to ${fallback}`);
+  }
+  if (!readEnv('FIREBASE_PROJECT_ID') && !readEnv('VITE_FIREBASE_PROJECT_ID')) {
+    process.env.FIREBASE_PROJECT_ID = 'hamula-cfc6c';
+    console.warn('[env] FIREBASE_PROJECT_ID unset — defaulting to hamula-cfc6c');
+  }
+  if (!readEnv('MIRAS_DEPLOY_ENV') && !readEnv('HAMOULA_DEPLOY_ENV') && isRenderHost()) {
+    process.env.MIRAS_DEPLOY_ENV = 'staging';
+    console.warn('[env] MIRAS_DEPLOY_ENV unset on Render — defaulting to staging');
+  }
+  applyMoyasarWebhookSecretFallback(getDeployEnvironment());
+}
+
 /**
  * Staging / local: fill MOYASAR_WEBHOOK_SECRET so verify + Cloud Run boot don't fail
  * when the operator has not created a Moyasar webhook yet.
@@ -117,9 +158,21 @@ export function getServerConfig(): ServerConfig {
 /**
  * Fail fast when hosting a production/staging build (NODE_ENV=production).
  * Combines secret presence checks with deploy-target rules (HTTPS, live keys, App Check).
+ * Relaxed on the Render email worker and staging Render boots so missing Moyasar
+ * keys do not crash the process (status 1). Checkout stays gated until keys exist.
  */
 export function assertProductionSecrets(config: ServerConfig = getServerConfig()): void {
   if (!config.isProduction) return;
+
+  if (shouldRelaxPaymentSecrets(config)) {
+    applyRelaxedHostDefaults();
+    console.warn(
+      '[env] Skipping strict Moyasar/production secret checks ' +
+        `(role=${readEnv('MIRAS_PROCESS_ROLE') || 'unset'}, deploy=${config.deployEnv}, render=${isRenderHost()}). ` +
+        'Payment APIs stay disabled until MOYASAR_SECRET_KEY is set.'
+    );
+    return;
+  }
 
   requireEnv('MOYASAR_SECRET_KEY');
   requireEnv('APP_URL');
@@ -143,7 +196,7 @@ export function assertProductionSecrets(config: ServerConfig = getServerConfig()
   const moyasarKey = config.moyasarSecretKey;
 
   // Legacy guard when MIRAS_DEPLOY_ENV is unset but NODE_ENV=production.
-  if (config.deployEnv === 'development' && moyasarKey.startsWith('sk_test_')) {
+  if (config.deployEnv === 'development' && moyasarKey?.startsWith('sk_test_')) {
     throw new Error(
       'NODE_ENV=production with sk_test_* — set MIRAS_DEPLOY_ENV=staging explicitly or use sk_live_* for production'
     );

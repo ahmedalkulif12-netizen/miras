@@ -61,6 +61,12 @@ export function assertDeployEnvironment(config: ServerConfig): void {
   }
 
   if (deployEnv === 'staging') {
+    if (!config.moyasarSecretKey) {
+      console.warn(
+        '[env] Staging: MOYASAR_SECRET_KEY unset — payment routes will return 503 until a sk_test_* key is set.'
+      );
+      return;
+    }
     if (config.moyasarSecretKey.startsWith('sk_live_')) {
       throw new Error(
         'Staging deploy cannot use Moyasar live key (sk_live_*). Use sk_test_* on staging hosts.'

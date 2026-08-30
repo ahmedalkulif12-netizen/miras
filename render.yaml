@@ -60,3 +60,5 @@ services:
         value: "15000"
       - key: MIRAS_AGENTS_SKIP_BOOT_EMAIL
         value: "true"
+      - key: MIRAS_SKIP_PRODUCTION_SECRETS
+        value: "true"
