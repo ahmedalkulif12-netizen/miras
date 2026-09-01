@@ -1,7 +1,9 @@
 /* Arabic App Store / system permission strings */
 "CFBundleDisplayName" = "مَرَاس";
 "CFBundleName" = "مَرَاس";
-"NSLocationWhenInUseUsageDescription" = "تستخدم مَرَاس موقعك أثناء الرحلات النشطة حتى يتمكن العملاء من تتبع توصيلهم لحظياً.";
+"NSLocationWhenInUseUsageDescription" = "تستخدم مَرَاس موقعك أثناء استخدام التطبيق لتحديد مواقع الاستلام والتوصيل ولعرض موقع السائق للعميل أثناء الرحلات النشطة.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "تستخدم مَرَاس موقعك أثناء الرحلات النشطة لتتبع التوصيل لحظياً وتحديد مواقع الاستلام والتوصيل. يُستخدم الموقع أثناء استخدامك للتطبيق.";
+"NSLocationAlwaysUsageDescription" = "تستخدم مَرَاس موقعك أثناء الرحلات النشطة لتتبع التوصيل لحظياً وتحديد مواقع الاستلام والتوصيل. يُستخدم الموقع أثناء استخدامك للتطبيق.";
 "NSCameraUsageDescription" = "قد تستخدم مَرَاس الكاميرا لرفع مستندات السائق وصور التسليم.";
 "NSPhotoLibraryUsageDescription" = "قد تصل مَرَاس إلى مكتبة الصور لإرفاق المستندات وصور التسليم.";
 "NSPhotoLibraryAddUsageDescription" = "قد تحفظ مَرَاس صور التسليم في مكتبة الصور.";

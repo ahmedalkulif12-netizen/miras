@@ -1,7 +1,9 @@
 /* English App Store / system permission strings */
 "CFBundleDisplayName" = "Miras";
 "CFBundleName" = "Miras";
-"NSLocationWhenInUseUsageDescription" = "Miras uses your location during active trips so customers can track their delivery in real time.";
+"NSLocationWhenInUseUsageDescription" = "Miras uses your location while you use the app to set pickup and drop-off points and to share a driver's live position with the customer during an active delivery.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Miras uses your location during active trips so customers can track their delivery in real time and so pickup and drop-off points can be set. Location is used while you are using the app.";
+"NSLocationAlwaysUsageDescription" = "Miras uses your location during active trips so customers can track their delivery in real time and so pickup and drop-off points can be set. Location is used while you are using the app.";
 "NSCameraUsageDescription" = "Miras may use the camera to upload driver documents and delivery photos.";
 "NSPhotoLibraryUsageDescription" = "Miras may access your photo library to attach documents and delivery photos.";
 "NSPhotoLibraryAddUsageDescription" = "Miras may save delivery photos to your photo library.";

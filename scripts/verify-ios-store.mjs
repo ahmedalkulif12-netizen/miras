@@ -50,6 +50,12 @@ async function main() {
   if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>') || !infoPlist.includes('<false/>')) {
     failures.push('Info.plist must set ITSAppUsesNonExemptEncryption to false');
   }
+  if (!infoPlist.includes('<key>NSLocationWhenInUseUsageDescription</key>')) {
+    failures.push('Info.plist must include NSLocationWhenInUseUsageDescription');
+  }
+  if (!infoPlist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>')) {
+    failures.push('Info.plist must include NSLocationAlwaysAndWhenInUseUsageDescription');
+  }
   if (!exists('ios/App/App/PrivacyInfo.xcprivacy')) {
     failures.push('PrivacyInfo.xcprivacy is missing');
   }
