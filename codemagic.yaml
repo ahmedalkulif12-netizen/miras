@@ -1,0 +1,103 @@
+# Codemagic CI — Capacitor iOS → TestFlight
+# https://docs.codemagic.io/yaml-quick-start/building-an-ionic-app/
+#
+# Before the first build in Codemagic:
+# 1. Team integrations → Developer Portal → add an App Store Connect API key
+#    (App Manager). Set `integrations.app_store_connect` below to that key name.
+# 2. Team settings → Code signing identities:
+#    generate/upload an Apple Distribution certificate + App Store profile
+#    for bundle ID com.ahmed.miras.
+# 3. Application → Environment variables → create group `miras_client` with
+#    the same VITE_* values used for the live SPA (Firebase, Maps). Optional:
+#    GOOGLE_SERVICE_INFO_PLIST = base64 of ios/App/App/GoogleService-Info.plist
+# 4. App Store Connect → App Information → copy the numeric Apple ID into
+#    APP_STORE_APPLE_ID (used to bump CFBundleVersion).
+# 5. Start this workflow from the Codemagic UI (manual). Do not set
+#    submit_to_app_store until you are ready for App Review.
+
+workflows:
+  ios-testflight:
+    name: Miras iOS TestFlight
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    integrations:
+      # Must match the API key name under Team integrations → Developer Portal.
+      app_store_connect: codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.ahmed.miras
+      groups:
+        - miras_client
+      vars:
+        XCODE_PROJECT: App.xcodeproj
+        XCODE_SCHEME: App
+        BUNDLE_ID: com.ahmed.miras
+        # App Store Connect → App → General → App Information → Apple ID
+        APP_STORE_APPLE_ID: "REPLACE_WITH_APPLE_ID"
+      node: 20
+      xcode: latest
+    scripts:
+      - name: Install npm dependencies
+        script: |
+          npm ci
+      - name: Write native Firebase config
+        script: |
+          if [ -n "${GOOGLE_SERVICE_INFO_PLIST:-}" ]; then
+            echo "$GOOGLE_SERVICE_INFO_PLIST" | base64 --decode > ios/App/App/GoogleService-Info.plist
+          else
+            echo "GOOGLE_SERVICE_INFO_PLIST unset — add the base64 plist to group miras_client"
+          fi
+      - name: Build web assets and sync Capacitor iOS
+        script: |
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
+          export NODE_ENV=production
+          npx vite build
+          npx cap sync ios
+      - name: Set up code signing on the Xcode project
+        script: |
+          # Internal TestFlight only — skip Apple beta review. Remove the
+          # --custom-export-options flag when you need external testers.
+          xcode-project use-profiles \
+            --custom-export-options='{"testFlightInternalTestingOnly": true}'
+      - name: Increment iOS build number
+        script: |
+          cd "$CM_BUILD_DIR/ios/App"
+          LATEST=0
+          if [ -n "${APP_STORE_APPLE_ID:-}" ] && [ "$APP_STORE_APPLE_ID" != "REPLACE_WITH_APPLE_ID" ]; then
+            LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || true)
+            if [ -z "$LATEST" ] || [ "$LATEST" = "None" ]; then
+              LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" || true)
+            fi
+          fi
+          if [ -z "$LATEST" ] || [ "$LATEST" = "None" ]; then
+            LATEST=0
+          fi
+          NEW_BUILD=$((LATEST + 1))
+          if [ "$NEW_BUILD" -lt "${BUILD_NUMBER:-1}" ]; then
+            NEW_BUILD=$BUILD_NUMBER
+          fi
+          agvtool new-version -all "$NEW_BUILD"
+          agvtool new-marketing-version "1.0"
+          echo "Using CFBundleVersion=$NEW_BUILD"
+      - name: Build signed IPA
+        script: |
+          cd "$CM_BUILD_DIR/ios/App"
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      email:
+        recipients:
+          - support@miras.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
