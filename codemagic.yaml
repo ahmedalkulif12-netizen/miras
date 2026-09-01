@@ -55,18 +55,7 @@ workflows:
           export VITE_IOS_TEAM_ID="${VITE_IOS_TEAM_ID:-$DEVELOPMENT_TEAM}"
           npx vite build
           npx cap sync ios
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          path = Path("ios/App/CapApp-SPM/Package.swift")
-          text = path.read_text(encoding="utf-8")
-          text = re.sub(
-              r'(path:\s*")([^"]+)(")',
-              lambda m: m.group(1) + m.group(2).replace("\\", "/") + m.group(3),
-              text,
-          )
-          path.write_text(text, encoding="utf-8")
-          PY
+          node scripts/fix-ios-spm-app-check.mjs
       - name: Install signing certificates and profiles
         script: |
           xcode-project use-profiles \
