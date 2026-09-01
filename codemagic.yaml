@@ -9,7 +9,8 @@
 # Codemagic UI required:
 # 1. Developer Portal API key name must match integrations.app_store_connect
 # 2. Code signing identities: Apple Distribution cert + App Store profile for
-#    com.ahmed.miras with Associated Domains
+#    com.ahmed.miras. Do not enable Associated Domains on the App ID until
+#    App.entitlements includes com.apple.developer.associated-domains again.
 # 3. Env group `miras_client`: VITE_* plus GOOGLE_SERVICE_INFO_PLIST (base64)
 
 workflows:
