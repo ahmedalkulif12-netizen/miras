@@ -30,7 +30,8 @@ workflows:
       groups:
         - miras_client
       vars:
-        XCODE_PROJECT: App.xcodeproj
+        # Capacitor layout: ios/App/App.xcodeproj (not repo-root App.xcodeproj)
+        XCODE_PROJECT: ios/App/App.xcodeproj
         XCODE_SCHEME: App
         BUNDLE_ID: com.ahmed.miras
         # App Store Connect → App → General → App Information → Apple ID
@@ -59,6 +60,7 @@ workflows:
           # Internal TestFlight only — skip Apple beta review. Remove the
           # --custom-export-options flag when you need external testers.
           xcode-project use-profiles \
+            --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
             --custom-export-options='{"testFlightInternalTestingOnly": true}'
       - name: Increment iOS build number
         script: |
@@ -82,9 +84,9 @@ workflows:
           echo "Using CFBundleVersion=$NEW_BUILD"
       - name: Build signed IPA
         script: |
-          cd "$CM_BUILD_DIR/ios/App"
+          test -d "$CM_BUILD_DIR/ios/App/App.xcodeproj"
           xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
+            --project "$CM_BUILD_DIR/ios/App/App.xcodeproj" \
             --scheme "$XCODE_SCHEME"
     artifacts:
       - ios/App/build/ios/ipa/*.ipa
