@@ -59,6 +59,8 @@ workflows:
           node scripts/fix-ios-spm-app-check.mjs
       - name: Install signing certificates and profiles
         script: |
+          # Internal TestFlight only — skip Apple beta review. Remove
+          # testFlightInternalTestingOnly when you need external testers.
           xcode-project use-profiles \
             --project "$CM_BUILD_DIR/$XCODE_PROJECT_PATH" \
             --custom-export-options='{"method":"app-store","signingStyle":"manual","teamID":"'"$DEVELOPMENT_TEAM"'","compileBitcode":false,"testFlightInternalTestingOnly":true}'
@@ -137,5 +139,11 @@ workflows:
           failure: true
       app_store_connect:
         auth: integration
-        submit_to_testflight: true
+        # Upload the IPA only. submit_to_testflight submits the build for
+        # Apple's external TestFlight beta review during Magic Actions
+        # post-processing — that fails for internal-only IPAs and when
+        # TestFlight beta details are incomplete. Internal testers still
+        # get the build after Apple processing. Set true later only after
+        # removing testFlightInternalTestingOnly and filling ASC beta info.
+        submit_to_testflight: false
         submit_to_app_store: false
