@@ -28,7 +28,7 @@ Still manual (cannot be done in this repo):
   2. Create support@miras.com mailbox (or Gmail forward) and set SMTP_PASS / IMAP_PASS (App Password).
   3. Firebase Console → Phone numbers for testing → paste into fastlane/metadata/ios/review_information/
   4. npm run generate:store-screenshots (needs store/incoming captures) then upload 6.7" shots in App Store Connect.
-  5. On a Mac: npm run cap:sync:ios → Xcode team 4TRJXRYK8A → Archive → TestFlight.
+  5. On a Mac: npm run cap:sync:ios → Xcode team 4TRJXRYK8A, bundle com.ahmed.miras → Archive → TestFlight.
   6. App Store Connect: app record, privacy nutrition labels, content rating, Saudi availability.
   7. firebase login then npm run deploy:hosting if AASA/hosting is stale.
 `);

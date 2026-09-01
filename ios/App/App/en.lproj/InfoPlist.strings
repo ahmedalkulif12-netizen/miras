@@ -1,0 +1,7 @@
+/* English App Store / system permission strings */
+"CFBundleDisplayName" = "Miras";
+"CFBundleName" = "Miras";
+"NSLocationWhenInUseUsageDescription" = "Miras uses your location during active trips so customers can track their delivery in real time.";
+"NSCameraUsageDescription" = "Miras may use the camera to upload driver documents and delivery photos.";
+"NSPhotoLibraryUsageDescription" = "Miras may access your photo library to attach documents and delivery photos.";
+"NSPhotoLibraryAddUsageDescription" = "Miras may save delivery photos to your photo library.";

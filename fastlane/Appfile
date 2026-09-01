@@ -1,0 +1,4 @@
+# Apple Developer identifiers. Team ID is filled by:
+#   node scripts/set-ios-team-id.mjs YOURTEAMID
+app_identifier("com.ahmed.miras")
+team_id("4TRJXRYK8A")

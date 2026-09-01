@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const BUNDLE_ID = 'com.miras.app';
+const BUNDLE_ID = 'com.ahmed.miras';
 const TEAM_ID_RE = /^[A-Z0-9]{10}$/;
 
 export function readAppleTeamId(env = process.env) {

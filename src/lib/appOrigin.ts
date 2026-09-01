@@ -7,7 +7,7 @@ import { Capacitor } from '@capacitor/core';
 
 export const DEFAULT_PUBLIC_APP_HOST = 'hamula-cfc6c.web.app';
 export const ANDROID_APP_PACKAGE = 'com.miras.app';
-export const IOS_BUNDLE_ID = 'com.miras.app';
+export const IOS_BUNDLE_ID = 'com.ahmed.miras';
 
 export function isLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
@@ -92,7 +92,11 @@ export function nativeOpenUrlToSpaPath(url: string): string | null {
   }
 
   const protocol = parsed.protocol.replace(/:$/, '').toLowerCase();
-  if (protocol === ANDROID_APP_PACKAGE || protocol === 'miras') {
+  if (
+    protocol === ANDROID_APP_PACKAGE ||
+    protocol === IOS_BUNDLE_ID ||
+    protocol === 'miras'
+  ) {
     const host = parsed.hostname;
     const nested = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
     const spaPath = host ? `/${host}${nested}` : nested || '/';

@@ -1,0 +1,2 @@
+#include "Config/Team.xcconfig"
+CAPACITOR_DEBUG = false

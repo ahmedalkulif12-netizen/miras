@@ -3,9 +3,9 @@
     "details": [
       {
         "appIDs": [
-          "4TRJXRYK8A.com.miras.app"
+          "4TRJXRYK8A.com.ahmed.miras"
         ],
-        "appID": "4TRJXRYK8A.com.miras.app",
+        "appID": "4TRJXRYK8A.com.ahmed.miras",
         "paths": [
           "/payment-callback",
           "/payment-callback/*"

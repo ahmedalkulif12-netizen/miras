@@ -1,0 +1,7 @@
+/* Arabic App Store / system permission strings */
+"CFBundleDisplayName" = "مَرَاس";
+"CFBundleName" = "مَرَاس";
+"NSLocationWhenInUseUsageDescription" = "تستخدم مَرَاس موقعك أثناء الرحلات النشطة حتى يتمكن العملاء من تتبع توصيلهم لحظياً.";
+"NSCameraUsageDescription" = "قد تستخدم مَرَاس الكاميرا لرفع مستندات السائق وصور التسليم.";
+"NSPhotoLibraryUsageDescription" = "قد تصل مَرَاس إلى مكتبة الصور لإرفاق المستندات وصور التسليم.";
+"NSPhotoLibraryAddUsageDescription" = "قد تحفظ مَرَاس صور التسليم في مكتبة الصور.";

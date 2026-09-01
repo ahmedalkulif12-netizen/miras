@@ -34,11 +34,18 @@ async function main() {
   if (!/^[A-Z0-9]{10}$/.test(teamId) && !/DEVELOPMENT_TEAM = [A-Z0-9]{10}/.test(xcconfig)) {
     failures.push('Apple Team ID missing. Run: node scripts/set-ios-team-id.mjs YOURTEAMID');
   }
-  if (!appId.endsWith('.com.miras.app') || appId.startsWith('TEAMID')) {
-    failures.push(`AASA appID is not a real Team ID (${appId || 'empty'})`);
+  if (!appId.endsWith('.com.ahmed.miras') || appId.startsWith('TEAMID')) {
+    failures.push(`AASA appID is not TeamID.com.ahmed.miras (${appId || 'empty'})`);
   }
   if (!exportOptions.includes('<string>4TRJXRYK8A</string>') && !/<string>[A-Z0-9]{10}<\/string>/.test(exportOptions)) {
     failures.push('ios/ExportOptions.plist teamID is still a placeholder');
+  }
+  const pbxproj = read('ios/App/App.xcodeproj/project.pbxproj');
+  if (!pbxproj.includes('PRODUCT_BUNDLE_IDENTIFIER = com.ahmed.miras;')) {
+    failures.push('Xcode PRODUCT_BUNDLE_IDENTIFIER must be com.ahmed.miras');
+  }
+  if (!infoPlist.includes('com.ahmed.miras')) {
+    failures.push('Info.plist URL scheme must include com.ahmed.miras');
   }
   if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>') || !infoPlist.includes('<false/>')) {
     failures.push('Info.plist must set ITSAppUsesNonExemptEncryption to false');

@@ -235,7 +235,12 @@ function run(): void {
   assert(
     nativeOpenUrlToSpaPath('com.miras.app://payment-callback?id=pay_1') ===
       '/payment-callback?id=pay_1',
-    'custom scheme maps to SPA path'
+    'Android custom scheme maps to SPA path'
+  );
+  assert(
+    nativeOpenUrlToSpaPath('com.ahmed.miras://payment-callback?id=pay_1') ===
+      '/payment-callback?id=pay_1',
+    'iOS custom scheme maps to SPA path'
   );
   assert(shouldApplyNativeDeepLink('/payment-callback?id=1'), 'payment path is applied');
   assert(!shouldApplyNativeDeepLink('/'), 'root launch URL is ignored');
