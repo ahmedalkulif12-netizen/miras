@@ -1,11 +1,9 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
 import './index.css';
 import './i18n';
-import { ensureFirebaseReady } from '@/lib/firebase';
-import { bootstrapNativeShell } from '@/lib/nativeShell';
-import { AuthLoadingScreen } from '@/components/AuthRouteGuards';
+import { bootstrapNativeShell, hideNativeSplash } from '@/lib/nativeShell';
+import { AuthLoadingScreen, BootstrapErrorScreen } from '@/components/AppBootScreens';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -17,19 +15,28 @@ const root = createRoot(rootElement);
 async function bootstrap() {
   root.render(<AuthLoadingScreen />);
 
-  await bootstrapNativeShell();
-
   try {
-    await ensureFirebaseReady();
-  } catch (error) {
-    console.error('[Firebase] Bootstrap failed — App Check must succeed before Auth/Firestore:', error);
-  }
+    await bootstrapNativeShell();
 
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  );
+    const { ensureFirebaseReady } = await import('@/lib/firebase');
+    try {
+      await ensureFirebaseReady();
+    } catch (error) {
+      console.error('[Firebase] Bootstrap failed — App Check must succeed before Auth/Firestore:', error);
+    }
+
+    const { default: App } = await import('./App.tsx');
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    );
+  } catch (error) {
+    console.error('[app] Native/web bootstrap failed:', error);
+    root.render(<BootstrapErrorScreen error={error} />);
+  } finally {
+    await hideNativeSplash();
+  }
 }
 
 void bootstrap();

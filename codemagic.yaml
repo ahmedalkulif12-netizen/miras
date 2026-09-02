@@ -53,6 +53,7 @@ workflows:
         script: |
           unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
           export NODE_ENV=production
+          export CAPACITOR_BUILD=1
           export VITE_IOS_TEAM_ID="${VITE_IOS_TEAM_ID:-$DEVELOPMENT_TEAM}"
           npx vite build
           npx cap sync ios

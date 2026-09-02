@@ -81,11 +81,25 @@ function appCheckProductionHtmlGuard(): Plugin {
   };
 }
 
+function isCapacitorWebBuild(): boolean {
+  const flag = process.env.CAPACITOR_BUILD?.trim();
+  if (flag === '1' || flag === 'true') return true;
+  const script = process.env.npm_lifecycle_event || '';
+  return script.startsWith('cap:sync') || script.startsWith('cap:run');
+}
+
 // P0-15: Client receives ONLY import.meta.env.VITE_* at build time.
 // Do not use `define` to inject server secrets (Moyasar, webhook, service accounts).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
+  const capacitorBuild = isCapacitorWebBuild();
+  if (capacitorBuild) {
+    console.info('[vite] Capacitor build: base="./" so iOS WKWebView can load bundled assets');
+  }
   return {
+    // Absolute "/assets/…" URLs 404 inside capacitor:// WKWebView → blank white screen.
+    // Firebase Hosting keeps base "/" so deep links like /login still resolve /assets.
+    base: capacitorBuild ? './' : '/',
     plugins: [appCheckProductionHtmlGuard(), appLinksWellKnownPlugin(mode, env), react(), tailwindcss()],
     resolve: {
       alias: {

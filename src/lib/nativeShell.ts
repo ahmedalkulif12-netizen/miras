@@ -11,10 +11,23 @@ import {
 function applyNativeDeepLink(url: string): void {
   const path = nativeOpenUrlToSpaPath(url);
   if (!path || !shouldApplyNativeDeepLink(path)) return;
-  if (`${window.location.pathname}${window.location.search}${window.location.hash}` === path) {
+  const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (current === path) return;
+  // History API only — location.assign('/login') 404s because Capacitor has no SPA rewrites.
+  window.history.replaceState(null, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+export async function hideNativeSplash(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) {
     return;
   }
-  window.location.assign(path);
+  try {
+    const { SplashScreen } = await import('@capacitor/splash-screen');
+    await SplashScreen.hide();
+  } catch (err) {
+    console.warn('[native] SplashScreen hide skipped:', err);
+  }
 }
 
 export async function bootstrapNativeShell(): Promise<void> {
@@ -34,13 +47,6 @@ export async function bootstrapNativeShell(): Promise<void> {
     await StatusBar.show();
   } catch (err) {
     console.warn('[native] StatusBar init skipped:', err);
-  }
-
-  try {
-    const { SplashScreen } = await import('@capacitor/splash-screen');
-    await SplashScreen.hide();
-  } catch (err) {
-    console.warn('[native] SplashScreen hide skipped:', err);
   }
 
   try {

@@ -3,29 +3,19 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { buildLoginRedirectPath, getRoleHomePath, resolvePostLoginPath } from '@/lib/authRouting';
 import { probeAdminAccess, isAuthorizedAdminPhone } from '@/lib/adminAuth';
-import { BrandLogo } from '@/components/BrandLogo';
+import { AuthLoadingScreen } from '@/components/AppBootScreens';
 import {
   APP_ROLES,
   normalizeAppRole,
   type AppRole,
 } from '@/domain/user-schema';
 
+export { AuthLoadingScreen, BootstrapErrorScreen } from '@/components/AppBootScreens';
+
 /** How long guards may wait for a profile before recovering from a half-auth trap. */
 const PROFILE_RESOLVE_TIMEOUT_MS = 45_000;
 /** Admin ACL probe must not hang forever (network / App Check stalls). */
 const ADMIN_PROBE_TIMEOUT_MS = 12_000;
-
-export const AuthLoadingScreen: React.FC = () => (
-  <div className="flex items-center justify-center min-h-dvh bg-[#F8F9FB]">
-    <div className="flex flex-col items-center gap-5">
-      <BrandLogo size={72} withChip withWordmark wordmarkBelow />
-      <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      <p className="text-sm font-medium text-neutral-600 animate-pulse">
-        جاري التحميل... / Loading...
-      </p>
-    </div>
-  </div>
-);
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

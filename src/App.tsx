@@ -42,6 +42,7 @@ const App: React.FC = () => {
           <PostAuthRedirect />
 
           <Routes>
+            <Route path="/index.html" element={<Navigate to="/" replace />} />
             <Route
               path="/"
               element={
