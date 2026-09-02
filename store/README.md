@@ -38,7 +38,7 @@ npm run cap:sync:ios:store
 
 Then on a Mac:
 
-1. Apple Developer: App ID `com.miras.app` with Associated Domains; create the App Store Connect record (iPhone only).
+1. Apple Developer: App ID `com.ahmed.miras` with Associated Domains (`applinks:hamula-cfc6c.web.app`, `applinks:hamula-cfc6c.firebaseapp.com`); create the App Store Connect record (iPhone only).
 2. `npx cap open ios` → Signing & Capabilities → Team `4TRJXRYK8A` → Archive → TestFlight.
 3. App Privacy (nutrition labels): location (trip tracking), contact info (phone), photos (driver docs), identifiers (Firebase Auth). Tracking = no.
 4. Content rating questionnaire; primary category Navigation, secondary Business.
@@ -46,6 +46,9 @@ Then on a Mac:
 6. Upload 6.7" screenshots from `store/ios/iphone-6.7/` after `npm run generate:store-screenshots`.
 
 Privacy: https://ahmedalkulif12-netizen.github.io/miras-privacy/
+Play Data safety answers: `store/play-console/data-safety.json`
+Play listing copy: `fastlane/metadata/android/{en-US,ar}/`
+App Links: set `VITE_ANDROID_SHA256_CERT_FINGERPRINTS` then `npm run deploy:hosting:store`
 Terms (SPA): https://hamula-cfc6c.web.app/terms
 Support: support@miras.com
 

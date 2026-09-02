@@ -68,15 +68,11 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>تستخدم مَرَاس موقعك أثناء استخدام التطبيق لتحديد مواقع الاستلام والتوصيل ولعرض موقع السائق للعميل أثناء الرحلات النشطة. Miras uses your location while you use the app to set pickup and drop-off points and to share a driver's live position with the customer during an active delivery.</string>
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>تستخدم مَرَاس موقعك أثناء الرحلات النشطة لتتبع التوصيل لحظياً وتحديد مواقع الاستلام والتوصيل. يُستخدم الموقع أثناء استخدامك للتطبيق. Miras uses your location during active trips so customers can track their delivery in real time and so pickup and drop-off points can be set. Location is used while you are using the app.</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>تستخدم مَرَاس موقعك أثناء الرحلات النشطة لتتبع التوصيل لحظياً وتحديد مواقع الاستلام والتوصيل. يُستخدم الموقع أثناء استخدامك للتطبيق. Miras uses your location during active trips so customers can track their delivery in real time and so pickup and drop-off points can be set. Location is used while you are using the app.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Miras may use the camera to upload driver documents and delivery photos.</string>
+	<string>تستخدم مَرَاس الكاميرا لرفع مستندات السائق وصور التسليم. Miras may use the camera to upload driver documents and delivery photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Miras may access your photo library to attach documents and delivery photos.</string>
+	<string>تستخدم مَرَاس مكتبة الصور لإرفاق المستندات وصور التسليم. Miras may access your photo library to attach documents and delivery photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Miras may save delivery photos to your photo library.</string>
+	<string>قد تحفظ مَرَاس صور التسليم في مكتبة الصور. Miras may save delivery photos to your photo library.</string>
 </dict>
 </plist>

@@ -53,8 +53,17 @@ async function main() {
   if (!infoPlist.includes('<key>NSLocationWhenInUseUsageDescription</key>')) {
     failures.push('Info.plist must include NSLocationWhenInUseUsageDescription');
   }
-  if (!infoPlist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>')) {
-    failures.push('Info.plist must include NSLocationAlwaysAndWhenInUseUsageDescription');
+  if (infoPlist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>')) {
+    failures.push(
+      'Info.plist must not declare Always location — the app only uses When In Use. Remove NSLocationAlways* keys.'
+    );
+  }
+  const entitlements = read('ios/App/App/App.entitlements');
+  if (!entitlements.includes('applinks:hamula-cfc6c.web.app')) {
+    failures.push('App.entitlements must include applinks:hamula-cfc6c.web.app');
+  }
+  if (!entitlements.includes('applinks:hamula-cfc6c.firebaseapp.com')) {
+    failures.push('App.entitlements must include applinks:hamula-cfc6c.firebaseapp.com');
   }
   if (!exists('ios/App/App/PrivacyInfo.xcprivacy')) {
     failures.push('PrivacyInfo.xcprivacy is missing');

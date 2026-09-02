@@ -56,6 +56,7 @@ function main(): number {
     'VITE_FIREBASE_API_KEY',
     'VITE_FIREBASE_APP_ID',
     'VITE_GOOGLE_MAPS_PLATFORM_KEY',
+    'VITE_APP_CHECK_RECAPTCHA_SITE_KEY',
   ] as const) {
     const present = has(key);
     const detail =
@@ -88,6 +89,26 @@ function main(): number {
       'No App Check debug token',
       !process.env.VITE_APP_CHECK_DEBUG_TOKEN?.trim(),
       process.env.VITE_APP_CHECK_DEBUG_TOKEN ? 'VITE_APP_CHECK_DEBUG_TOKEN must be unset' : 'ok'
+    );
+    push(
+      checks,
+      'VITE_MIRAS_DEPLOY_ENV',
+      (process.env.VITE_MIRAS_DEPLOY_ENV || '').trim() === 'production',
+      process.env.VITE_MIRAS_DEPLOY_ENV?.trim() || 'missing (must be production)'
+    );
+    push(
+      checks,
+      'VITE_APP_URL https',
+      Boolean(process.env.VITE_APP_URL?.trim()?.startsWith('https://')),
+      process.env.VITE_APP_URL?.trim() ? 'set' : 'missing'
+    );
+    push(
+      checks,
+      'App Check not disabled on client',
+      process.env.VITE_APP_CHECK_DISABLED !== 'true',
+      process.env.VITE_APP_CHECK_DISABLED === 'true'
+        ? 'VITE_APP_CHECK_DISABLED=true is forbidden in production'
+        : 'ok'
     );
     const siteKeyRaw = process.env.VITE_APP_CHECK_RECAPTCHA_SITE_KEY?.trim();
     const siteKeyCheck = validateRecaptchaSiteKey(siteKeyRaw);

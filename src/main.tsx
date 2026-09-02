@@ -12,6 +12,19 @@ if (!rootElement) {
 
 const root = createRoot(rootElement);
 
+function showFatal(error: unknown): void {
+  console.error('[app] uncaught exception:', error);
+  root.render(<BootstrapErrorScreen error={error} />);
+  void hideNativeSplash();
+}
+
+window.addEventListener('error', (event) => {
+  if (event.error) showFatal(event.error);
+});
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[app] unhandled promise rejection:', event.reason);
+});
+
 async function bootstrap() {
   root.render(<AuthLoadingScreen />);
 

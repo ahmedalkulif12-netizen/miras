@@ -3,51 +3,38 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
-import { buildAppleAppSiteAssociation, readAppleTeamId } from './scripts/appleTeamId.mjs';
+import { buildAppleAppSiteAssociation, buildDigitalAssetLinks, parseAndroidSha256Fingerprints, readAppleTeamId } from './scripts/appleTeamId.mjs';
 
 /** Emit Digital Asset Links / AASA from env so store App Links verify. */
 function appLinksWellKnownPlugin(mode: string, env: Record<string, string>): Plugin {
   const merged = { ...process.env, ...env };
-  const fingerprints = (
-    merged.VITE_ANDROID_SHA256_CERT_FINGERPRINTS ||
-    merged.ANDROID_SHA256_CERT_FINGERPRINTS ||
-    ''
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const fingerprints = parseAndroidSha256Fingerprints(merged);
   const teamId = readAppleTeamId(merged);
   if (mode !== 'development' && !teamId) {
     console.warn(
       '[app-links] VITE_IOS_TEAM_ID is missing. Hosted apple-app-site-association will not verify Universal Links. Run: node scripts/set-ios-team-id.mjs YOURTEAMID'
     );
   }
+  if (mode !== 'development' && fingerprints.length === 0) {
+    console.warn(
+      '[app-links] VITE_ANDROID_SHA256_CERT_FINGERPRINTS is empty. Hosted assetlinks.json will not verify Android App Links until Play App Signing SHA-256 is set in miras_client.'
+    );
+  }
 
-  const assetLinks = JSON.stringify(
-    [
-      {
-        relation: ['delegate_permission/common.handle_all_urls'],
-        target: {
-          namespace: 'android_app',
-          package_name: 'com.miras.app',
-          sha256_cert_fingerprints: fingerprints,
-        },
-      },
-    ],
-    null,
-    2
-  );
+  const assetLinks = `${JSON.stringify(buildDigitalAssetLinks(fingerprints), null, 2)}\n`;
   const aasa = teamId ? `${JSON.stringify(buildAppleAppSiteAssociation(teamId), null, 2)}\n` : '';
 
   return {
     name: 'app-links-well-known',
     generateBundle() {
       if (mode === 'development') return;
-      this.emitFile({
-        type: 'asset',
-        fileName: '.well-known/assetlinks.json',
-        source: assetLinks,
-      });
+      if (fingerprints.length) {
+        this.emitFile({
+          type: 'asset',
+          fileName: '.well-known/assetlinks.json',
+          source: assetLinks,
+        });
+      }
       if (aasa) {
         this.emitFile({
           type: 'asset',
@@ -81,6 +68,41 @@ function appCheckProductionHtmlGuard(): Plugin {
   };
 }
 
+/** Fail CI/store builds instead of shipping a binary that crashes on missing Firebase config. */
+function requireClientEnvPlugin(mode: string, env: Record<string, string>): Plugin {
+  return {
+    name: 'require-client-env',
+    configResolved() {
+      if (mode === 'development') return;
+      const merged = { ...env, ...process.env };
+      const required = [
+        'VITE_FIREBASE_API_KEY',
+        'VITE_FIREBASE_AUTH_DOMAIN',
+        'VITE_FIREBASE_PROJECT_ID',
+        'VITE_FIREBASE_APP_ID',
+        'VITE_FIREBASE_MESSAGING_SENDER_ID',
+      ];
+      const missing = required.filter((key) => !String(merged[key] || '').trim());
+      if (missing.length) {
+        throw new Error(
+          `[vite] Missing required client env for ${mode} build: ${missing.join(', ')}. ` +
+            'Set them in Codemagic group miras_client or in .env / .env.production.'
+        );
+      }
+      const deploy = String(merged.VITE_MIRAS_DEPLOY_ENV || merged.VITE_HAMOULA_DEPLOY_ENV || '').trim();
+      if (deploy === 'production' && String(merged.VITE_APP_CHECK_DISABLED || '') === 'true') {
+        throw new Error('[vite] VITE_APP_CHECK_DISABLED=true is forbidden when VITE_MIRAS_DEPLOY_ENV=production.');
+      }
+      const requireAppLinks = String(merged.MIRAS_REQUIRE_APP_LINKS || '').trim() === 'true';
+      if (requireAppLinks && parseAndroidSha256Fingerprints(merged).length === 0) {
+        throw new Error(
+          '[vite] VITE_ANDROID_SHA256_CERT_FINGERPRINTS is required for Android App Links / Hosting DAL. Set the Play App Signing SHA-256 in miras_client.'
+        );
+      }
+    },
+  };
+}
+
 function isCapacitorWebBuild(): boolean {
   const flag = process.env.CAPACITOR_BUILD?.trim();
   if (flag === '1' || flag === 'true') return true;
@@ -100,7 +122,13 @@ export default defineConfig(({ mode }) => {
     // Absolute "/assets/…" URLs 404 inside capacitor:// WKWebView → blank white screen.
     // Firebase Hosting keeps base "/" so deep links like /login still resolve /assets.
     base: capacitorBuild ? './' : '/',
-    plugins: [appCheckProductionHtmlGuard(), appLinksWellKnownPlugin(mode, env), react(), tailwindcss()],
+    plugins: [
+      requireClientEnvPlugin(mode, env),
+      appCheckProductionHtmlGuard(),
+      appLinksWellKnownPlugin(mode, env),
+      react(),
+      tailwindcss(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

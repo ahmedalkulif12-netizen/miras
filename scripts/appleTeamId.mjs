@@ -5,6 +5,47 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const ANDROID_PACKAGE = 'com.miras.app';
+const SHA256_RE = /^[A-F0-9]{2}(:[A-F0-9]{2}){31}$/;
+
+export function parseAndroidSha256Fingerprints(env = process.env) {
+  const raw = String(
+    env.VITE_ANDROID_SHA256_CERT_FINGERPRINTS || env.ANDROID_SHA256_CERT_FINGERPRINTS || ''
+  );
+  return raw
+    .split(/[,;\s]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+export function assertAndroidSha256Fingerprints(fingerprints) {
+  if (!fingerprints.length) {
+    throw new Error(
+      'VITE_ANDROID_SHA256_CERT_FINGERPRINTS is empty. In Play Console → App integrity → App signing, copy the SHA-256 certificate fingerprint (colon-separated) into Codemagic group miras_client and .env.production.'
+    );
+  }
+  const invalid = fingerprints.filter((value) => !SHA256_RE.test(value));
+  if (invalid.length) {
+    throw new Error(
+      `Android SHA-256 fingerprints must be 32 colon-separated hex bytes (AA:BB:…). Invalid: ${invalid.length} value(s).`
+    );
+  }
+  return fingerprints;
+}
+
+export function buildDigitalAssetLinks(fingerprints) {
+  return [
+    {
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: ANDROID_PACKAGE,
+        sha256_cert_fingerprints: fingerprints,
+      },
+    },
+  ];
+}
+
 const BUNDLE_ID = 'com.ahmed.miras';
 const TEAM_ID_RE = /^[A-Z0-9]{10}$/;
 

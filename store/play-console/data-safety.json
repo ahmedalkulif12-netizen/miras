@@ -1,0 +1,28 @@
+{
+  "applicationId": "com.miras.app",
+  "privacyPolicyUrl": "https://ahmedalkulif12-netizen.github.io/miras-privacy/",
+  "dataSafety": {
+    "collects": [
+      "Approximate and precise location (trip pickup, drop-off, live driver share while in use)",
+      "Phone number and name (account)",
+      "Photos (driver documents and delivery proof)",
+      "User IDs (Firebase Auth)",
+      "App activity (orders and trip status)"
+    ],
+    "notCollected": [
+      "Advertising ID",
+      "Full payment card numbers or CVV (processed by Moyasar hosted checkout)"
+    ],
+    "shared": [
+      "Limited trip contact/location with the assigned driver or customer",
+      "Infrastructure: Firebase, Google Maps, Moyasar"
+    ],
+    "securityPractices": [
+      "Data encrypted in transit (HTTPS)",
+      "Users can request account deletion in-app"
+    ],
+    "advertisingId": false,
+    "dataEncryptedInTransit": true,
+    "usersCanRequestDeletion": true
+  }
+}

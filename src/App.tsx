@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import { MapsWrapper } from '@/components/MapsWrapper';
 import { AuthGuestRoute, CatchAllRedirect, ProtectedRoute } from '@/components/AuthRouteGuards';
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { useAuthSurfaceRedirect } from '@/hooks/usePostLoginRedirect';
 import { APP_ROLES } from '@/domain/user-schema';
 
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const isRtl = i18n.language === 'ar';
 
   return (
+    <AppErrorBoundary>
     <AuthProvider>
       <Router>
         <div className="min-h-dvh bg-white font-sans antialiased text-black" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -172,6 +174,7 @@ const App: React.FC = () => {
         </div>
       </Router>
     </AuthProvider>
+    </AppErrorBoundary>
   );
 };
 

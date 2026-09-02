@@ -1,0 +1,18 @@
+Miras (مَرَاس) is a logistics platform for booking trucks and cargo across Saudi Arabia.
+
+Whether you are moving home furniture, heavy equipment on a flatbed, refrigerated goods, or water tankers — inside the city or between cities — Miras gives you a fleet at the push of a button.
+
+Customers
+• Choose a service and see an instant distance-based quote in Saudi Riyal
+• Confirm pickup and destination on the map
+• Pay through Moyasar hosted checkout (Mada, Visa, Mastercard, Apple Pay). Card numbers are never typed inside the app
+• Track the trip while the driver is on the way
+
+Drivers and fleet partners
+• Go on shift and receive nearby jobs
+• Navigate to pickup and delivery
+• Upload documents and delivery photos
+• Get paid through the in-app wallet
+
+Privacy policy: https://ahmedalkulif12-netizen.github.io/miras-privacy/
+Support: support@miras.com

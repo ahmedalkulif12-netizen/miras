@@ -1,6 +1,6 @@
 # Mobile deployment (Capacitor — Android & iOS)
 
-Miras ships as a Capacitor WebView app (`com.hamoula.app`) with the Vite SPA in `dist/`.
+Miras ships as a Capacitor WebView app. Android applicationId is `com.miras.app`. iOS App Store bundle ID is `com.ahmed.miras`.
 
 ## Prerequisites
 
@@ -11,7 +11,7 @@ Miras ships as a Capacitor WebView app (`com.hamoula.app`) with the Vite SPA in 
 
 ## One-time native Firebase files
 
-These are generated from Firebase project **`hamula-cfc6c`** for package/bundle id `com.hamoula.app`:
+These are generated from Firebase project **`hamula-cfc6c`** for Android `com.miras.app` and iOS `com.ahmed.miras`:
 
 | Platform | File | Location | App ID |
 |----------|------|----------|--------|
