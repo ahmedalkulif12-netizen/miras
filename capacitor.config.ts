@@ -19,12 +19,13 @@ const config: CapacitorConfig = {
   // Serve the SPA from the local Capacitor host (bundled assets).
   server: {
     androidScheme: 'https',
+    // iOS forbids http/https/file as iosScheme — capacitor:// is required.
     iosScheme: 'capacitor',
-    // Public Hosting host so Android App Links share the Moyasar HTTPS origin.
+    // Same host as Firebase Auth authorized domains / Phone Auth reCAPTCHA.
     hostname: 'hamula-cfc6c.web.app',
+    // Never list this app's own hostname here — Capacitor will then load the
+    // remote Hosting site instead of ios/App/App/public and TestFlight shows white.
     allowNavigation: [
-      'https://hamula-cfc6c.web.app',
-      'https://hamula-cfc6c.firebaseapp.com',
       'https://*.googleapis.com',
       'https://*.firebaseapp.com',
       'https://*.firebaseio.com',
@@ -39,7 +40,7 @@ const config: CapacitorConfig = {
   plugins: {
     SplashScreen: {
       launchShowDuration: 0,
-      launchAutoHide: true,
+      launchAutoHide: false,
       backgroundColor: '#F8F9FB',
       showSpinner: false,
       androidSplashResourceName: 'splash',
@@ -64,7 +65,7 @@ const config: CapacitorConfig = {
   },
   ios: {
     backgroundColor: '#F8F9FB',
-    contentInset: 'automatic',
+    contentInset: 'never',
     preferredContentMode: 'mobile',
     scrollEnabled: true,
     allowsLinkPreview: false,
