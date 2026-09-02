@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Miras "M" mark — safe zone centered -->
+    <path
+        android:fillColor="#1E1E2F"
+        android:pathData="M34,78V38h11.2l10.8 26.4L66.8,38H78v40H69.4V54.4L59.8,78H48.2L38.6,54.4V78H34z" />
+</vector>

@@ -30,6 +30,7 @@
     "fix:ios-spm-app-check": "node scripts/fix-ios-spm-app-check.mjs",
     "generate:assets": "node scripts/generate-native-assets.mjs",
     "generate:store-screenshots": "node scripts/prepare-store-screenshots.mjs",
+    "resize:ios-screenshots-65": "node scripts/resize-ios-screenshots-65.mjs",
     "ios:set-team-id": "node scripts/set-ios-team-id.mjs",
     "verify:ios-store": "node scripts/verify-ios-store.mjs",
     "ios:prepare-store": "node scripts/prepare-ios-store.mjs",
@@ -42,7 +43,8 @@
     "agents": "tsx src/agents/whatsapp.js",
     "start:agents": "tsx src/agents/whatsapp.js",
     "dev:agents": "tsx src/agents/whatsapp.js",
-    "verify:mail": "tsx scripts/verify-mail.mjs"
+    "verify:mail": "tsx scripts/verify-mail.mjs",
+    "diag:imap": "tsx scripts/diag-imap-inbox.mjs"
   },
   "engines": {
     "node": ">=20"

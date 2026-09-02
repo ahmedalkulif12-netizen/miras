@@ -14,6 +14,12 @@ import {
 } from '../src/lib/authRouting.ts';
 import type { UserProfile } from '../src/lib/userProfile.ts';
 import { assert, assertEqual } from '../e2e/helpers/assert.ts';
+import {
+  APP_REVIEW_OTP,
+  APP_REVIEW_PHONE_E164,
+  isValidAppReviewOtp,
+  matchAppReviewTestPhone,
+} from '../src/lib/appReviewAuth.ts';
 
 function profile(role: UserProfile['role'], uid = 'uid-1'): UserProfile {
   return {
@@ -25,6 +31,14 @@ function profile(role: UserProfile['role'], uid = 'uid-1'): UserProfile {
 }
 
 function run(): void {
+  assert(matchAppReviewTestPhone(APP_REVIEW_PHONE_E164), 'review E.164 matches');
+  assert(matchAppReviewTestPhone('0500000000'), 'review local matches');
+  assert(matchAppReviewTestPhone('966500000000'), 'review digits match');
+  assert(!matchAppReviewTestPhone('+966500000001'), 'other numbers are not the review account');
+  assert(isValidAppReviewOtp(APP_REVIEW_OTP), 'review OTP matches');
+  assert(isValidAppReviewOtp('123456'), 'review OTP digits match');
+  assert(!isValidAppReviewOtp('000000'), 'wrong OTP is rejected');
+
   // Existing client — skip onboarding, even if the login tab was "driver".
   const existingClient = resolvePostOtpAuth({
     existingProfile: profile(APP_ROLES.B2C_CLIENT),

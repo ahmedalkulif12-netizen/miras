@@ -1,0 +1,19 @@
+Miras uses location only while a trip is active so the customer can track the driver. Camera and photo library are used for driver documents and delivery photos.
+
+Sign-in is Saudi mobile OTP. For App Review, use this static test account (no SMS is sent):
+
+Demo phone: +966500000000 (or 0500000000)
+Demo OTP: 123456
+
+1. Open the app → Log in → Customer
+2. Accept Terms
+3. Enter 0500000000 → Send code
+4. Enter 123456
+
+You will land on the customer dashboard. Real user numbers still require a live SMS OTP.
+
+Payments go through Moyasar hosted checkout at https://hamula-cfc6c.web.app/payment-callback. Do not use a real card if the build still uses test keys; skip wallet top-up if you only need to review booking and tracking.
+
+Privacy: https://ahmedalkulif12-netizen.github.io/miras-privacy/
+Terms: https://hamula-cfc6c.web.app/terms
+Support: support@miras.com

@@ -1,0 +1,166 @@
+{
+  "entities": {
+    "Pricing": {
+      "title": "Pricing Configuration",
+      "description": "Per-service tier pricing: base ≤ 25 km + SAR/km after. Overrides live in pricing/{serviceType}.",
+      "type": "object",
+      "properties": {
+        "base_price": { "type": "number", "description": "Default tier base price (SAR) for up to included_km" },
+        "price_per_km": { "type": "number", "description": "Default tier extra-km rate (SAR)" },
+        "free_km": { "type": "number", "description": "Alias of included_km (always 25)" },
+        "included_km": { "type": "number", "description": "Kilometers included in base price (25 for all services)" },
+        "max_price": { "type": "number", "description": "Optional absolute maximum (unused in 2026-08 matrix)" },
+        "min_price": { "type": "number", "description": "Minimum guaranteed price" },
+        "minimum_price": { "type": "number", "description": "Legacy field for min_price" },
+        "heavy_multiplier": { "type": "number", "description": "Deprecated — kept at 1; tiers replace multipliers" },
+        "cold_multiplier": { "type": "number", "description": "Deprecated — kept at 1; tiers replace multipliers" },
+        "hydraulic_multiplier": { "type": "number", "description": "Deprecated — kept at 1; hydraulic is its own tier" },
+        "max_price_outside": { "type": "number", "description": "Legacy outside-city cap" },
+        "surge_multiplier": { "type": "number", "description": "Global demand multiplier (default 1.0)" },
+        "platform_commission_percentage": { "type": "number", "description": "Driver commission % (15)" },
+        "customer_service_fee_percentage": { "type": "number", "description": "Client service fee % (5)" },
+        "fee_policy_version": { "type": "string", "description": "e.g. 2026-08" },
+        "tier_prices": {
+          "type": "object",
+          "description": "Map of tier key → { base_price, price_per_km }",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "base_price": { "type": "number" },
+              "price_per_km": { "type": "number" }
+            },
+            "required": ["base_price", "price_per_km"]
+          }
+        },
+        "capacity_prices": {
+          "type": "object",
+          "description": "Legacy water-tanker base-only map; prefer tier_prices",
+          "additionalProperties": { "type": "number" }
+        }
+      },
+      "required": ["platform_commission_percentage", "surge_multiplier"]
+    },
+    "Order": {
+      "title": "Transport Order",
+      "description": "Customer order details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "serviceType": { "type": "string" },
+        "truckType": { "type": "string", "description": "Flatbed tier alias: normal | hydraulic | box" },
+        "tripType": { "type": "string", "enum": ["inside_city", "outside_city"] },
+        "serviceDetails": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "description": "Resolved pricing tier key" },
+            "capacity": { "type": "string", "description": "Water tanker capacity e.g. 1000L" }
+          }
+        },
+        "pickup": { "type": "string" },
+        "pickupCity": { "type": "string" },
+        "destination": { "type": "string" },
+        "dropoffCity": { "type": "string" },
+        "distance": { "type": "number", "description": "Geographic km only" },
+        "distanceKm": { "type": "number", "description": "Geographic km only" },
+        "totalPrice": { "type": "number" },
+        "commission_amount": { "type": "number", "description": "Platform share (15% of tripFare)" },
+        "driver_earning": { "type": "number", "description": "Driver net (tripFare − 15%)" },
+        "financials": {
+          "type": "object",
+          "properties": {
+            "currency": { "type": "string" },
+            "feePolicyVersion": { "type": "string" },
+            "tripFare": { "type": "number" },
+            "serviceFee": { "type": "number" },
+            "customerTotal": { "type": "number" },
+            "platformFee": { "type": "number" },
+            "driverNet": { "type": "number" }
+          }
+        },
+        "isPriceCapApplied": { "type": "boolean" },
+        "status": { "type": "string" },
+        "pricing_snapshot": {
+          "type": "object",
+          "properties": {
+            "base_price": { "type": "number" },
+            "price_per_km": { "type": "number" },
+            "included_km": { "type": "number" },
+            "tier": { "type": "string" },
+            "line_base": { "type": "number" },
+            "line_extra_km_cost": { "type": "number" },
+            "line_subtotal": { "type": "number" },
+            "surge_multiplier": { "type": "number" },
+            "platform_commission_percentage": { "type": "number" },
+            "customer_service_fee_percentage": { "type": "number" },
+            "fee_policy_version": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "serviceType", "tripType", "distance", "totalPrice", "commission_amount", "driver_earning", "status", "createdAt", "pricing_snapshot"]
+    },
+    "Wallet": {
+      "title": "Driver Wallet",
+      "description": "Balance and earnings for a driver",
+      "type": "object",
+      "properties": {
+        "driverId": { "type": "string" },
+        "balance": { "type": "number" },
+        "currency": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["driverId", "balance", "updatedAt"]
+    },
+    "Payment": {
+      "title": "Payment Transaction",
+      "description": "Financial transaction details",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "userId": { "type": "string" },
+        "driverId": { "type": "string" },
+        "amount": { "type": "number" },
+        "platformFee": { "type": "number" },
+        "driverAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "authorized", "captured", "failed", "refunded"] },
+        "paymentMethod": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "userId", "amount", "status", "createdAt"]
+    },
+    "Subscription": {
+      "title": "User Subscription",
+      "description": "Tier and commission reduction details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "tier": { "enum": ["Basic", "Pro", "Premium"] },
+        "commission_rate": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/pricing/{configId}": {
+      "schema": "Pricing",
+      "description": "Dynamic pricing configuration documents (one per serviceType)"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer orders"
+    },
+    "/wallets/{driverId}": {
+      "schema": "Wallet",
+      "description": "Driver financial balances"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment transactions"
+    },
+    "/subscriptions/{userId}": {
+      "schema": "Subscription",
+      "description": "User subscription tiers"
+    }
+  }
+}

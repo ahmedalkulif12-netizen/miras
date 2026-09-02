@@ -6,6 +6,7 @@
  */
 import nodemailer from 'nodemailer';
 import { SUPPORT_EMAIL } from '../lib/supportContact.ts';
+import { classifyInboundMail, isPromoSkipCode, verbosePromoLogs } from './mailFilter.js';
 
 function mailLog(channel, event, details = {}) {
   const parts = Object.entries(details)
@@ -247,6 +248,11 @@ export function autoAckEnabled() {
 /** @type {{ at: string, from: string, subject: string, urgency: string, acked: boolean }[]} */
 const handledTickets = [];
 let workerStartedAt = null;
+let promoSkippedTotal = 0;
+
+function notePromoSkip() {
+  promoSkippedTotal += 1;
+}
 
 export function markWorkerStarted() {
   workerStartedAt = new Date();
@@ -270,6 +276,7 @@ export function getWorkerStats() {
   return {
     startedAt: workerStartedAt ? workerStartedAt.toISOString() : null,
     ticketsHandled: handledTickets.length,
+    promoSkipped: promoSkippedTotal,
     lastTicket: handledTickets[handledTickets.length - 1] || null,
     autoAck: autoAckEnabled(),
     admin: adminEmail(),
@@ -286,6 +293,11 @@ export async function sendCustomerAcknowledgement(mail) {
     sameMailbox(to, getMailConfig().from)
   ) {
     mailLog('ack', 'SKIP self/admin sender', { to });
+    return null;
+  }
+  const classified = classifyInboundMail(mail);
+  if (classified.skip) {
+    mailLog('ack', 'SKIP promo sender', { to, reason: classified.reason });
     return null;
   }
   const subject = String(mail?.subject || '').trim();
@@ -348,6 +360,7 @@ export async function sendOperationalDigestEmail(options = {}) {
     `IMAP watch: ${imap.user} @ ${imap.host}:${imap.port}`,
     `Worker started: ${stats.startedAt || 'now'}`,
     `Tickets handled this process: ${stats.ticketsHandled}`,
+    `Promotional mail ignored: ${stats.promoSkipped}`,
     `Customer auto-ack: ${autoAckEnabled() ? 'on' : 'off'}`,
     extra ? `\n${extra}` : '',
     '',
@@ -509,7 +522,28 @@ function shouldSkipInboundMail(mail) {
     if (!hitlSubject && !hitlBody) return 'outbound-echo';
     return '';
   }
+  const classified = classifyInboundMail(mail);
+  if (classified.skip) {
+    return `promo:${classified.reason}`;
+  }
   return '';
+}
+
+function logInboundSkip(source, skip, mail) {
+  if (isPromoSkipCode(skip)) {
+    notePromoSkip();
+    if (verbosePromoLogs()) {
+      mailLog('imap', 'SKIP promo', {
+        from: mail.from,
+        subject: mail.subject,
+        reason: skip.replace(/^promo:/, ''),
+        source,
+      });
+    }
+    return;
+  }
+  const label = source === 'historical' ? `HISTORICAL SKIP ${skip}` : `SKIP ${skip.replace(/-/g, ' ')}`;
+  mailLog('imap', label, { from: mail.from, subject: mail.subject });
 }
 
 /**
@@ -532,6 +566,7 @@ export async function fetchUnreadInboxMessages(options = {}) {
   });
   const collected = [];
   let skipped = 0;
+  let promoSkipped = 0;
   try {
     await client.connect();
     const box = await client.mailboxOpen('INBOX');
@@ -572,7 +607,8 @@ export async function fetchUnreadInboxMessages(options = {}) {
         const skip = shouldSkipInboundMail(mail);
         if (skip) {
           skipped += 1;
-          mailLog('imap', `HISTORICAL SKIP ${skip}`, { from: mail.from, subject: mail.subject });
+          if (isPromoSkipCode(skip)) promoSkipped += 1;
+          logInboundSkip(source, skip, mail);
           continue;
         }
         collected.push({
@@ -594,8 +630,11 @@ export async function fetchUnreadInboxMessages(options = {}) {
   mailLog('imap', 'HISTORICAL FETCH DONE', {
     queued: collected.length,
     skipped,
+    promoSkipped,
     source,
   });
+  collected.promoSkipped = promoSkipped;
+  collected.skipped = skipped;
   return collected;
 }
 
@@ -604,6 +643,7 @@ export async function sendUnreadCatchupReport(processed = []) {
   if (!to) throw new Error('MIRAS_ADMIN_EMAIL is not set');
   const ok = processed.filter((item) => item.ok);
   const failed = processed.filter((item) => !item.ok);
+  const promoSkipped = Number(processed.promoSkipped || 0);
   const blocks = processed.length
     ? processed.map((item, index) => {
         const mail = item.mail || {};
@@ -633,12 +673,14 @@ export async function sendUnreadCatchupReport(processed = []) {
     `Support: ${supportEmail()}`,
     `Historical unread processed: ${ok.length}`,
     `Failed: ${failed.length}`,
+    `Promotional / newsletter ignored: ${promoSkipped}`,
     '',
-    'Messages',
-    '--------',
+    'Customer messages',
+    '-----------------',
     ...blocks,
     '',
-    'Each customer above received an automated acknowledgement (when auto-ack is on).',
+    'Only genuine customer or personal messages receive an automated acknowledgement.',
+    'Promotional, marketing, and newsletter mail is ignored and is not listed above.',
     'Reply OK / NO on individual [Miras support] emails to send the drafted follow-up.',
   ].join('\n');
 
@@ -653,6 +695,7 @@ export async function sendUnreadCatchupReport(processed = []) {
     to,
     processed: ok.length,
     failed: failed.length,
+    promoSkipped,
     id: result.messageId,
   });
   return result;
@@ -664,7 +707,10 @@ export async function sendUnreadCatchupReport(processed = []) {
 export async function processHistoricalUnreadMail(onMail) {
   mailLog('imap', 'HISTORICAL CATCH-UP START', { inbox: getImapConfig().user });
   const unread = await fetchUnreadInboxMessages({ historical: true });
-  mailLog('imap', 'HISTORICAL UNREAD FOUND', { count: unread.length });
+  mailLog('imap', 'HISTORICAL UNREAD FOUND', {
+    count: unread.length,
+    promoSkipped: unread.promoSkipped || 0,
+  });
   const processed = [];
   for (const mail of unread) {
     mailLog('imap', 'HISTORICAL PROCESSING', {
@@ -691,7 +737,10 @@ export async function processHistoricalUnreadMail(onMail) {
   mailLog('imap', 'HISTORICAL CATCH-UP DONE', {
     processed: processed.filter((item) => item.ok).length,
     failed: processed.filter((item) => !item.ok).length,
+    promoSkipped: unread.promoSkipped || 0,
   });
+  processed.promoSkipped = unread.promoSkipped || 0;
+  processed.skipped = unread.skipped || 0;
   return processed;
 }
 
@@ -702,12 +751,23 @@ async function parseImapMessage(message) {
     parsed.from?.value?.[0]?.address ||
     message.envelope?.from?.[0]?.address ||
     '';
+  const headerObject = {};
+  if (parsed.headers && typeof parsed.headers.forEach === 'function') {
+    parsed.headers.forEach((value, key) => {
+      headerObject[String(key).toLowerCase()] = value;
+    });
+  }
   return {
     messageId: String(parsed.messageId || message.envelope?.messageId || message.uid || ''),
     from,
     subject: String(parsed.subject || message.envelope?.subject || '(no subject)'),
     text: String(parsed.text || parsed.html || '').replace(/<[^>]+>/g, ' ').trim(),
     date: parsed.date || null,
+    headers: headerObject,
+    listUnsubscribe: String(headerObject['list-unsubscribe'] || ''),
+    listId: String(headerObject['list-id'] || ''),
+    precedence: String(headerObject.precedence || ''),
+    autoSubmitted: String(headerObject['auto-submitted'] || ''),
   };
 }
 
@@ -730,6 +790,8 @@ export async function startSupportInboxWatcher(onMail) {
   const drainUnseen = async (imap) => {
     const lock = await imap.getMailboxLock('INBOX');
     let fetched = 0;
+    let promoSkipped = 0;
+    let customers = 0;
     try {
       for await (const message of imap.fetch({ seen: false }, { envelope: true, source: true, uid: true })) {
         if (stopped) break;
@@ -743,7 +805,6 @@ export async function startSupportInboxWatcher(onMail) {
         }
         const id = mail.messageId || `uid-${message.uid}`;
         if (processedMessageIds.has(id)) {
-          mailLog('imap', 'SKIP duplicate', { from: mail.from, subject: mail.subject, id });
           continue;
         }
         processedMessageIds.add(id);
@@ -753,18 +814,16 @@ export async function startSupportInboxWatcher(onMail) {
           /* mark-seen is best-effort */
         }
         const skip = shouldSkipInboundMail(mail);
-        if (skip === 'support-self') {
-          mailLog('imap', 'SKIP support-self', { from: mail.from, subject: mail.subject });
+        if (skip) {
+          if (isPromoSkipCode(skip)) promoSkipped += 1;
+          logInboundSkip('live', skip, mail);
           continue;
         }
-        if (skip === 'outbound-echo') {
-          mailLog('imap', 'SKIP outbound echo', { from: mail.from, subject: mail.subject });
-          continue;
-        }
+        customers += 1;
         if (sameMailbox(mail.from, getMailConfig().from)) {
           mailLog('imap', 'ADMIN HITL REPLY', { from: mail.from, subject: mail.subject });
         } else {
-          mailLog('imap', mail.source === 'historical' ? 'HISTORICAL INCOMING' : 'INCOMING DETECTED', {
+          mailLog('imap', 'INCOMING DETECTED', {
             from: mail.from,
             subject: mail.subject,
             uid: message.uid,
@@ -775,7 +834,7 @@ export async function startSupportInboxWatcher(onMail) {
     } finally {
       lock.release();
     }
-    return fetched;
+    return { fetched, promoSkipped, customers };
   };
 
   const loop = async () => {
@@ -792,12 +851,14 @@ export async function startSupportInboxWatcher(onMail) {
         await client.mailboxOpen('INBOX');
         mailLog('imap', 'WATCHING', { user: cfg.user, host: `${cfg.host}:${cfg.port}`, pollMs: cfg.pollMs });
         while (!stopped && client.usable) {
-          const fetched = await drainUnseen(client);
+          const batch = await drainUnseen(client);
           pollCount += 1;
-          if (pollCount === 1 || pollCount % 4 === 0) {
+          if (pollCount === 1 || pollCount % 4 === 0 || batch.customers > 0) {
             mailLog('imap', 'POLL heartbeat', {
               n: pollCount,
-              unseenBatch: fetched,
+              unseenBatch: batch.fetched,
+              customers: batch.customers,
+              promoSkipped: batch.promoSkipped,
               inbox: cfg.user,
             });
           }

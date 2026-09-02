@@ -71,10 +71,13 @@ async function main() {
   }
 
   const reviewNotes = read('fastlane/metadata/ios/review_information/notes.txt');
+  const demoUser = read('fastlane/metadata/ios/review_information/demo_user.txt').trim();
+  const demoOtp = read('fastlane/metadata/ios/review_information/demo_password.txt').trim();
+  if (demoUser !== '+966500000000' || demoOtp !== '123456') {
+    failures.push('App Review demo login must be +966500000000 / 123456');
+  }
   if (reviewNotes.includes('REPLACE_WITH_FIREBASE_TEST_PHONE')) {
-    console.warn(
-      '[ios-store] App Review still needs a Firebase test phone in fastlane/metadata/ios/review_information/'
-    );
+    failures.push('App Review notes still contain Firebase test-phone placeholders');
   }
 
   if (failures.length) {

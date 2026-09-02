@@ -29,6 +29,7 @@ import {
   sendCustomerAcknowledgement,
   recordSupportTicket,
 } from './email.js';
+import { classifyInboundMail } from './mailFilter.js';
 import { runPayoutsAgent, executePayoutsAction } from './payouts.js';
 
 const WORKERS = ['developer', 'firebase', 'email', 'payouts'];
@@ -413,6 +414,10 @@ export async function requestEmailApproval(interruptValue, threadId) {
  * draft a reply, and email the admin a summary + action items from the support mailbox.
  */
 export async function handleInboundCustomerEmail(mail) {
+  const classified = classifyInboundMail(mail);
+  if (classified.skip) {
+    return { skipped: true, reason: classified.reason, acked: false, brief: null, evaluation: null };
+  }
   const evaluation = await evaluateSupportIssue(mail);
   const threadId = `support-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const customer = mail?.from || evaluation.from || '';

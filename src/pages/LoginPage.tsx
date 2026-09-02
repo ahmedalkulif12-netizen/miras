@@ -52,6 +52,10 @@ import {
   isDevAuthBypassEnabled,
   matchDemoBypassPhone,
 } from '@/lib/devAuthBypass';
+import {
+  isValidAppReviewOtp,
+  matchAppReviewTestPhone,
+} from '@/lib/appReviewAuth';
 
 /** Resolve landing CTA deep-links (`?role=`) to a registrable login role. */
 function parseLoginRoleParam(value: string | null): LoginRole | null {
@@ -139,6 +143,7 @@ const LoginPage: React.FC = () => {
     cancelPhoneOtpFlow,
     logout,
     loginAsDevBypass,
+    loginAsAppReviewTestUser,
     user,
     profile,
   } = useAuth();
@@ -250,6 +255,18 @@ const LoginPage: React.FC = () => {
       return;
     }
 
+    if (matchAppReviewTestPhone(phone)) {
+      if (!acceptedTerms) {
+        toast.error(isRtl ? 'يرجى الموافقة على الشروط والأحكام' : 'Please accept the Terms & Conditions');
+        return;
+      }
+      if (isSubmitting) return;
+      setStep('otp');
+      setResendCooldown(30);
+      toast.success(isRtl ? 'تم إرسال رمز التحقق إلى جوالك' : 'Verification code sent to your phone');
+      return;
+    }
+
     if (!acceptedTerms) {
       toast.error(isRtl ? 'يرجى الموافقة على الشروط والأحكام' : 'Please accept the Terms & Conditions');
       return;
@@ -335,6 +352,29 @@ const LoginPage: React.FC = () => {
       } catch (error) {
         console.error('[Login] demo OTP bypass failed:', error);
         toast.error(isRtl ? 'فشل الدخول التجريبي' : 'Demo login failed');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    if (matchAppReviewTestPhone(phone)) {
+      if (!isValidAppReviewOtp(code)) {
+        toast.error(isRtl ? 'رمز التحقق غير صحيح' : 'Invalid verification code');
+        return;
+      }
+      try {
+        setIsSubmitting(true);
+        const targetRole =
+          role === APP_ROLES.B2C_CLIENT || role === APP_ROLES.B2C_DRIVER
+            ? role
+            : APP_ROLES.B2C_CLIENT;
+        const session = await loginAsAppReviewTestUser(targetRole);
+        toast.success(isRtl ? 'تم تسجيل الدخول بنجاح' : 'Signed in successfully');
+        goToRoleHome(session);
+      } catch (error) {
+        console.error('[Login] App Review OTP login failed:', error);
+        toast.error(isRtl ? 'فشل تسجيل الدخول' : 'Sign-in failed');
       } finally {
         setIsSubmitting(false);
       }
@@ -531,6 +571,13 @@ const LoginPage: React.FC = () => {
 
   const handleResendOtp = async () => {
     if (isSubmitting || resendCooldown > 0) {
+      return;
+    }
+
+    if (matchAppReviewTestPhone(phone)) {
+      setOtp('');
+      setResendCooldown(30);
+      toast.success(t('otp_resent'));
       return;
     }
 

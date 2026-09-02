@@ -1,0 +1,7 @@
+# Agent Instructions for Meras App
+- **App Overview:** This is a logistics application named "Meras" built with Vite, React 19, and TypeScript. Web is the primary runtime; Android and iOS are Capacitor WebView shells (`com.miras.app`) sharing the same SPA — not React Native.
+- **Critical Services:** The app contains active integrations with Google Maps and the Moyasar Payment Gateway. Do NOT delete, modify, or break any API keys or integration files related to these services without explicit permission.
+- **Workflow Rules:**
+  1. Always read and analyze the existing codebase before making any changes.
+  2. Briefly explain the proposed solution before executing code modifications.
+  3. Keep the codebase clean, modular, and fully compatible across Web and Mobile (Capacitor) platforms.

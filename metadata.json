@@ -1,0 +1,13 @@
+{
+  "name": "Miras - Logistics Platform",
+  "description": "Specialized platform for furniture moving, flatbeds, tankers, and heavy equipment. Integrated logistics solutions.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "real-time-logistics-tracking",
+    "dynamic-pricing-system",
+    "phone-auth-simulation",
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

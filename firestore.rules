@@ -1,0 +1,463 @@
+rules_version = '2';
+
+/**
+ * Miras — production Firestore security rules.
+ *
+ * Order / payment creates & money mutations go through Admin SDK (Cloud Functions /
+ * Express API). Clients get least-privilege reads and narrow field updates only.
+ *
+ * Admin check: custom claim `admin == true` OR document `admins/{uid}` with active.
+ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isTokenAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(uid())).data;
+    }
+
+    function hasUserDoc() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()));
+    }
+
+    function userRole() {
+      return hasUserDoc() ? userDoc().role : '';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.admin == true
+        || (
+          exists(/databases/$(database)/documents/admins/$(uid()))
+          && get(/databases/$(database)/documents/admins/$(uid())).data.active == true
+        )
+      );
+    }
+
+    function isClientRole() {
+      return userRole() in ['b2c_client', 'customer'];
+    }
+
+    function isDriverRole() {
+      return userRole() in ['b2c_driver', 'driver'];
+    }
+
+    function isCorporateRole() {
+      return userRole() in ['b2b_corporate', 'corporate'];
+    }
+
+    function isOperatorRole() {
+      return userRole() in ['b2b_operator', 'operator'];
+    }
+
+    function orderData() {
+      return resource.data;
+    }
+
+    function hasOrderResource() {
+      return resource != null;
+    }
+
+    function isOrderCustomer() {
+      return isSignedIn()
+        && hasOrderResource()
+        && (
+          orderData().userId == uid()
+          || orderData().clientId == uid()
+          || orderData().customerId == uid()
+        );
+    }
+
+    function isOrderDriver() {
+      return isSignedIn() && hasOrderResource() && orderData().driverId == uid();
+    }
+
+    function isOpenOffer() {
+      return hasOrderResource()
+        && orderData().status in [
+          'broadcasting', 'payment_authorized', 'searching_driver', 'pending'
+        ];
+    }
+
+    function isDriverAccount() {
+      return isSignedIn() && (
+        isDriverRole()
+        || exists(/databases/$(database)/documents/drivers/$(uid()))
+        || (
+          hasUserDoc()
+          && userDoc().role in ['b2c_driver', 'driver']
+        )
+      );
+    }
+
+    // Status-only offer queries are valid for any signed-in caller.
+    // Vehicle/category matching stays on the client.
+    function canReadOpenOffer() {
+      return isSignedIn() && isOpenOffer();
+    }
+
+    function sameOrderOwner() {
+      return !('userId' in resource.data)
+        || request.resource.data.userId == resource.data.userId;
+    }
+
+    function isApprovedDriverAccount() {
+      return exists(/databases/$(database)/documents/drivers/$(uid()))
+        && get(/databases/$(database)/documents/drivers/$(uid())).data.accountStatus in [
+          'approved', 'active'
+        ];
+    }
+
+    // Authenticated approved driver claiming a live offer (موافقة الطلب).
+    // Requires signed-in auth, approved accountStatus, and driverId == caller.
+    function isDriverClaimingOpenOffer() {
+      return request.auth != null
+        && isApprovedDriverAccount()
+        && isOpenOffer()
+        && request.resource.data.driverId == request.auth.uid
+        && request.resource.data.status in ['assigned', 'accepted']
+        && sameOrderOwner();
+    }
+
+    // ── users/{uid} ─────────────────────────────────────────────────────────
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isTokenAdmin() || isAdmin();
+
+      // Self-create / self-update profile. Never escalate to admin via client.
+      allow create: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.role in [
+          'b2c_client', 'b2c_driver', 'b2b_corporate', 'b2b_operator',
+          'customer', 'driver'
+        ]
+        && request.resource.data.role != 'admin';
+
+      allow update: if isOwner(userId)
+        && request.resource.data.uid == userId
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.role != 'admin'
+        || isAdmin();
+
+      allow delete: if isAdmin();
+    }
+
+    // ── admins/{uid} — seed in console / Admin SDK only ─────────────────────
+
+    match /admins/{adminId} {
+      allow read: if isOwner(adminId) || isAdmin();
+      allow write: if false;
+    }
+
+    // ── Role profile mirrors ────────────────────────────────────────────────
+
+    match /customers/{customerId} {
+      allow read: if isOwner(customerId) || isAdmin();
+      allow create, update: if isOwner(customerId) && isClientRole();
+      allow delete: if isAdmin();
+    }
+
+    match /drivers/{driverId} {
+      allow read: if isOwner(driverId) || isTokenAdmin() || isAdmin();
+      // Self-create pending applications without requiring users/{uid} first
+      // (avoids chicken-and-egg with isDriverRole() during registration).
+      allow create: if isOwner(driverId)
+        && request.resource.data.uid == driverId
+        && request.resource.data.role in ['b2c_driver', 'driver']
+        && request.resource.data.accountStatus == 'pending';
+      // Drivers cannot self-approve / change accountStatus after create.
+      allow update: if isAdmin()
+        || (
+          isOwner(driverId)
+          && request.resource.data.uid == driverId
+          && request.resource.data.role in ['b2c_driver', 'driver']
+          && request.resource.data.accountStatus == resource.data.accountStatus
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /corporates/{corporateId} {
+      allow read: if isOwner(corporateId) || isAdmin();
+      allow create, update: if isOwner(corporateId) && isCorporateRole();
+      allow delete: if isAdmin();
+    }
+
+    match /operators/{operatorId} {
+      allow read: if isOwner(operatorId) || isAdmin();
+      allow create: if isOwner(operatorId)
+        && isOperatorRole()
+        && (
+          !('accountStatus' in request.resource.data)
+          || request.resource.data.accountStatus in ['pending', 'ready_for_review']
+        );
+      allow update: if isAdmin()
+        || (
+          isOwner(operatorId)
+          && isOperatorRole()
+          && (
+            !('accountStatus' in resource.data)
+            || request.resource.data.accountStatus == resource.data.accountStatus
+          )
+        );
+      allow delete: if isAdmin();
+
+      match /vehicles/{vehicleId} {
+        allow read: if isOwner(operatorId) || isAdmin();
+        allow create: if isOwner(operatorId)
+          && isOperatorRole()
+          && (
+            !('accountStatus' in request.resource.data)
+            || request.resource.data.accountStatus in [
+              'pending', 'pending_review', 'ready_for_review'
+            ]
+          );
+        allow update: if isAdmin()
+          || (
+            isOwner(operatorId)
+            && isOperatorRole()
+            && (
+              !('accountStatus' in resource.data)
+              || request.resource.data.accountStatus == resource.data.accountStatus
+            )
+          );
+        allow delete: if isAdmin()
+          || (isOwner(operatorId) && isOperatorRole());
+      }
+    }
+
+    // ── corporate_contracts ─────────────────────────────────────────────────
+
+    match /corporate_contracts/{contractId} {
+      allow read: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.corporateId == uid()
+        );
+
+      // Corporate submits pending registrations only.
+      allow create: if isSignedIn()
+        && isCorporateRole()
+        && request.resource.data.corporateId == uid()
+        && request.resource.data.status == 'pending';
+
+      // Corporate may update own pending draft fields (not status → active).
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && isCorporateRole()
+          && resource.data.corporateId == uid()
+          && resource.data.status == 'pending'
+          && request.resource.data.corporateId == uid()
+          && request.resource.data.status == 'pending'
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // ── orders ──────────────────────────────────────────────────────────────
+
+    match /orders/{orderId} {
+      // Check missing docs first — later branches must not read resource.data
+      // or a get/listen on a new order id is denied before create.
+      allow get: if (isSignedIn() && resource == null)
+        || isAdmin()
+        || isOrderCustomer()
+        || isOrderDriver()
+        || canReadOpenOffer()
+        || (isDriverAccount() && isOpenOffer());
+
+      allow list: if isAdmin()
+        || isOrderCustomer()
+        || isOrderDriver()
+        || canReadOpenOffer()
+        || (isDriverAccount() && isOpenOffer());
+
+      // Clients may only create unpaid drafts. Live broadcasting + authorized
+      // financials are written by Admin SDK after Moyasar verification.
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && (
+          !('clientId' in request.resource.data)
+          || request.resource.data.clientId == request.auth.uid
+        )
+        && (
+          !('customerId' in request.resource.data)
+          || request.resource.data.customerId == request.auth.uid
+        )
+        && request.resource.data.status == 'awaiting_payment'
+        && (
+          !('paymentStatus' in request.resource.data)
+          || request.resource.data.paymentStatus in [
+            'pending', 'unpaid', 'awaiting_payment'
+          ]
+        );
+
+      // Narrow client updates: customer cancel, assigned driver fields.
+      // Paid → broadcasting is Admin SDK only (POST /api/payments/return).
+      allow update: if isAdmin()
+        || (
+          isOrderCustomer()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'updatedAt', 'cancelledAt', 'cancelReason'])
+          && request.resource.data.status == 'cancelled'
+          && resource.data.status in [
+            'awaiting_payment', 'broadcasting', 'payment_authorized', 'searching_driver'
+          ]
+        )
+        || isDriverClaimingOpenOffer()
+        || (
+          isOrderDriver()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly([
+              'status', 'updatedAt', 'statusHistory',
+              'driverLat', 'driverLng', 'driverLocationUpdatedAt'
+            ])
+          && request.resource.data.driverId == resource.data.driverId
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.serviceType == resource.data.serviceType
+          && request.resource.data.financials == resource.data.financials
+        );
+
+      allow delete: if isAdmin();
+
+      match /tracking/{trackingId} {
+        allow read: if isAdmin()
+          || get(/databases/$(database)/documents/orders/$(orderId)).data.userId == uid()
+          || get(/databases/$(database)/documents/orders/$(orderId)).data.clientId == uid()
+          || get(/databases/$(database)/documents/orders/$(orderId)).data.customerId == uid()
+          || get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == uid();
+
+        allow write: if isAdmin()
+          || (
+            isSignedIn()
+            && get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == uid()
+          );
+      }
+
+      // Trip chat — customer ↔ assigned driver only
+      match /messages/{messageId} {
+        function chatOrder() {
+          return get(/databases/$(database)/documents/orders/$(orderId)).data;
+        }
+
+        function isTripParty() {
+          return isSignedIn()
+            && exists(/databases/$(database)/documents/orders/$(orderId))
+            && (
+              chatOrder().userId == uid()
+              || chatOrder().clientId == uid()
+              || chatOrder().customerId == uid()
+              || chatOrder().driverId == uid()
+            );
+        }
+
+        allow read: if isAdmin() || isTripParty();
+
+        allow create: if isTripParty()
+          && request.resource.data.senderId == uid()
+          && request.resource.data.orderId == orderId
+          && request.resource.data.senderRole in ['customer', 'driver']
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 1000
+          && request.resource.data.keys().hasAll([
+            'orderId', 'text', 'senderId', 'senderRole', 'senderName', 'createdAt'
+          ]);
+
+        allow update, delete: if false;
+      }
+    }
+
+    // ── payments — server-owned ─────────────────────────────────────────────
+
+    match /payments/{paymentId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.userId == uid());
+
+      allow create, delete: if false;
+
+      // Optional client merge of orderId after finalize (prefer server).
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && resource.data.userId == uid()
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['orderId', 'updatedAt'])
+        );
+    }
+
+    // ── checkout_drafts — server-owned ──────────────────────────────────────
+
+    match /checkout_drafts/{draftId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.userId == uid());
+      allow write: if false;
+    }
+
+    // ── wallets / withdrawals — server-owned ───────────────────────────────
+
+    match /wallets/{walletId} {
+      allow read: if isOwner(walletId) || isTokenAdmin() || isAdmin();
+      allow write: if false;
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.driverId == uid());
+      allow write: if false;
+    }
+
+    // ── pricing — public read, admin write ──────────────────────────────────
+
+    match /pricing/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ── driver_presence — own read/write; any signed-in user may read for match ───
+
+    match /driver_presence/{driverId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && request.auth.uid == driverId;
+    }
+
+    // ── misc server-owned ───────────────────────────────────────────────────
+
+    match /webhook_events/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /subscriptions/{subId} {
+      allow read: if isOwner(subId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /account_deletions/{id} {
+      allow read, write: if false;
+    }
+
+    // Deny anything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

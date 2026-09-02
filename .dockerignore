@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.firebase
+android
+ios
+e2e
+docs
+.env
+.env.*
+!.env.production.example
+!.env.staging.example
+*.md
+agent-transcripts
+terminals

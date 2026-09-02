@@ -94,10 +94,13 @@ async function onInboundSupportMail(mail) {
       return { acked: false, historical, adminDecision: true };
     }
   }
+  const routed = await handleInboundCustomerEmail(mail);
+  if (routed?.skipped) {
+    return { acked: false, historical, skipped: true, reason: routed.reason };
+  }
   console.log(
     `[imap] ${historical ? 'HISTORICAL' : 'LIVE'} CUSTOMER MAIL from=${mail.from} subject=${mail.subject}`
   );
-  const routed = await handleInboundCustomerEmail(mail);
   console.log(
     `[ack] customer auto-reply ${routed?.acked ? 'SENT' : 'SKIPPED'} source=${historical ? 'historical' : 'live'} from=${mail.from}`
   );
@@ -202,11 +205,12 @@ export async function startAgentRuntime() {
 
   const historical = await processHistoricalUnreadMail(async (mail) => onInboundSupportMail(mail));
   const catchupReport = await sendUnreadCatchupReport(historical);
-  console.log('[admin] REPORT SENT historical unread catch-up', {
-    to: catchupReport.to,
-    messageId: catchupReport.messageId,
-    processed: historical.filter((item) => item.ok).length,
-  });
+    console.log('[admin] REPORT SENT historical unread catch-up', {
+      to: catchupReport.to,
+      messageId: catchupReport.messageId,
+      processed: historical.filter((item) => item.ok).length,
+      promoSkipped: historical.promoSkipped || 0,
+    });
 
   if (process.env.MIRAS_AGENTS_SKIP_BOOT_EMAIL === 'true') {
     console.log('[agents] skipping extra boot operational email (MIRAS_AGENTS_SKIP_BOOT_EMAIL)');
