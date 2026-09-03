@@ -65,6 +65,17 @@ async function main() {
   if (!entitlements.includes('applinks:hamula-cfc6c.firebaseapp.com')) {
     failures.push('App.entitlements must include applinks:hamula-cfc6c.firebaseapp.com');
   }
+  const capSpm = read('ios/App/CapApp-SPM/Package.swift');
+  if (!capSpm.includes('path: "packages/CapacitorFirebaseAppCheck"')) {
+    failures.push(
+      'CapApp-SPM/Package.swift must point at packages/CapacitorFirebaseAppCheck (not node_modules/.../app-check)'
+    );
+  }
+  if (/path:\s*"[^"]*\/app-check"/.test(capSpm)) {
+    failures.push(
+      'CapApp-SPM/Package.swift still ends in /app-check — that identity collides with firebase-ios-sdk AppCheckCore'
+    );
+  }
   if (!exists('ios/App/App/PrivacyInfo.xcprivacy')) {
     failures.push('PrivacyInfo.xcprivacy is missing');
   }

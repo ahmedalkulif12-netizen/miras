@@ -12,5 +12,6 @@ capacitor-cordova-ios-plugins
 App/App/capacitor.config.json
 App/App/config.xml
 
-# Capacitor CLI symlink used to give @capacitor-firebase/app-check a unique SPM identity
+# Generated unique SPM identity for @capacitor-firebase/app-check (must be a real copy, not a symlink)
 App/CapApp-SPM/symlinks
+App/CapApp-SPM/packages

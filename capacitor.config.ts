@@ -73,7 +73,9 @@ const config: CapacitorConfig = {
   // SPM derives identity from the last path component. The Capacitor Firebase
   // plugin lives in node_modules/.../app-check, which collides with Google's
   // AppCheckCore package pulled in by firebase-ios-sdk. CLI 8.4+ can symlink
-  // the plugin to CapApp-SPM/symlinks/CapacitorFirebaseAppCheck instead.
+  // the plugin; scripts/fix-ios-spm-app-check.mjs then replaces that symlink
+  // with a real CapApp-SPM/packages/CapacitorFirebaseAppCheck copy so archive
+  // does not realpath() back to identity `app-check`.
   experimental: {
     ios: {
       spm: {

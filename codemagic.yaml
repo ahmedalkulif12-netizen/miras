@@ -106,14 +106,21 @@ workflows:
         script: |
           set -euo pipefail
           cd "$CM_BUILD_DIR/ios/App"
+          PACKAGES_DIR="$CM_BUILD_DIR/build/ios/SourcePackages"
+          mkdir -p "$PACKAGES_DIR"
           xcodebuild -list -project App.xcodeproj
-          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" -resolvePackageDependencies
+          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
+            -skipPackagePluginValidation \
+            -resolvePackageDependencies
           xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             CODE_SIGN_STYLE=Manual \
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
             -showBuildSettings
       - name: Archive and export signed IPA
         script: |
@@ -121,7 +128,8 @@ workflows:
           PROJECT="$CM_BUILD_DIR/$XCODE_PROJECT_PATH"
           ARCHIVE_PATH="$CM_BUILD_DIR/build/ios/xcarchive/App.xcarchive"
           IPA_DIR="$CM_BUILD_DIR/ios/App/build/ios/ipa"
-          mkdir -p "$(dirname "$ARCHIVE_PATH")" "$IPA_DIR"
+          PACKAGES_DIR="$CM_BUILD_DIR/build/ios/SourcePackages"
+          mkdir -p "$(dirname "$ARCHIVE_PATH")" "$IPA_DIR" "$PACKAGES_DIR"
           xcodebuild archive \
             -project "$PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -129,9 +137,17 @@ workflows:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath "$ARCHIVE_PATH" \
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
+            -skipPackagePluginValidation \
+            -skipPackageUpdates \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution"
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
+            ENABLE_MODULE_VERIFIER=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=NO \
+            ENABLE_APPINTENTS_METADATA_EXTRACTION=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO
           EXPORT_PLIST="/Users/builder/export_options.plist"
           if [ ! -f "$EXPORT_PLIST" ]; then
             EXPORT_PLIST="$CM_BUILD_DIR/ios/ExportOptions.codemagic.plist"

@@ -1,14 +1,15 @@
 /**
- * Give @capacitor-firebase/app-check a unique SwiftPM identity.
+ * Give @capacitor-firebase/app-check a unique SwiftPM identity that survives archive.
  *
  * SPM ignores Package.swift `name:` for local packages and uses the last path
- * component instead. Pointing at node_modules/.../app-check collides with
- * github.com/google/app-check (AppCheckCore) from firebase-ios-sdk.
+ * component. A path ending in `app-check` collides with github.com/google/app-check
+ * (AppCheckCore) from firebase-ios-sdk — Xcode then fails while linking Firebase
+ * targets ("product 'AppCheckCore' ... not found in package 'app-check'").
  *
- * Capacitor CLI 8.4+ with experimental.ios.spm.packageOptions symlink:true
- * should already write CapApp-SPM/symlinks/<PluginName>. This script is the
- * post-sync guard: create that link if missing, rewrite colliding paths, and
- * fail if the identity is still `app-check`.
+ * A symlink is not enough: `xcodebuild archive` realpath()s it back to
+ * node_modules/.../app-check. Copy into a real directory named
+ * CapacitorFirebaseAppCheck, and drop the plugin test target so archive does not
+ * try to build XCTest for generic iOS.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,10 +18,9 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageSwiftPath = path.join(root, 'ios', 'App', 'CapApp-SPM', 'Package.swift');
 const pluginDir = path.join(root, 'node_modules', '@capacitor-firebase', 'app-check');
-const symlinkDir = path.join(root, 'ios', 'App', 'CapApp-SPM', 'symlinks');
-const linkName = 'CapacitorFirebaseAppCheck';
-const linkPath = path.join(symlinkDir, linkName);
-const uniqueRelPath = `symlinks/${linkName}`;
+const packagesDir = path.join(root, 'ios', 'App', 'CapApp-SPM', 'packages');
+const destDir = path.join(packagesDir, 'CapacitorFirebaseAppCheck');
+const uniqueRelPath = 'packages/CapacitorFirebaseAppCheck';
 
 if (!fs.existsSync(packageSwiftPath)) {
   console.log('No CapApp-SPM/Package.swift; skipping SPM app-check fix.');
@@ -32,25 +32,43 @@ if (!fs.existsSync(pluginDir)) {
   process.exit(1);
 }
 
-fs.mkdirSync(symlinkDir, { recursive: true });
-
-function ensurePluginLink() {
-  try {
-    fs.lstatSync(linkPath);
-    fs.rmSync(linkPath, { recursive: true, force: true });
-  } catch {
-    // missing
-  }
-  try {
-    fs.symlinkSync(pluginDir, linkPath, 'junction');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`Failed to symlink ${linkPath} -> ${pluginDir}: ${message}`);
-    process.exit(1);
-  }
+function shouldCopy(src) {
+  const rel = path.relative(pluginDir, src).replace(/\\/g, '/');
+  if (!rel || rel === '.') return true;
+  const skip = ['node_modules', 'android', 'dist', 'ios/PluginTests', 'ios/Tests', '.git'];
+  return !skip.some((prefix) => rel === prefix || rel.startsWith(`${prefix}/`));
 }
 
-ensurePluginLink();
+function copyPluginPackage() {
+  fs.rmSync(destDir, { recursive: true, force: true });
+  fs.mkdirSync(packagesDir, { recursive: true });
+  fs.cpSync(pluginDir, destDir, {
+    recursive: true,
+    dereference: true,
+    filter: (src) => shouldCopy(src),
+  });
+}
+
+function stripTestTargets(text) {
+  return text
+    .replace(/,\s*\.testTarget\s*\([\s\S]*?\)\s*/g, '\n')
+    .replace(/\.testTarget\s*\([\s\S]*?\)\s*,?/g, '');
+}
+
+copyPluginPackage();
+
+const copiedManifest = path.join(destDir, 'Package.swift');
+if (!fs.existsSync(copiedManifest)) {
+  console.error(`Copied plugin is missing Package.swift at ${copiedManifest}`);
+  process.exit(1);
+}
+fs.writeFileSync(copiedManifest, stripTestTargets(fs.readFileSync(copiedManifest, 'utf8')));
+
+const pluginSources = path.join(destDir, 'ios', 'Plugin');
+if (!fs.existsSync(pluginSources)) {
+  console.error(`Copied plugin is missing ios/Plugin at ${pluginSources}`);
+  process.exit(1);
+}
 
 let text = fs.readFileSync(packageSwiftPath, 'utf8');
 text = text.replace(/\\/g, '/');
@@ -58,6 +76,7 @@ text = text.replace(
   /path:\s*"([^"]*@capacitor-firebase\/app-check)"/g,
   `path: "${uniqueRelPath}"`,
 );
+text = text.replace(/path:\s*"([^"]*\/(?:symlinks|packages)\/CapacitorFirebaseAppCheck)"/g, `path: "${uniqueRelPath}"`);
 
 const iosPkgPath = path.join(root, 'node_modules', '@capacitor', 'ios', 'package.json');
 if (fs.existsSync(iosPkgPath)) {
@@ -70,7 +89,7 @@ if (fs.existsSync(iosPkgPath)) {
   }
 }
 text = text.replace(/path:\s*"([^"]*\/app-check)"/g, (full, value) => {
-  if (String(value).includes('@capacitor-firebase/')) {
+  if (String(value).includes('@capacitor-firebase/') || /(^|\/)app-check$/.test(String(value))) {
     return `path: "${uniqueRelPath}"`;
   }
   return full;
@@ -94,4 +113,10 @@ if (!text.includes(`path: "${uniqueRelPath}"`)) {
   process.exit(1);
 }
 
-console.log(`SPM app-check identity is ${linkName} (${uniqueRelPath}).`);
+const destStat = fs.lstatSync(destDir);
+if (destStat.isSymbolicLink()) {
+  console.error(`${uniqueRelPath} must be a real directory, not a symlink (archive realpath would restore identity app-check).`);
+  process.exit(1);
+}
+
+console.log(`SPM app-check identity is CapacitorFirebaseAppCheck (${uniqueRelPath}, copied, no test targets).`);
