@@ -4,28 +4,37 @@ import { Toaster } from 'sonner';
 import { AuthProvider } from '@/hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 
-import { MapsWrapper } from '@/components/MapsWrapper';
 import { AuthGuestRoute, CatchAllRedirect, ProtectedRoute } from '@/components/AuthRouteGuards';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { AuthLoadingScreen } from '@/components/AppBootScreens';
 import { useAuthSurfaceRedirect } from '@/hooks/usePostLoginRedirect';
 import { APP_ROLES } from '@/domain/user-schema';
 
-// Pages
 import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
-import CustomerDashboard from '@/pages/CustomerDashboard';
-import DriverDashboard from '@/pages/DriverDashboard';
-import AdminDashboard from '@/pages/AdminDashboard';
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import AdminLoginPage from '@/pages/AdminLoginPage';
 import LegalPage from '@/pages/LegalPage';
 import AboutPage from '@/pages/AboutPage';
 import PaymentCallbackPage from '@/pages/PaymentCallbackPage';
-import PaymentCheckoutPage from '@/pages/PaymentCheckoutPage';
 import ProfilePage from '@/pages/ProfilePage';
 
+const CustomerDashboard = React.lazy(() => import('@/pages/CustomerDashboard'));
+const DriverDashboard = React.lazy(() => import('@/pages/DriverDashboard'));
+const AdminDashboard = React.lazy(() => import('@/pages/AdminDashboard'));
+const PaymentCheckoutPage = React.lazy(() => import('@/pages/PaymentCheckoutPage'));
 const LazyB2BCorporatePortal = React.lazy(() => import('@/pages/B2BCorporatePortal'));
 const LazyB2BOperatorFleetPanel = React.lazy(() => import('@/pages/B2BOperatorFleetPanel'));
+const LazyMapsWrapper = React.lazy(async () => {
+  const mod = await import('@/components/MapsWrapper');
+  return { default: mod.MapsWrapper };
+});
+
+const RouteFallback: React.FC = () => <AuthLoadingScreen />;
+
+function withSuspense(element: React.ReactNode): React.ReactNode {
+  return <React.Suspense fallback={<RouteFallback />}>{element}</React.Suspense>;
+}
 
 const PostAuthRedirect: React.FC = () => {
   useAuthSurfaceRedirect();
@@ -77,7 +86,7 @@ const App: React.FC = () => {
               path="/payment-checkout"
               element={
                 <ProtectedRoute role={APP_ROLES.B2C_CLIENT}>
-                  <PaymentCheckoutPage />
+                  {withSuspense(<PaymentCheckoutPage />)}
                 </ProtectedRoute>
               }
             />
@@ -104,9 +113,11 @@ const App: React.FC = () => {
               path="/b2c/client/*"
               element={
                 <ProtectedRoute role={APP_ROLES.B2C_CLIENT}>
-                  <MapsWrapper>
-                    <CustomerDashboard />
-                  </MapsWrapper>
+                  {withSuspense(
+                    <LazyMapsWrapper>
+                      <CustomerDashboard />
+                    </LazyMapsWrapper>
+                  )}
                 </ProtectedRoute>
               }
             />
@@ -114,9 +125,11 @@ const App: React.FC = () => {
               path="/b2c/driver/*"
               element={
                 <ProtectedRoute role={APP_ROLES.B2C_DRIVER}>
-                  <MapsWrapper>
-                    <DriverDashboard />
-                  </MapsWrapper>
+                  {withSuspense(
+                    <LazyMapsWrapper>
+                      <DriverDashboard />
+                    </LazyMapsWrapper>
+                  )}
                 </ProtectedRoute>
               }
             />
@@ -128,7 +141,7 @@ const App: React.FC = () => {
                   path="/b2b/corporate/*"
                   element={
                     <ProtectedRoute role={APP_ROLES.B2B_CORPORATE}>
-                      <React.Suspense fallback={null}>
+                      <React.Suspense fallback={<RouteFallback />}>
                         <LazyB2BCorporatePortal />
                       </React.Suspense>
                     </ProtectedRoute>
@@ -138,7 +151,7 @@ const App: React.FC = () => {
                   path="/b2b/operator/*"
                   element={
                     <ProtectedRoute role={APP_ROLES.B2B_OPERATOR}>
-                      <React.Suspense fallback={null}>
+                      <React.Suspense fallback={<RouteFallback />}>
                         <LazyB2BOperatorFleetPanel />
                       </React.Suspense>
                     </ProtectedRoute>
@@ -157,7 +170,7 @@ const App: React.FC = () => {
               path="/admin/*"
               element={
                 <ProtectedRoute role={APP_ROLES.ADMIN}>
-                  <AdminDashboard />
+                  {withSuspense(<AdminDashboard />)}
                 </ProtectedRoute>
               }
             />

@@ -134,6 +134,28 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    build: {
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/firebase') || id.includes('node_modules/@firebase')) {
+              return 'firebase';
+            }
+            if (id.includes('node_modules/@vis.gl') || id.includes('node_modules/@googlemaps')) {
+              return 'maps';
+            }
+            if (id.includes('node_modules/i18next') || id.includes('node_modules/react-i18next')) {
+              return 'i18n';
+            }
+            if (id.includes('node_modules/lucide-react')) {
+              return 'icons';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
     // Production bundles must never embed App Check debug tokens (even if CI copies .env).
     define:
       mode === 'production'

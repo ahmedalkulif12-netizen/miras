@@ -9,8 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { doc, onSnapshot, collection, query, where, limit, getDoc } from 'firebase/firestore';
-import { loadDemoOrderFromSession } from '@/lib/orderService';
-import { prepareCheckoutDraft, clearCheckoutDraft, loadCheckoutDraft } from '@/lib/checkoutDraft';
+import { prepareCheckoutDraft, clearCheckoutDraft, loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
 import {
   loadLocalBroadcastOrders,
   LOCAL_ORDERS_CHANGED_EVENT,

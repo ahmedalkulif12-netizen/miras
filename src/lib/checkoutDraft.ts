@@ -15,7 +15,7 @@ import {
   sanitizeWaterTankerDistanceKm,
 } from '@/lib/waterTankerDistance';
 import { canonicalizeServiceType } from '@/domain/serviceCategories';
-import type { CreateOrderRequest, CreateOrderResponse } from '@/lib/orderService';
+import type { CreateOrderRequest, CreateOrderResponse } from '@/lib/orderContract';
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { normalizeWaterServiceType } from '@/lib/waterTankerCatalog';
@@ -103,6 +103,37 @@ export function loadCheckoutDraft(draftId: string): CheckoutDraft | null {
 export function getActiveCheckoutDraftId(): string | null {
   try {
     return readActiveDraftId();
+  } catch {
+    return null;
+  }
+}
+
+/** Restore unpaid draft / demo payload after payment redirect. */
+export function loadDemoOrderFromSession(
+  orderId: string
+): (CreateOrderRequest & CreateOrderResponse) | null {
+  if (!orderId.startsWith('demo-') && !orderId.startsWith('draft-')) return null;
+  try {
+    const keys = [
+      `${DEMO_ORDER_PREFIX}${orderId}`,
+      `${LEGACY_DEMO_ORDER_PREFIX}${orderId}`,
+      checkoutDraftKey(orderId),
+      legacyCheckoutDraftKey(orderId),
+    ];
+    let raw: string | null = null;
+    for (const key of keys) {
+      raw = sessionStorage.getItem(key);
+      if (raw) {
+        if (key.startsWith('hamula_')) {
+          const migrated = key.replace(/^hamula_/, 'miras_');
+          sessionStorage.setItem(migrated, raw);
+          sessionStorage.removeItem(key);
+        }
+        break;
+      }
+    }
+    if (!raw) return null;
+    return JSON.parse(raw) as CreateOrderRequest & CreateOrderResponse;
   } catch {
     return null;
   }

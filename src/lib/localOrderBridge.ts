@@ -5,12 +5,13 @@ import {
   getDoc,
 } from 'firebase/firestore';
 import { db, ensureFirebaseReady, auth } from '@/lib/firebase';
-import type { CreateOrderRequest, CreateOrderResponse } from '@/lib/orderService';
+import type { CreateOrderRequest, CreateOrderResponse } from '@/lib/orderContract';
+import { loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { debitLocalCustomerWallet } from '@/lib/localCustomerWallet';
 import { allowsDemoCheckout } from '@/lib/checkoutGating';
-import { canonicalizeServiceType } from '@/domain/serviceCategories';
+import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 
@@ -396,12 +397,7 @@ export async function writeSharedLocalOrder(input: {
 }
 
 async function loadPaidSessionDraft(orderId: string) {
-  const orderModule = await import('@/lib/orderService');
-  const draftModule = await import('@/lib/checkoutDraft');
-  return (
-    orderModule.loadDemoOrderFromSession(orderId) ||
-    draftModule.loadCheckoutDraft(orderId)
-  );
+  return loadDemoOrderFromSession(orderId) || loadCheckoutDraft(orderId);
 }
 
 /**
@@ -564,7 +560,6 @@ export async function assignSharedLocalOrder(
     };
   }
 
-  const { driverMatchesRequiredVehicle } = await import('@/domain/serviceCategories');
   if (driver.vehicleType && !driverMatchesRequiredVehicle(driver.vehicleType, data)) {
     throw new Error(
       `VEHICLE_TYPE_MISMATCH:driver=${driver.vehicleType || 'none'}:order=${String(

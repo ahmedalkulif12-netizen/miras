@@ -5,6 +5,7 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { getActiveCheckoutDraftId } from '@/lib/checkoutDraft';
+import { promoteSharedOrderToBroadcasting } from '@/lib/localOrderBridge';
 import { buildClientOrdersPath } from '@/lib/authRouting';
 import { allowsDemoCheckout } from '@/lib/checkoutGating';
 
@@ -108,7 +109,6 @@ const PaymentCallbackPage: React.FC = () => {
           (error instanceof Error && error.message === 'DEV_BYPASS_NO_FIREBASE_SESSION');
         if (allowsDemoCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
           try {
-            const { promoteSharedOrderToBroadcasting } = await import('@/lib/localOrderBridge');
             await promoteSharedOrderToBroadcasting(id);
             sessionStorage.removeItem(PENDING_DRAFT_KEY);
             if (!cancelled) {

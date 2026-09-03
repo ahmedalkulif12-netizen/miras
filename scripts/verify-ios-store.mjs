@@ -76,6 +76,12 @@ async function main() {
       'CapApp-SPM/Package.swift still ends in /app-check — that identity collides with firebase-ios-sdk AppCheckCore'
     );
   }
+  const copiedPlugin = path.join(root, 'ios', 'App', 'CapApp-SPM', 'packages', 'CapacitorFirebaseAppCheck');
+  if (fs.existsSync(copiedPlugin) && fs.lstatSync(copiedPlugin).isSymbolicLink()) {
+    failures.push(
+      'packages/CapacitorFirebaseAppCheck must be a real directory copy, not a symlink (archive realpath restores identity app-check)'
+    );
+  }
   if (!exists('ios/App/App/PrivacyInfo.xcprivacy')) {
     failures.push('PrivacyInfo.xcprivacy is missing');
   }
