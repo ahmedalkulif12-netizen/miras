@@ -299,9 +299,22 @@ const DriverDashboard: React.FC = () => {
                 setLocalDevWorkEnabled(readLocalDevWorkEnabled(uid));
                 setAccountStatusLoaded(true);
                 if (profile.role === 'b2c_driver' || profile.role === 'driver') {
-                  void submitDriverRegistrationToApi(profile).catch((err) =>
-                    console.warn('[driver] registration backfill failed:', err)
+                  const hasDocs = Boolean(
+                    profile.documentFiles &&
+                      ['id', 'registration', 'permit', 'license'].every(
+                        (key) =>
+                          Boolean(
+                            profile.documentFiles?.[
+                              key as keyof typeof profile.documentFiles
+                            ]?.storagePath
+                          )
+                      )
                   );
+                  if (hasDocs) {
+                    void submitDriverRegistrationToApi(profile).catch((err) =>
+                      console.warn('[driver] registration backfill failed:', err)
+                    );
+                  }
                 }
                 return;
               }
@@ -1235,11 +1248,11 @@ const DriverDashboard: React.FC = () => {
       toast.error(isRtl ? 'عذراً، حسابك مجمد حالياً بسبب شكاوى فنية. لا يمكنك العمل لمدة 5 أيام.' : 'Sorry, your account is currently frozen due to technical complaints. You cannot work for 5 days.');
       return;
     }
-    if (!canStartWork && !import.meta.env.DEV) {
+    if (!canStartWork) {
       toast.warning(
         isRtl
-          ? 'حسابك لا يزال تحت المراجعة. لا يمكنك استقبال الطلبات حالياً. سيتم الاعتماد خلال 24 ساعة.'
-          : 'Your account is still under review. You cannot receive orders yet. Approval is within 24 hours.'
+          ? 'حسابك لا يزال قيد المراجعة. لا يمكنك استقبال الطلبات حالياً. سيتم الاعتماد خلال 24 ساعة.'
+          : 'Your account is still pending review. You cannot receive orders yet. Approval is within 24 hours.'
       );
       return;
     }
@@ -1388,8 +1401,8 @@ const DriverDashboard: React.FC = () => {
                    <div className={`space-y-1 text-center ${isRtl ? 'md:text-right' : 'md:text-left'} flex-1`}>
                       <h3 className="text-xl font-bold text-blue-900">
                         {isRtl
-                          ? 'تم التسجيل بنجاح: حسابك قيد المراجعة'
-                          : 'Registration Successful: Your account is under review'}
+                          ? 'حسابك قيد المراجعة'
+                          : 'Your account is pending review'}
                       </h3>
                       <p className="text-blue-700 text-sm">
                         {isLocalDevRuntime()
@@ -1397,8 +1410,8 @@ const DriverDashboard: React.FC = () => {
                             ? 'وضع التطوير المحلي: يمكنك بدء العمل الآن. الحساب يبقى ظاهراً للمراجعة في لوحة الإدارة.'
                             : 'Local development: you can start work now. The account stays in the admin review inbox.'
                           : isRtl
-                            ? 'سيتم اعتماد حسابك خلال 24 ساعة. لا يمكنك استقبال الطلبات حتى تتم الموافقة.'
-                            : 'Your account will be approved within 24 hours. You cannot receive orders until approval.'}
+                            ? 'سيراجع المشرف مستنداتك (الهوية/الإقامة، الاستمارة، كرت التشغيل، ورخصة القيادة) خلال 24 ساعة. لا يمكنك قبول الطلبات حتى تتم الموافقة.'
+                            : 'An admin will review your documents (National ID/Iqama, vehicle registration, operating card, and driver license) within 24 hours. You cannot accept rides until approved.'}
                       </p>
                    </div>
                    {isLocalDevRuntime() && (
@@ -1489,10 +1502,7 @@ const DriverDashboard: React.FC = () => {
                     <button 
                       type="button"
                       onClick={handleToggleOnline}
-                      disabled={
-                        !import.meta.env.DEV &&
-                        (accountStatus === 'suspended' || accountStatus === 'banned')
-                      }
+                      disabled={!canStartWork}
                       className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg transition-all w-full justify-center ${
                         isOnline ? 'bg-black text-white shadow-xl shadow-black/10' : 'bg-primary text-black shadow-xl shadow-primary/20 hover:scale-105'
                       }`}

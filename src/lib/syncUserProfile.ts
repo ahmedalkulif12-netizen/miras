@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, ensureFirebaseReady } from '@/lib/firebase';
 import type { UserProfile, DriverDocumentKey } from '@/lib/userProfile';
-import { EMPTY_DRIVER_DOCUMENTS } from '@/lib/userProfile';
+import { DRIVER_REVIEW_SLA_HOURS } from '@/lib/driverKyc';
 import {
   APP_ROLES,
   isRegistrableRole,
@@ -25,10 +25,7 @@ function buildDriverDocumentsPayload(profile: UserProfile): Record<string, unkno
         fileName: file.fileName || null,
         uploadedAt: file.uploadedAt || null,
       };
-      continue;
     }
-    const status = profile.documentUploadStatuses?.[key] ?? EMPTY_DRIVER_DOCUMENTS[key];
-    out[key] = status;
   }
   return out;
 }
@@ -82,15 +79,18 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     ...(profile.vehicleType ? { vehicleType: profile.vehicleType } : {}),
     ...(profile.vehicleOption ? { vehicleOption: profile.vehicleOption } : {}),
     ...(profile.plateNumber ? { plateNumber: profile.plateNumber } : {}),
+    ...(profile.nationalId ? { nationalId: profile.nationalId } : {}),
+    ...(profile.registrationSerial
+      ? { registrationSerial: profile.registrationSerial }
+      : {}),
     ...(profile.companyName ? { companyName: profile.companyName } : {}),
     ...(profile.commercialRegistration
       ? { commercialRegistration: profile.commercialRegistration }
       : {}),
     ...(isNewUser
       ? {
-          // New drivers stay pending review until admin approval; other roles activate immediately.
           accountStatus:
-            role === APP_ROLES.B2C_DRIVER ? 'ready_for_review' : 'active',
+            role === APP_ROLES.B2C_DRIVER ? 'pending' : 'active',
           createdAt: now,
         }
       : {}),
@@ -141,12 +141,13 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
           ? { registrationSerial: profile.registrationSerial }
           : {}),
         ...(profile.documentExpiries ? { documentExpiries: profile.documentExpiries } : {}),
-        documents,
+        ...(Object.keys(documents).length ? { documents } : {}),
+        reviewSlaHours: DRIVER_REVIEW_SLA_HOURS,
         ...(existingDriver.exists()
           ? {}
           : {
-              // Rules require create with accountStatus == 'pending' (no self-approve).
               accountStatus: 'pending',
+              submittedAt: now,
               createdAt: now,
             }),
         updatedAt: now,

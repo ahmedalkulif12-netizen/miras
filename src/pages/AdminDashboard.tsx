@@ -509,8 +509,9 @@ const AdminDashboard: React.FC = () => {
                           : isRtl
                             ? 'سائق فردي'
                             : 'Individual driver'}
-                        {selectedDriver.status === 'ready_for_review'
-                          ? ` · ${isRtl ? 'جاهز للمراجعة' : 'Ready for Review'}`
+                        {selectedDriver.status === 'ready_for_review' ||
+                        selectedDriver.status === 'pending'
+                          ? ` · ${isRtl ? 'قيد المراجعة (٢٤ ساعة)' : 'Pending review (24h)'}`
                           : ''}
                       </p>
                     </div>
@@ -742,8 +743,8 @@ const AdminDashboard: React.FC = () => {
                     <div>
                       <h3 className="font-bold text-orange-900">
                         {isRtl
-                          ? `${overview?.stats.pendingDrivers} طلب جاهز للمراجعة`
-                          : `${overview?.stats.pendingDrivers} application(s) Ready for Review`}
+                          ? `${overview?.stats.pendingDrivers} طلب قيد المراجعة`
+                          : `${overview?.stats.pendingDrivers} application(s) pending review`}
                       </h3>
                       <p className="text-sm text-orange-700">
                         {isRtl
@@ -943,14 +944,14 @@ const AdminDashboard: React.FC = () => {
                     </h3>
                     <p className="text-xs text-orange-600 font-bold mt-1">
                       {isRtl
-                        ? `${pendingDrivers.length} جاهز للمراجعة`
-                        : `${pendingDrivers.length} Ready for Review`}
+                        ? `${pendingDrivers.length} قيد المراجعة`
+                        : `${pendingDrivers.length} Pending Review`}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {(
                       [
-                        { id: 'ready_for_review' as const, ar: 'جاهز للمراجعة', en: 'Ready for Review' },
+                        { id: 'ready_for_review' as const, ar: 'قيد المراجعة', en: 'Pending Review' },
                         { id: 'approved' as const, ar: 'معتمد', en: 'Approved' },
                         { id: 'all' as const, ar: 'الكل', en: 'All' },
                         { id: 'rejected' as const, ar: 'مرفوض', en: 'Rejected' },
@@ -1037,7 +1038,7 @@ const AdminDashboard: React.FC = () => {
                             {driver.status === 'approved' && <span className="px-3 py-1 bg-green-50 text-green-600 rounded-full text-[10px] font-bold">{t('approved_status')}</span>}
                             {(driver.status === 'ready_for_review' || driver.status === 'pending') && (
                               <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-[10px] font-bold">
-                                {isRtl ? 'جاهز للمراجعة' : 'Ready for Review'}
+                                {t('pending_status')}
                               </span>
                             )}
                             {driver.status === 'rejected' && <span className="px-3 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-bold">{t('rejected_status')}</span>}

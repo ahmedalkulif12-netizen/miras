@@ -1,4 +1,5 @@
 import type { UserProfile } from '@/lib/userProfile';
+import { hasCompleteDriverKyc } from '@/lib/driverKyc';
 import {
   APP_ROLES,
   getHomePathForRole,
@@ -191,8 +192,9 @@ export function resolvePostLoginPath(
 /**
  * Post-OTP auth router — Firestore profile presence decides login vs registration.
  *
- * Existing phone/UID in users|customers|drivers|corporates|operators
- *   → skip onboarding, go to that role's dashboard (UI tab is ignored).
+ * Existing phone/UID with a complete role profile
+ *   → skip onboarding, go to that role's dashboard (UI tab is ignored),
+ *     except incomplete driver KYC which must finish the 4-document form.
  * Brand-new Firebase user (no profile doc)
  *   → registration form for the intended role only.
  */
@@ -208,6 +210,10 @@ export function resolvePostOtpAuth(options: {
   const existing = options.existingProfile;
   if (existing?.uid) {
     const role = normalizeAppRole(existing.role) ?? existing.role;
+    const isDriver = role === APP_ROLES.B2C_DRIVER;
+    if (isDriver && !hasCompleteDriverKyc(existing)) {
+      return { kind: 'onboarding', intendedRole: APP_ROLES.B2C_DRIVER };
+    }
     const profile = { ...existing, role };
     return {
       kind: 'existing',

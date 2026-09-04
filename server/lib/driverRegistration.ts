@@ -1,6 +1,8 @@
 import admin from 'firebase-admin';
 import { missingKycDocumentKeys } from './kycDocumentStorage.ts';
 
+export const DRIVER_REVIEW_SLA_HOURS = 24;
+
 export interface DriverRegistrationPayload {
   name?: string;
   phone?: string;
@@ -86,9 +88,12 @@ export async function upsertPendingDriverRegistration(
     );
   }
 
-  const accountStatus = preserveStatus || 'ready_for_review';
+  const accountStatus = preserveStatus || 'pending';
   const created = !driverSnap.exists;
   const documentExpiries = payload.documentExpiries || {};
+  const reviewDueAt = new Date(
+    Date.now() + DRIVER_REVIEW_SLA_HOURS * 60 * 60 * 1000
+  ).toISOString();
 
   const batch = db.batch();
 
@@ -107,6 +112,7 @@ export async function upsertPendingDriverRegistration(
         ? { registrationSerial: payload.registrationSerial }
         : {}),
       accountStatus,
+      reviewSlaHours: DRIVER_REVIEW_SLA_HOURS,
       ...(Object.keys(documents).length ? { documents } : {}),
       ...(userSnap.exists ? {} : { createdAt: now }),
       updatedAt: now,
@@ -131,6 +137,8 @@ export async function upsertPendingDriverRegistration(
       ...(Object.keys(documents).length ? { documents } : {}),
       ...(Object.keys(documentExpiries).length ? { documentExpiries } : {}),
       accountStatus,
+      reviewSlaHours: DRIVER_REVIEW_SLA_HOURS,
+      reviewDueAt,
       ...(driverSnap.exists ? {} : { createdAt: now }),
       updatedAt: now,
       submittedAt: created ? now : driverSnap.data()?.submittedAt || now,

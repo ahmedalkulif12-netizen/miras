@@ -3,12 +3,37 @@ import type { User } from 'firebase/auth';
 import { db, ensureFirebaseReady } from '@/lib/firebase';
 import { resolveAdminProfile } from '@/lib/adminAuth';
 import { loadCachedProfile, saveCachedProfile } from '@/lib/userProfileStorage';
-import type { UserProfile, DriverDocumentUploadStatuses } from '@/lib/userProfile';
+import type { UserProfile } from '@/lib/userProfile';
+import { extractDriverKyc } from '@/lib/driverKyc';
 import {
   APP_ROLES,
   isRegistrableRole,
   normalizeAppRole,
 } from '@/domain/user-schema';
+
+function attachDriverKyc(
+  profile: UserProfile,
+  data: Record<string, unknown>
+): UserProfile {
+  const kyc = extractDriverKyc({
+    documentFiles: profile.documentFiles,
+    documentUploadStatuses: profile.documentUploadStatuses,
+    documents: data.documents,
+  });
+  return {
+    ...profile,
+    ...(data.accountStatus ? { accountStatus: String(data.accountStatus) } : {}),
+    ...(data.nationalId ? { nationalId: String(data.nationalId) } : {}),
+    ...(data.registrationSerial
+      ? { registrationSerial: String(data.registrationSerial) }
+      : {}),
+    ...(data.documentExpiries && typeof data.documentExpiries === 'object'
+      ? { documentExpiries: data.documentExpiries as UserProfile['documentExpiries'] }
+      : {}),
+    documentFiles: kyc.documentFiles,
+    documentUploadStatuses: kyc.documentUploadStatuses,
+  };
+}
 
 function readFirestoreProfile(
   firebaseUser: User,
@@ -32,7 +57,7 @@ function readFirestoreProfile(
     if (!role || role === APP_ROLES.ADMIN || !isRegistrableRole(role)) {
       return null;
     }
-    return {
+    const base: UserProfile = {
       uid: firebaseUser.uid,
       phone,
       role,
@@ -50,6 +75,7 @@ function readFirestoreProfile(
         ? { commercialRegistration: String(data.commercialRegistration) }
         : {}),
     };
+    return role === APP_ROLES.B2C_DRIVER ? attachDriverKyc(base, data) : base;
   }
 
   if (collection === 'customers') {
@@ -63,21 +89,23 @@ function readFirestoreProfile(
   }
 
   if (collection === 'drivers') {
-    return {
-      uid: firebaseUser.uid,
-      phone,
-      role: APP_ROLES.B2C_DRIVER,
-      name: String(data.fullName || data.name || 'Driver'),
-      ...(data.photoURL ? { photoURL: String(data.photoURL) } : {}),
-      vehicleType: data.vehicleType ? String(data.vehicleType) : undefined,
-      vehicleOption: data.vehicleSize ? String(data.vehicleSize) : undefined,
-      plateNumber: data.plateNumber ? String(data.plateNumber) : undefined,
-      nationalId: data.nationalId ? String(data.nationalId) : undefined,
-      registrationSerial: data.registrationSerial
-        ? String(data.registrationSerial)
-        : undefined,
-      documentUploadStatuses: data.documents as DriverDocumentUploadStatuses | undefined,
-    };
+    return attachDriverKyc(
+      {
+        uid: firebaseUser.uid,
+        phone,
+        role: APP_ROLES.B2C_DRIVER,
+        name: String(data.fullName || data.name || 'Driver'),
+        ...(data.photoURL ? { photoURL: String(data.photoURL) } : {}),
+        vehicleType: data.vehicleType ? String(data.vehicleType) : undefined,
+        vehicleOption: data.vehicleSize ? String(data.vehicleSize) : undefined,
+        plateNumber: data.plateNumber ? String(data.plateNumber) : undefined,
+        nationalId: data.nationalId ? String(data.nationalId) : undefined,
+        registrationSerial: data.registrationSerial
+          ? String(data.registrationSerial)
+          : undefined,
+      },
+      data
+    );
   }
 
   if (collection === 'corporates') {
@@ -136,10 +164,23 @@ export async function resolveUserProfile(firebaseUser: User): Promise<UserProfil
       const snap = await getDoc(doc(db, collection, firebaseUser.uid));
       const resolved = readFirestoreProfile(firebaseUser, collection, snap);
       if (resolved) {
-        const normalized = {
+        let normalized: UserProfile = {
           ...resolved,
           role: normalizeAppRole(resolved.role) ?? resolved.role,
         };
+        if (normalized.role === APP_ROLES.B2C_DRIVER && collection !== 'drivers') {
+          try {
+            const driverSnap = await getDoc(doc(db, 'drivers', firebaseUser.uid));
+            if (driverSnap.exists()) {
+              normalized = attachDriverKyc(
+                normalized,
+                driverSnap.data() as Record<string, unknown>
+              );
+            }
+          } catch (err) {
+            console.warn('[resolveUserProfile] drivers companion read failed:', err);
+          }
+        }
         saveCachedProfile(normalized);
         return normalized;
       }

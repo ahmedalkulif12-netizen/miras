@@ -12,6 +12,7 @@ import {
   resolvePostOtpAuth,
   resolveRegisterEntryPath,
 } from '../src/lib/authRouting.ts';
+import { B2B_MODULES_ENABLED } from '../src/lib/launchFlags.ts';
 import type { UserProfile } from '../src/lib/userProfile.ts';
 import { assert, assertEqual } from '../e2e/helpers/assert.ts';
 import {
@@ -27,6 +28,19 @@ function profile(role: UserProfile['role'], uid = 'uid-1'): UserProfile {
     phone: '+966500000001',
     role,
     name: 'Test User',
+  };
+}
+
+function driverWithKyc(uid = 'uid-1'): UserProfile {
+  const file = { status: 'uploaded' as const, storagePath: 'kyc/doc.jpg' };
+  return {
+    ...profile(APP_ROLES.B2C_DRIVER, uid),
+    documentFiles: {
+      id: { ...file, storagePath: 'kyc/id.jpg' },
+      registration: { ...file, storagePath: 'kyc/reg.jpg' },
+      permit: { ...file, storagePath: 'kyc/permit.jpg' },
+      license: { ...file, storagePath: 'kyc/lic.jpg' },
+    },
   };
 }
 
@@ -50,15 +64,24 @@ function run(): void {
     assertEqual(existingClient.path, '/b2c/client', 'client dashboard path');
   }
 
-  // Existing individual driver.
+  // Existing individual driver with complete KYC — OTP-only, skip the form.
   const existingDriver = resolvePostOtpAuth({
-    existingProfile: profile(APP_ROLES.B2C_DRIVER),
+    existingProfile: driverWithKyc(),
     intendedRole: APP_ROLES.B2C_CLIENT,
   });
-  assert(existingDriver.kind === 'existing', 'existing driver must skip onboarding');
+  assert(existingDriver.kind === 'existing', 'existing driver with documents must skip onboarding');
   if (existingDriver.kind === 'existing') {
     assertEqual(existingDriver.path.split('?')[0], '/b2c/driver', 'driver dashboard path');
   }
+
+  const incompleteDriver = resolvePostOtpAuth({
+    existingProfile: profile(APP_ROLES.B2C_DRIVER),
+    intendedRole: APP_ROLES.B2C_DRIVER,
+  });
+  assert(
+    incompleteDriver.kind === 'onboarding',
+    'driver without the four documents must complete onboarding'
+  );
 
   // Existing company (corporate).
   const existingCorporate = resolvePostOtpAuth({
@@ -67,7 +90,11 @@ function run(): void {
   });
   assert(existingCorporate.kind === 'existing', 'existing corporate must skip onboarding');
   if (existingCorporate.kind === 'existing') {
-    assertEqual(existingCorporate.path, '/b2b/corporate', 'corporate dashboard path');
+    assertEqual(
+      existingCorporate.path,
+      B2B_MODULES_ENABLED ? '/b2b/corporate' : '/login',
+      'corporate dashboard path'
+    );
   }
 
   // Existing fleet operator.
@@ -77,7 +104,11 @@ function run(): void {
   });
   assert(existingOperator.kind === 'existing', 'existing operator must skip onboarding');
   if (existingOperator.kind === 'existing') {
-    assertEqual(existingOperator.path, '/b2b/operator', 'operator dashboard path');
+    assertEqual(
+      existingOperator.path,
+      B2B_MODULES_ENABLED ? '/b2b/operator' : '/login',
+      'operator dashboard path'
+    );
   }
 
   // Brand-new users — every registrable role goes to the registration form.

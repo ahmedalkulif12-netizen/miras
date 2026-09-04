@@ -207,14 +207,13 @@ const LoginPage: React.FC = () => {
 
   useEffect(() => {
     if (!needsOnboarding || !user || !pendingOnboarding) return;
-    if (authMode === 'login') return;
     setAuthMode('register');
     setRole(pendingOnboarding.intendedRole);
     if (pendingOnboarding.phone) {
       setPhone(pendingOnboarding.phone.replace(/^\+966/, '0'));
     }
     setStep('register');
-  }, [needsOnboarding, user, pendingOnboarding, authMode]);
+  }, [needsOnboarding, user, pendingOnboarding]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -304,18 +303,17 @@ const LoginPage: React.FC = () => {
         return;
       }
       if (code === 'NEEDS_ONBOARDING') {
-        if (authMode === 'login') {
-          await logout();
-          toast.error(t('auth_login_unknown'));
-          setStep('phone');
-          return;
-        }
         applyAuthMode('register');
+        setRole(role);
         setStep('register');
         toast.success(
           isRtl
-            ? 'تم التحقق من جوالك سابقاً. أكمل بياناتك لإنشاء الحساب.'
-            : 'Phone already verified. Complete your profile to create the account.'
+            ? role === APP_ROLES.B2C_DRIVER
+              ? 'تم التحقق من جوالك. أكمل بيانات السائق والمستندات المطلوبة.'
+              : 'تم التحقق من جوالك سابقاً. أكمل بياناتك لإنشاء الحساب.'
+            : role === APP_ROLES.B2C_DRIVER
+              ? 'Phone verified. Complete your driver profile and required documents.'
+              : 'Phone already verified. Complete your profile to create the account.'
         );
         return;
       }
@@ -386,19 +384,17 @@ const LoginPage: React.FC = () => {
       const result = await verifyOtp(code);
 
       if (result.isNewUser) {
-        if (authMode === 'login') {
-          await logout();
-          setOtp('');
-          setStep('phone');
-          toast.error(t('auth_login_unknown'));
-          return;
-        }
         applyAuthMode('register');
+        if (result.intendedRole) setRole(result.intendedRole);
         setStep('register');
         toast.success(
           isRtl
-            ? 'تم التحقق من الجوال. أكمل بياناتك لإنشاء الحساب.'
-            : 'Phone verified. Complete your profile to create the account.'
+            ? result.intendedRole === APP_ROLES.B2C_DRIVER
+              ? 'تم التحقق من الجوال. ارفع المستندات الأربعة لإنهاء التسجيل — الحساب يبقى قيد المراجعة 24 ساعة.'
+              : 'تم التحقق من الجوال. أكمل بياناتك لإنشاء الحساب.'
+            : result.intendedRole === APP_ROLES.B2C_DRIVER
+              ? 'Phone verified. Upload the four required documents to finish registration — review takes 24 hours.'
+              : 'Phone verified. Complete your profile to create the account.'
         );
         return;
       }
@@ -533,7 +529,7 @@ const LoginPage: React.FC = () => {
           const uploaded = await uploadDriverDocumentFiles(uid, documentFiles);
           extraData.documentFiles = uploaded;
           extraData.documentUploadStatuses = documentFilesToUploadStatuses(uploaded);
-          extraData.accountStatus = 'ready_for_review';
+          extraData.accountStatus = 'pending';
         } catch (uploadError) {
           console.error('[login] driver document upload failed:', uploadError);
           toast.error(
@@ -554,9 +550,9 @@ const LoginPage: React.FC = () => {
       if (role === APP_ROLES.B2C_DRIVER) {
         toast.success(
           isRtl
-            ? 'تم التسجيل بنجاح: طلبك جاهز للمراجعة — لا يتم التفعيل إلا بعد اعتماد الإدارة'
-            : 'Registration successful: your application is Ready for Review. Activation requires admin approval.',
-          { duration: 8000 }
+            ? 'تم إرسال طلبك وهو قيد المراجعة. سيراجع المشرف المستندات خلال 24 ساعة، ولا يمكنك قبول الطلبات حتى الاعتماد.'
+            : 'Your application is pending review. An admin will review your documents within 24 hours. You cannot accept rides until approved.',
+          { duration: 9000 }
         );
       } else {
         toast.success(isRtl ? 'تم إنشاء الحساب بنجاح' : 'Account created successfully');
@@ -623,7 +619,9 @@ const LoginPage: React.FC = () => {
                 : step === 'role'
                   ? t('auth_register_role_desc')
                 : step === 'register'
-                  ? t('complete_profile_desc')
+                  ? isDriverRole
+                    ? t('auth_role_driver_hint')
+                    : t('complete_profile_desc')
                   : authMode === 'register'
                     ? t('auth_register_desc')
                     : t('auth_login_desc')}
@@ -774,7 +772,44 @@ const LoginPage: React.FC = () => {
                       {isRtl ? 'تغيير' : 'Change'}
                     </button>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRole(APP_ROLES.B2C_CLIENT)}
+                      className={`py-3 px-3 rounded-2xl border-2 text-xs font-black transition-all ${
+                        role === APP_ROLES.B2C_CLIENT
+                          ? 'border-primary bg-primary/10 text-neutral-900'
+                          : 'border-stone-100 text-stone-500'
+                      }`}
+                    >
+                      {t('customer')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRole(APP_ROLES.B2C_DRIVER)}
+                      className={`py-3 px-3 rounded-2xl border-2 text-xs font-black transition-all ${
+                        role === APP_ROLES.B2C_DRIVER
+                          ? 'border-primary bg-primary/10 text-neutral-900'
+                          : 'border-stone-100 text-stone-500'
+                      }`}
+                    >
+                      {t('driver')}
+                    </button>
+                  </div>
+                )}
+                {isDriverRole && (
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+                    <p className={`text-[11px] font-bold text-blue-800 leading-relaxed ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {t('auth_role_driver_hint')}
+                    </p>
+                    <p className={`text-[11px] font-bold text-blue-700 mt-1 leading-relaxed ${isRtl ? 'text-right' : 'text-left'}`}>
+                      {isRtl
+                        ? 'الحساب الجديد يبقى قيد المراجعة 24 ساعة بعد رفع المستندات. الحساب الحالي يدخل برمز التحقق مباشرة.'
+                        : 'New accounts stay pending review for 24 hours after you upload documents. Existing drivers sign in with OTP only.'}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-neutral-700">{t('phone_number')}</label>
                   <div className="relative">
