@@ -14,6 +14,7 @@ import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
+import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   const out: Record<string, unknown> = {};
@@ -45,7 +46,7 @@ export function buildSharedOrderDocument(
 ): Record<string, unknown> {
   const profile = loadDevBypassProfile();
   const now = new Date().toISOString();
-  const financials = response.financials;
+  const money = toPersistedOrderMoneyFields(normalizeTripFinancials(response.financials || {}));
   const serviceType =
     canonicalizeServiceType(payload.serviceType) || payload.serviceType;
   const userId = auth.currentUser?.uid || '';
@@ -110,13 +111,7 @@ export function buildSharedOrderDocument(
     distance: payload.distanceKm,
     truckCount: payload.truckCount ?? 1,
     ...(payload.matchedDriverId ? { matchedDriverId: payload.matchedDriverId } : {}),
-    financials,
-    totalPrice: financials.customerTotal,
-    commission_amount: financials.platformFee,
-    driver_earning: financials.driverNet,
-    price: financials.customerTotal,
-    tripFare: financials.tripFare,
-    serviceFee: financials.serviceFee,
+    ...money,
     status: resolvedStatus,
     paymentStatus: resolvedStatus === OrderStatus.BROADCASTING ? 'authorized' : 'pending',
     quote: response.quote,
@@ -281,7 +276,7 @@ function debitCustomerWalletAfterPlace(
   orderId: string,
   financials: CreateOrderResponse['financials'] | undefined
 ): void {
-  const amount = Number(financials?.customerTotal ?? 0);
+  const amount = coerceMoney(financials?.customerTotal);
   if (!uid || !(amount > 0)) return;
   debitLocalCustomerWallet(uid, amount, orderId);
 }

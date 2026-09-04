@@ -15,7 +15,7 @@ import {
   sanitizeWaterTankerDistanceKm,
 } from '@/lib/waterTankerDistance';
 import { auth } from '@/lib/firebase';
-import { countCustomerPaidOrders } from '@/lib/customerOrderCount';
+import { tryCountCustomerPaidOrders } from '@/lib/customerOrderCount';
 
 export interface CalculatedPrice {
   /** @deprecated use financials.tripFare */
@@ -31,6 +31,9 @@ export interface CalculatedPrice {
   driver_earning: number;
   /** Canonical money breakdown (Phase A) */
   financials?: TripFinancials;
+  /** Paid orders already placed by this customer (server-authoritative when available). */
+  previousPaidOrderCount?: number;
+  remainingFreeOrders?: number;
   rate: number;
   isServiceFeeFree: boolean;
   surgeApplied: boolean;
@@ -111,37 +114,33 @@ function buildLocalDevPrice(
     extraDistanceFee: fare.extraKmCost,
     serviceFee: financials.serviceFee,
   });
+  const aligned = buildTripFinancials(checkout.basePrice + checkout.extraDistanceFee, {
+    waiveServiceFee: isServiceFeeFree,
+  });
   return {
-    ...toLegacyPricingFields(
-      {
-        ...financials,
-        tripFare: checkout.basePrice + checkout.extraDistanceFee,
-        serviceFee: checkout.serviceFee,
-        customerTotal: checkout.total,
+    ...toLegacyPricingFields(aligned, {
+      isServiceFeeFree,
+      tripType: fare.tripType,
+      base: checkout.basePrice,
+      extraKm: checkout.extraDistanceFee,
+      rate: fare.rate,
+      surgeApplied: fare.surgeApplied,
+      isPriceCapApplied: fare.isPriceCapApplied,
+      pricingSnapshot: {
+        base_price: checkout.basePrice,
+        price_per_km: fare.rate,
+        surge_multiplier: pricing.surge_multiplier,
+        minimum_price: pricing.minimum_price,
+        platform_commission_percentage: pricing.platform_commission_percentage,
+        included_km: fare.includedKm,
+        capacity: fare.capacity,
+        tier: fare.tier,
+        driver_distance_km: distance,
+        extra_km: fare.extraKm,
+        line_subtotal: checkout.basePrice + checkout.extraDistanceFee,
       },
-      {
-        isServiceFeeFree,
-        tripType: fare.tripType,
-        base: checkout.basePrice,
-        extraKm: checkout.extraDistanceFee,
-        rate: fare.rate,
-        surgeApplied: fare.surgeApplied,
-        isPriceCapApplied: fare.isPriceCapApplied,
-        pricingSnapshot: {
-          base_price: checkout.basePrice,
-          price_per_km: fare.rate,
-          surge_multiplier: pricing.surge_multiplier,
-          minimum_price: pricing.minimum_price,
-          platform_commission_percentage: pricing.platform_commission_percentage,
-          included_km: fare.includedKm,
-          capacity: fare.capacity,
-          tier: fare.tier,
-          driver_distance_km: distance,
-          extra_km: fare.extraKm,
-          line_subtotal: checkout.basePrice + checkout.extraDistanceFee,
-        },
-      }
-    ),
+    }),
+    previousPaidOrderCount: previousOrdersCount,
     includedKm: fare.includedKm,
     extraDistanceKm: fare.extraKm,
     capacity: fare.capacity,
@@ -176,10 +175,11 @@ export const calculateOrderPrice = async (
   try {
     const uid = auth.currentUser?.uid;
     if (uid) {
-      paidCount = await countCustomerPaidOrders(uid);
+      const counted = await tryCountCustomerPaidOrders(uid);
+      if (counted != null) paidCount = counted;
     }
   } catch {
-    /* keep caller-supplied count */
+    /* keep caller-supplied count — never treat a failed query as "0 paid orders" */
   }
 
   // Never allow tank liters (1000/3000/5000) to travel as "distance".

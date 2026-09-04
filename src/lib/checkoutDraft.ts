@@ -7,7 +7,7 @@ import { isDevBypassAuthSession } from '@/lib/authApi';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { computeTripFare } from '@/domain/pricing-engine';
-import { buildTripFinancials, shouldWaiveServiceFee } from '@/domain/financials';
+import { buildTripFinancials, shouldWaiveServiceFee, normalizeTripFinancials } from '@/domain/financials';
 import { calculateTotal } from '@/lib/checkoutTotal';
 import { defaultPricingForService } from '@/lib/pricingDefaults';
 import {
@@ -227,6 +227,7 @@ export async function prepareCheckoutDraft(
           createdAt: serverDraft.createdAt || new Date().toISOString(),
           deliveryOnly,
           locationMode: deliveryOnly ? 'delivery_only' : 'pickup_destination',
+          financials: normalizeTripFinancials(serverDraft.financials || {}),
           vehicleFieldNotes:
             payload.vehicleFieldNotes || serverDraft.vehicleFieldNotes,
           serviceDetails: {
@@ -282,13 +283,23 @@ export async function prepareCheckoutDraft(
   const paidCount = auth.currentUser?.uid
     ? await countCustomerPaidOrders(auth.currentUser.uid)
     : 0;
-  const financials = buildTripFinancials(tripFare, {
-    waiveServiceFee: shouldWaiveServiceFee(paidCount),
-  });
+  const financials = normalizeTripFinancials(
+    buildTripFinancials(tripFare, {
+      waiveServiceFee: shouldWaiveServiceFee(paidCount),
+    })
+  );
   const checkout = calculateTotal({
     basePrice: fare.base,
     extraDistanceFee: fare.extraKmCost,
     serviceFee: financials.serviceFee,
+  });
+  const snapshot = normalizeTripFinancials({
+    financials: {
+      ...financials,
+      tripFare: checkout.basePrice + checkout.extraDistanceFee,
+      serviceFee: checkout.serviceFee,
+      customerTotal: checkout.total,
+    },
   });
 
   const draft: CheckoutDraft = {
@@ -304,14 +315,7 @@ export async function prepareCheckoutDraft(
       serviceType === 'water_tanker' || payload.deliveryOnly
         ? 'delivery_only'
         : payload.locationMode || 'pickup_destination',
-    financials: {
-      tripFare: checkout.basePrice + checkout.extraDistanceFee,
-      serviceFee: checkout.serviceFee,
-      customerTotal: checkout.total,
-      platformFee: financials.platformFee,
-      driverNet: financials.driverNet,
-      currency: 'SAR',
-    },
+    financials: snapshot,
     quote: {
       draft: true,
       uid: profile?.uid,

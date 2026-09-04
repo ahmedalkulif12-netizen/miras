@@ -3,7 +3,12 @@
  * Client writes may still use legacy fields until Phase B API migration.
  */
 
-import type { TripFinancials } from './financials';
+import {
+  FEE_POLICY_VERSION,
+  normalizeTripFinancials,
+  toPersistedOrderMoneyFields,
+  type TripFinancials,
+} from './financials';
 import type { OrderStatus, StatusHistoryEntry } from './order-status';
 
 export interface GeoLocation {
@@ -73,43 +78,30 @@ export interface FirestoreOrderDocument {
  * Builds rule-compatible flat pricing fields from financials (for future creates).
  */
 export function financialsToFirestorePricingFields(financials: TripFinancials) {
-  return {
-    totalPrice: financials.customerTotal,
-    tripFare: financials.tripFare,
-    serviceFee: financials.serviceFee,
-    commission_amount: financials.platformFee,
-    driver_earning: financials.driverNet,
-    financials,
-  };
+  return toPersistedOrderMoneyFields(financials);
 }
 
 /**
  * Maps legacy client order payload toward canonical shape (non-destructive).
  */
 export function normalizeLegacyOrderPayload(data: Record<string, unknown>): Record<string, unknown> {
-  const tripFare =
-    typeof data.tripFare === 'number'
-      ? data.tripFare
-      : typeof data.price === 'number'
-        ? data.price
-        : typeof data.totalPrice === 'number'
-          ? data.totalPrice
-          : undefined;
-
+  const financials = normalizeTripFinancials(data);
+  if (financials.tripFare <= 0 && financials.customerTotal <= 0) {
+    return {
+      ...data,
+      financials: data.financials || {
+        currency: 'SAR',
+        feePolicyVersion: FEE_POLICY_VERSION,
+        tripFare: 0,
+        serviceFee: 0,
+        customerTotal: 0,
+        platformFee: 0,
+        driverNet: 0,
+      },
+    };
+  }
   return {
     ...data,
-    ...(tripFare !== undefined && !data.financials
-      ? {
-          financials: {
-            currency: 'SAR',
-            feePolicyVersion: '2025-01',
-            tripFare,
-            serviceFee: 0,
-            customerTotal: tripFare,
-            platformFee: 0,
-            driverNet: 0,
-          },
-        }
-      : {}),
+    ...toPersistedOrderMoneyFields(financials),
   };
 }

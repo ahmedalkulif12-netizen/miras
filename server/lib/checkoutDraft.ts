@@ -18,6 +18,7 @@ import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { canUseAdminFirestore } from './firebaseAdmin.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { debitCustomerWalletOnOrder } from './customerWallet.ts';
+import { toPersistedOrderMoneyFields, normalizeTripFinancials, shouldWaiveServiceFee } from '../../src/domain/financials.ts';
 
 export interface CheckoutDraftRecord {
   draftId: string;
@@ -26,6 +27,8 @@ export interface CheckoutDraftRecord {
   financials: Record<string, unknown>;
   quote: Record<string, unknown>;
   status: 'awaiting_payment';
+  previousPaidOrderCount?: number;
+  serviceFeeWaived?: boolean;
   createdAt: admin.firestore.FieldValue | admin.firestore.Timestamp;
   updatedAt: admin.firestore.FieldValue | admin.firestore.Timestamp;
 }
@@ -43,6 +46,8 @@ export async function createCheckoutDraft(
   distanceKm: number;
   createdAt: string;
   paymentPending: true;
+  previousPaidOrderCount?: number;
+  serviceFeeWaived?: boolean;
 }> {
   validateCreateOrderPayload(body);
   if (canUseAdminFirestore()) {
@@ -96,10 +101,14 @@ export async function createCheckoutDraft(
     waterType,
   });
 
-  const financials = (quote as unknown as { financials?: Record<string, unknown> }).financials;
-  if (!financials) {
+  const financialsRaw = (quote as unknown as { financials?: Record<string, unknown> }).financials;
+  if (!financialsRaw) {
     throw Object.assign(new Error('Pricing calculation failed'), { statusCode: 500 });
   }
+  const financials = {
+    ...normalizeTripFinancials(financialsRaw),
+  };
+  const serviceFeeWaived = shouldWaiveServiceFee(previousOrdersCount);
 
   if (!canUseAdminFirestore()) {
     const draftId = `draft-${Date.now()}`;
@@ -112,6 +121,8 @@ export async function createCheckoutDraft(
       distanceKm: body.distanceKm,
       createdAt: new Date().toISOString(),
       paymentPending: true,
+      previousPaidOrderCount: previousOrdersCount,
+      serviceFeeWaived,
     };
   }
 
@@ -134,6 +145,8 @@ export async function createCheckoutDraft(
     financials,
     quote,
     status: 'awaiting_payment',
+    previousPaidOrderCount: previousOrdersCount,
+    serviceFeeWaived,
     createdAt: now,
     updatedAt: now,
   });
@@ -146,6 +159,8 @@ export async function createCheckoutDraft(
     distanceKm: body.distanceKm,
     createdAt: new Date().toISOString(),
     paymentPending: true,
+    previousPaidOrderCount: previousOrdersCount,
+    serviceFeeWaived,
   };
 }
 
@@ -189,7 +204,12 @@ export async function finalizeOrderFromCheckoutDraft(
   }
 
   const body = draft.payload;
-  const financials = draft.financials;
+  const financials = {
+    ...draft.financials,
+    ...(typeof draft.previousPaidOrderCount === 'number'
+      ? { previousPaidOrderCount: draft.previousPaidOrderCount }
+      : {}),
+  };
   const published = await writeBroadcastingOrder(db, {
     userId: input.userId,
     payload: body,
@@ -229,12 +249,7 @@ export function buildBroadcastingOrderPlainDocument(input: {
   const serviceType =
     canonicalizeServiceType(input.payload.serviceType) || input.payload.serviceType;
   const body: CreateOrderPayload = { ...input.payload, serviceType };
-  const financials = input.financials;
-  const customerTotal = Number(financials.customerTotal);
-  const tripFare = Number(financials.tripFare);
-  const platformFee = Number(financials.platformFee);
-  const driverNet = Number(financials.driverNet);
-  const serviceFee = Number(financials.serviceFee);
+  const money = toPersistedOrderMoneyFields(normalizeTripFinancials(input.financials));
   const nowIso = input.nowIso || new Date().toISOString();
   const customerPhone = input.customerPhone || '';
   const customerName = input.customerName || '';
@@ -277,13 +292,14 @@ export function buildBroadcastingOrderPlainDocument(input: {
     distanceKm: body.distanceKm,
     distance: body.distanceKm,
     ...(body.matchedDriverId ? { matchedDriverId: body.matchedDriverId } : {}),
-    financials,
-    totalPrice: customerTotal,
-    commission_amount: platformFee,
-    driver_earning: driverNet,
-    price: customerTotal,
-    tripFare,
-    serviceFee,
+    ...money,
+    ...(typeof (input.financials as { previousPaidOrderCount?: unknown }).previousPaidOrderCount === 'number'
+      ? {
+          previousPaidOrderCount: Number(
+            (input.financials as { previousPaidOrderCount: number }).previousPaidOrderCount
+          ),
+        }
+      : {}),
     status: OrderStatus.BROADCASTING,
     paymentStatus: 'authorized',
     ...(customerPhone ? { customerPhone } : {}),

@@ -6,7 +6,6 @@ import { DriverAccountStatus, Order } from '@/types';
 import { fetchPricing, PricingConfig, auth, db, ensureFirebaseReady, waitForFirebaseAuthUid } from '@/lib/firebase';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { defaultPricingForService } from '@/lib/pricingDefaults';
-import { calculateOrderPrice } from '@/lib/pricing';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment, setDoc, where } from 'firebase/firestore';
@@ -44,7 +43,7 @@ import {
 import { DriverTripMap, getOrderDropoffLatLng, getOrderPickupLatLng } from '@/components/DriverTripMap';
 import DriverProfilePage from '@/pages/DriverProfilePage';
 import { getDriverOfferMetrics } from '@/lib/driverOfferMetrics';
-import { DRIVER_COMMISSION_RATE, MIN_WITHDRAWAL_SAR } from '@/domain/financials';
+import { MIN_WITHDRAWAL_SAR } from '@/domain/financials';
 import {
   applyLocalWalletCredit,
   loadLocalDriverWallet,
@@ -223,7 +222,6 @@ const DriverDashboard: React.FC = () => {
   const [localOpsEpoch, setLocalOpsEpoch] = useState(0);
   /** Last open offer — restored after trip completion so the driver can take the next job. */
   const pendingOfferRef = React.useRef<Order | null>(null);
-  const [mockOrderPrice, setMockOrderPrice] = useState<{ total: number; net: number }>({ total: 240, net: 204 });
   const [wallet, setWallet] = useState<DriverWalletView>(() =>
     loadLocalDriverWallet(profile?.uid || '')
   );
@@ -384,13 +382,6 @@ const DriverDashboard: React.FC = () => {
         try {
           const config = await fetchPricing();
           setPricingConfig(config);
-
-          try {
-            const calc = await calculateOrderPrice(50, 'flatbed', 'Riyadh', 'Riyadh', 'normal', 1, 5);
-            setMockOrderPrice({ total: calc.total, net: calc.driver_earning });
-          } catch (calcErr) {
-            console.warn('Silent calc error for mock price:', calcErr);
-          }
         } catch (err) {
           console.warn('[pricing] Driver dashboard using built-in rates:', err);
           setPricingConfig(defaultPricingForService('flatbed'));
@@ -852,14 +843,10 @@ const DriverDashboard: React.FC = () => {
       return;
     }
 
-    const tripFare =
-      Number(order.financials?.tripFare ?? (order as { tripFare?: number }).tripFare ?? order.price) || 0;
-    const platformFee =
-      Number(order.financials?.platformFee ?? (order as { commission_amount?: number }).commission_amount) ||
-      0;
-    const driverNet =
-      Number(order.financials?.driverNet ?? (order as { driver_earning?: number }).driver_earning) ||
-      null;
+    const metrics = getDriverOfferMetrics(order);
+    const tripFare = metrics?.tripFare || 0;
+    const platformFee = metrics?.platformFee || 0;
+    const driverNet = metrics?.driverNet ?? null;
 
     setCompletingId(order.id);
     try {
@@ -870,12 +857,8 @@ const DriverDashboard: React.FC = () => {
           profile.uid,
           {
             tripFare,
-            platformFee:
-              platformFee ||
-              Math.round(tripFare * DRIVER_COMMISSION_RATE * 100) / 100,
-            driverNet:
-              driverNet ??
-              Math.round(tripFare * (1 - DRIVER_COMMISSION_RATE) * 100) / 100,
+            platformFee: platformFee || 0,
+            driverNet: driverNet ?? 0,
           },
           order.id
         );
@@ -1168,13 +1151,7 @@ const DriverDashboard: React.FC = () => {
 
   const isActiveTrip = Boolean(latestOrder && isActiveTripStatus(latestOrder.status));
   const isIncomingOffer = Boolean(offerOrder && isOpenOfferStatus(offerOrder.status));
-  const offerMetrics = getDriverOfferMetrics(offerOrder, {
-    clientTotal:
-      Number(offerOrder?.financials?.customerTotal ?? offerOrder?.totalPrice ?? offerOrder?.price) ||
-      mockOrderPrice.total,
-    driverNet:
-      Number(offerOrder?.financials?.driverNet ?? offerOrder?.driver_earning) || mockOrderPrice.net,
-  });
+  const offerMetrics = getDriverOfferMetrics(offerOrder);
   const offerDispatch = offerOrder
     ? evaluateDispatchOffer({
         order: offerOrder,
@@ -1785,17 +1762,20 @@ const DriverDashboard: React.FC = () => {
                             <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3.5">
                               <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
                                 <CreditCard size={12} className="shrink-0" />
-                                <span className="truncate">{isRtl ? 'سعر العميل' : 'Client total'}</span>
+                                <span className="truncate">{t('client_total')}</span>
                               </div>
                               <p className="text-xl font-black font-mono text-neutral-900">
                                 {offerMetrics.clientTotal.toFixed(2)}{' '}
                                 <span className="text-xs font-bold text-slate-400">{t('sar')}</span>
                               </p>
+                              <p className="text-[10px] font-bold text-slate-400 mt-1">
+                                {t('trip_fare')} {offerMetrics.tripFare.toFixed(2)} {t('sar')}
+                              </p>
                             </div>
                             <div className="rounded-2xl bg-amber-50/80 border border-amber-100 p-3.5">
                               <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700/70 uppercase tracking-widest mb-1">
                                 <DollarSign size={12} className="shrink-0" />
-                                <span className="truncate">{isRtl ? 'عمولة التطبيق' : 'App commission'}</span>
+                                <span className="truncate">{t('platform_commission')}</span>
                               </div>
                               <p className="text-lg font-black font-mono text-amber-800">
                                 −{offerMetrics.platformFee.toFixed(2)}{' '}
@@ -1805,7 +1785,7 @@ const DriverDashboard: React.FC = () => {
                             <div className="rounded-2xl bg-teal-50 border border-teal-100 p-3.5">
                               <div className="flex items-center gap-1.5 text-[10px] font-bold text-teal-700/80 uppercase tracking-widest mb-1">
                                 <Wallet size={12} className="shrink-0" />
-                                <span className="truncate">{isRtl ? 'صافي أرباحك' : 'Your net earning'}</span>
+                                <span className="truncate">{t('driver_net_earning')}</span>
                               </div>
                               <p className="text-lg font-black font-mono text-teal-800">
                                 {offerMetrics.driverNet.toFixed(2)}{' '}

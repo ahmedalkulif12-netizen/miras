@@ -40,6 +40,14 @@ import {
   mapOrderDocToFeedItem,
   mapDriverApplicationToFeedItem,
 } from '../server/lib/adminOrders.ts';
+import {
+  buildTripFinancials,
+  shouldWaiveServiceFee,
+  normalizeTripFinancials,
+  FREE_SERVICE_FEE_ORDERS,
+} from '../src/domain/financials.ts';
+import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
+import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -311,6 +319,69 @@ function run(): void {
   const afterRelease = loadLocalDriverWallet('drv-test');
   assert(afterRelease.heldBalance === 0, 'reject releases heldBalance');
   assert(afterRelease.balance === 100, 'reject restores available balance');
+
+  assert(FREE_SERVICE_FEE_ORDERS === 3, 'promo covers first 3 paid orders');
+  assert(shouldWaiveServiceFee(0), 'order 1 waives customer service fee');
+  assert(shouldWaiveServiceFee(2), 'order 3 waives customer service fee');
+  assert(!shouldWaiveServiceFee(3), 'order 4 applies customer service fee');
+
+  const waived = buildTripFinancials(300, { waiveServiceFee: true });
+  assert(waived.serviceFee === 0, 'first-3 promo zeroes customer service fee');
+  assert(waived.customerTotal === 300, 'waived total equals trip fare');
+  assert(waived.platformFee === 45, 'driver commission still 15% when fee is waived');
+  assert(waived.driverNet === 255, 'driver net is tripFare minus commission');
+
+  const charged = buildTripFinancials(300, { waiveServiceFee: false });
+  assert(charged.serviceFee === 15, 'from 4th order customer pays 5%');
+  assert(charged.customerTotal === 315, 'customer total is trip + service fee');
+  assert(charged.platformFee === 45, 'driver commission is 15% of trip fare');
+  assert(charged.driverNet === 255, 'driver net matches waived and charged trips');
+
+  const recoveredWaived = normalizeTripFinancials({
+    totalPrice: 300,
+    serviceFee: 0,
+  });
+  assert(recoveredWaived.tripFare === 300, 'waived reconstruction does not divide by 1.05');
+  assert(recoveredWaived.platformFee === 45, 'waived reconstruction still has commission');
+  assert(recoveredWaived.customerTotal === 300, 'waived reconstruction keeps client total');
+
+  const recoveredCharged = normalizeTripFinancials({
+    customerTotal: 315,
+    serviceFee: 15,
+  });
+  assert(recoveredCharged.tripFare === 300, 'charged reconstruction uses total minus fee');
+  assert(recoveredCharged.platformFee === 45, 'charged reconstruction has commission');
+
+  const persistedMoney = financialsToFirestorePricingFields(charged);
+  assert(persistedMoney.totalPrice === 315, 'persisted total matches customer total');
+  assert(persistedMoney.commission_amount === 45, 'persisted commission matches platform fee');
+  assert(persistedMoney.driver_earning === 255, 'persisted driver earning matches net');
+  assert(persistedMoney.price === 315, 'legacy price field stores customer total');
+
+  const driverView = getDriverOfferMetrics({
+    id: 'ord-1',
+    financials: waived,
+    totalPrice: 300,
+    distanceKm: 40,
+    pickupAddress: 'A',
+    dropoffAddress: 'B',
+    status: 'broadcasting',
+  } as unknown as Parameters<typeof getDriverOfferMetrics>[0]);
+  assert(driverView?.clientTotal === 300, 'driver card client total matches customer');
+  assert(driverView?.platformFee === 45, 'driver card shows app commission');
+  assert(driverView?.driverNet === 255, 'driver card shows net earning');
+  assert(driverView?.tripFare === 300, 'driver card trip fare matches snapshot');
+
+  const nestedPrice = getDriverOfferMetrics({
+    id: 'ord-2',
+    price: { total: 300 },
+    serviceFee: 0,
+    distanceKm: 12,
+    status: 'broadcasting',
+  } as unknown as Parameters<typeof getDriverOfferMetrics>[0]);
+  assert(nestedPrice?.clientTotal === 300, 'object price.total is coerced');
+  assert(nestedPrice?.platformFee === 45, 'object price still yields commission');
+  assert(nestedPrice != null && nestedPrice.clientTotal > 250, 'never falls back to the old 240 mock');
 
   console.log('lifecycle-audit: all checks passed');
 }

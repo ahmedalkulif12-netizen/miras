@@ -1448,7 +1448,10 @@ async function startServer() {
   // API Route: Calculate Price (authenticated quote preview — same engine as order create)
   app.post('/api/calculate-price', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
-      const result = await pricingService.calculatePrice(req.body);
+      const result = await pricingService.calculatePrice({
+        ...req.body,
+        userId: req.firebaseUid,
+      });
       res.json(result);
     } catch (error) {
       console.error('Calculation error:', error);

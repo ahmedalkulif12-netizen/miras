@@ -1,7 +1,10 @@
 import admin from 'firebase-admin';
+import {
+  DRIVER_COMMISSION_RATE,
+  normalizeTripFinancials,
+} from '../../src/domain/financials.ts';
 
-/** Must match src/domain/financials.ts — server never trusts client rates. */
-export const DRIVER_COMMISSION_RATE = 0.15;
+export { DRIVER_COMMISSION_RATE };
 
 export interface OrderTripMoney {
   tripFare: number;
@@ -30,28 +33,11 @@ function roundMoney(value: number): number {
  * Read trip money from the order document only (never from the client body).
  */
 export function readOrderTripMoney(order: Record<string, unknown>): OrderTripMoney {
-  const financials =
-    order.financials && typeof order.financials === 'object'
-      ? (order.financials as Record<string, unknown>)
-      : {};
-
-  let tripFare = Number(financials.tripFare ?? order.tripFare ?? 0);
-  let platformFee = Number(financials.platformFee ?? order.commission_amount ?? 0);
-  let driverNet = Number(financials.driverNet ?? order.driver_earning ?? 0);
-
-  if (!Number.isFinite(tripFare) || tripFare < 0) tripFare = 0;
-  if (!Number.isFinite(platformFee) || platformFee < 0) platformFee = 0;
-  if (!Number.isFinite(driverNet) || driverNet < 0) driverNet = 0;
-
-  if (tripFare > 0 && (platformFee === 0 || driverNet === 0)) {
-    platformFee = roundMoney(tripFare * DRIVER_COMMISSION_RATE);
-    driverNet = roundMoney(tripFare - platformFee);
-  }
-
+  const financials = normalizeTripFinancials(order);
   return {
-    tripFare: roundMoney(tripFare),
-    platformFee: roundMoney(platformFee),
-    driverNet: roundMoney(driverNet),
+    tripFare: financials.tripFare,
+    platformFee: financials.platformFee,
+    driverNet: financials.driverNet,
   };
 }
 

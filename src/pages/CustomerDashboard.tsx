@@ -17,9 +17,9 @@ import {
   upsertLocalBroadcastOrder,
 } from '@/lib/localOrderBridge';
 import { mapOrderStatusToTrackingUI, normalizeOrderStatus, isActiveTripStatus, clientTimelineStep, preferFresherOrderStatus } from '@/domain/order-status';
-import { FREE_SERVICE_FEE_ORDERS } from '@/domain/financials';
+import { FREE_SERVICE_FEE_ORDERS, buildTripFinancials, coerceMoney, normalizeTripFinancials, CUSTOMER_SERVICE_FEE_RATE, roundMoney } from '@/domain/financials';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
-import { countCustomerPaidOrders } from '@/lib/customerOrderCount';
+import { tryCountCustomerPaidOrders } from '@/lib/customerOrderCount';
 import {
   creditLocalCustomerWallet,
   loadLocalCustomerWallet,
@@ -234,6 +234,12 @@ const CustomerDashboard: React.FC = () => {
     platformFee: pricing.serviceFee,
   });
   const checkoutTotal = checkoutBreakdown.total;
+  const tripFareDisplay = checkoutBreakdown.basePrice + checkoutBreakdown.extraDistanceFee;
+  const listedServiceFee = pricing.isServiceFeeFree
+    ? roundMoney(tripFareDisplay * CUSTOMER_SERVICE_FEE_RATE)
+    : pricing.serviceFee;
+  const appCommissionDisplay = Number(pricing.commission_amount) || 0;
+  const driverNetDisplay = Number(pricing.driver_earning) || 0;
 
   const [previousOrdersCount, setPreviousOrdersCount] = useState(0);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
@@ -397,17 +403,13 @@ const CustomerDashboard: React.FC = () => {
       try {
         const uid = await ensureSignedInFirebaseUid(8000);
         if (cancelled || !uid) return;
-        const count = await countCustomerPaidOrders(uid);
-        if (!cancelled) setPreviousOrdersCount(count);
+        const count = await tryCountCustomerPaidOrders(uid);
+        if (!cancelled && count != null) setPreviousOrdersCount(count);
       } catch {
         const uid = auth.currentUser?.uid;
         if (!uid || cancelled) return;
-        try {
-          const count = await countCustomerPaidOrders(uid);
-          if (!cancelled) setPreviousOrdersCount(count);
-        } catch {
-          /* keep current count */
-        }
+        const count = await tryCountCustomerPaidOrders(uid);
+        if (!cancelled && count != null) setPreviousOrdersCount(count);
       }
     })();
     return () => {
@@ -820,26 +822,40 @@ const CustomerDashboard: React.FC = () => {
         isServiceFeeFree: Boolean(calc.isServiceFeeFree),
         financials: calc.financials ?? null,
       });
+      const tripFare = checkout.basePrice + checkout.extraDistanceFee;
+      const financials = normalizeTripFinancials(
+        calc.financials ??
+          buildTripFinancials(tripFare, {
+            waiveServiceFee: Boolean(calc.isServiceFeeFree) || checkout.serviceFee === 0,
+          })
+      );
+      const aligned = normalizeTripFinancials({
+        financials: {
+          ...financials,
+          tripFare,
+          serviceFee: checkout.serviceFee,
+          customerTotal: checkout.total,
+        },
+      });
+
+      if (typeof calc.previousPaidOrderCount === 'number') {
+        setPreviousOrdersCount(calc.previousPaidOrderCount);
+      }
 
       setPricing({
         total: checkout.total,
         base: checkout.basePrice,
         extraKm: checkout.extraDistanceFee,
-        serviceFee: checkout.platformFee,
-        commission_amount: calc.financials?.platformFee ?? calc.commission_amount,
-        driver_earning: calc.financials?.driverNet ?? calc.driver_earning,
+        serviceFee: checkout.serviceFee,
+        commission_amount: aligned.platformFee,
+        driver_earning: aligned.driverNet,
         rate: calc.rate,
         transport: !deliveryOnly && distKm > 100 ? 'outside' : 'inside',
-        isServiceFeeFree: Boolean(calc.isServiceFeeFree),
+        isServiceFeeFree: Boolean(calc.isServiceFeeFree) || checkout.serviceFee === 0,
         truckCount,
         surgeApplied: calc.surgeApplied,
         pricingSnapshot: calc.pricingSnapshot || null,
-        financials: {
-          ...(calc.financials ?? {}),
-          tripFare: checkout.basePrice + checkout.extraDistanceFee,
-          serviceFee: checkout.platformFee,
-          customerTotal: checkout.total,
-        },
+        financials: aligned,
       });
 
       setTripTypeState(calc.tripType);
@@ -985,12 +1001,7 @@ const CustomerDashboard: React.FC = () => {
           extraDistanceFee: prev.extraKm,
           serviceFee: prev.serviceFee,
         });
-        return {
-          ...prev,
-          total: checkout.total,
-          commission_amount:
-            draft.financials?.platformFee ?? prev.commission_amount,
-          driver_earning: draft.financials?.driverNet ?? prev.driver_earning,
+        const aligned = normalizeTripFinancials({
           financials: {
             ...(prev.financials ?? {}),
             ...draft.financials,
@@ -998,6 +1009,14 @@ const CustomerDashboard: React.FC = () => {
             serviceFee: checkout.serviceFee,
             customerTotal: checkout.total,
           },
+        });
+        return {
+          ...prev,
+          total: checkout.total,
+          commission_amount: aligned.platformFee,
+          driver_earning: aligned.driverNet,
+          isServiceFeeFree: aligned.serviceFee === 0,
+          financials: aligned,
         };
       });
 
@@ -1106,7 +1125,9 @@ const CustomerDashboard: React.FC = () => {
     setFeedback('');
     const uid = auth.currentUser?.uid;
     if (uid) {
-      void countCustomerPaidOrders(uid).then(setPreviousOrdersCount);
+      void tryCountCustomerPaidOrders(uid).then((count) => {
+        if (count != null) setPreviousOrdersCount(count);
+      });
     } else {
       setPreviousOrdersCount((prev) => prev + 1);
     }
@@ -1708,10 +1729,27 @@ const CustomerDashboard: React.FC = () => {
                           <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                             <span className="text-gray-500">{t('service_fee')}</span>
                             <div className={`flex flex-col ${isRtl ? 'items-end' : 'items-start'}`}>
-                              <span className={pricing.isServiceFeeFree ? "line-through text-gray-300" : ""}>{pricing.serviceFee.toFixed(2)} {t('sar')}</span>
+                              <span className={pricing.isServiceFeeFree ? "line-through text-gray-300" : ""}>{listedServiceFee.toFixed(2)} {t('sar')}</span>
                               {pricing.isServiceFeeFree && <span className="text-[10px] text-green-500 font-bold">{t('free')} ({t('first_3_orders')})</span>}
                             </div>
                           </div>
+                          {appCommissionDisplay > 0 && (
+                            <div className={`flex justify-between text-slate-500 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                              <span>
+                                {t('platform_commission')}
+                                <span className="block text-[9px] font-medium text-slate-400 normal-case tracking-normal">
+                                  {t('commission_not_added')}
+                                </span>
+                              </span>
+                              <span>{appCommissionDisplay.toFixed(2)} {t('sar')}</span>
+                            </div>
+                          )}
+                          {driverNetDisplay > 0 && (
+                            <div className={`flex justify-between text-slate-500 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                              <span>{t('driver_net_earning')}</span>
+                              <span>{driverNetDisplay.toFixed(2)} {t('sar')}</span>
+                            </div>
+                          )}
                           {serviceType === 'goods_transport' && truckCount > 1 && (
                             <div className={`flex justify-between text-blue-600 font-bold ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                               <span>{t('truck_count')}</span>
@@ -1953,8 +1991,33 @@ const CustomerDashboard: React.FC = () => {
 
                         <div className="flex justify-between text-sm text-gray-500">
                           <span>{t('service_fee')}</span>
-                          <span>{pricing.serviceFee.toFixed(2)} {t('sar')}</span>
+                          <span className={pricing.isServiceFeeFree ? 'line-through text-gray-300' : ''}>
+                            {listedServiceFee.toFixed(2)} {t('sar')}
+                          </span>
                         </div>
+                        {pricing.isServiceFeeFree && (
+                          <div className="flex justify-between text-sm text-green-600 font-bold">
+                            <span>{t('first_3_orders')}</span>
+                            <span>{t('free')}</span>
+                          </div>
+                        )}
+                        {appCommissionDisplay > 0 && (
+                          <div className="flex justify-between text-sm text-gray-500">
+                            <span>
+                              {t('platform_commission')}
+                              <span className="block text-[9px] font-medium text-slate-400">
+                                {t('commission_not_added')}
+                              </span>
+                            </span>
+                            <span>{appCommissionDisplay.toFixed(2)} {t('sar')}</span>
+                          </div>
+                        )}
+                        {driverNetDisplay > 0 && (
+                          <div className="flex justify-between text-sm text-gray-500">
+                            <span>{t('driver_net_earning')}</span>
+                            <span>{driverNetDisplay.toFixed(2)} {t('sar')}</span>
+                          </div>
+                        )}
 
                         <div className="pt-6 border-t border-dashed flex justify-between items-end">
                           <div>
@@ -2615,15 +2678,13 @@ function mapOrderHistoryRow(id: string, data: Record<string, unknown>): HistoryR
   return {
     id,
     serviceType: String(data.serviceType || data.service || 'unknown'),
-    amount:
-      Number(
-        financials.customerTotal ??
-          financials.total ??
-          data.totalPrice ??
-          data.price ??
-          data.customerTotal ??
-          0
-      ) || 0,
+    amount: coerceMoney(
+      financials.customerTotal ??
+        financials.total ??
+        data.totalPrice ??
+        data.price ??
+        data.customerTotal
+    ),
     status: String(data.status || data.orderStatus || 'broadcasting'),
     createdAt: formatCreatedAtLabel(created),
     sortMs: createdAtMs(created) || 0,

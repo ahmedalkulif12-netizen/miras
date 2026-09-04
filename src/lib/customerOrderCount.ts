@@ -19,7 +19,7 @@ export function isPaidCreatedOrderStatus(status: string | undefined | null): boo
   return !UNPAID_OR_VOID.has(value);
 }
 
-export async function countCustomerPaidOrders(uid: string): Promise<number> {
+export async function tryCountCustomerPaidOrders(uid: string): Promise<number | null> {
   if (!uid) return 0;
   await ensureFirebaseReady();
   try {
@@ -35,6 +35,11 @@ export async function countCustomerPaidOrders(uid: string): Promise<number> {
     return count;
   } catch (error) {
     console.warn('[promo] Could not count customer orders:', error);
-    return 0;
+    return null;
   }
+}
+
+export async function countCustomerPaidOrders(uid: string): Promise<number> {
+  const counted = await tryCountCustomerPaidOrders(uid);
+  return counted ?? 0;
 }

@@ -20,10 +20,14 @@ tripFare = basePrice + max(0, totalDistanceKm − 25) × extraKmRate
 | Customer service fee | **5%** | `tripFare` |
 | Driver platform commission | **15%** | `tripFare` |
 
+Promo: the customer service fee is **waived for the first 3 paid orders**. From the 4th paid order onward both the 5% customer fee and the 15% driver commission are calculated automatically. Driver commission is never waived.
+
+## Amounts
+
 ## Amounts
 
 - **tripFare** — base + extra km (driver gross before commission)
-- **serviceFee** — `tripFare × 5%` (waived when `previousOrdersCount < 3`, legacy promo)
+- **serviceFee** — `tripFare × 5%` (waived when `previousPaidOrderCount < 3`)
 - **customerTotal** — charged via Moyasar (`tripFare + serviceFee`)
 - **platformFee** — `tripFare × 15%` (deducted from driver)
 - **driverNet** — `tripFare − platformFee`

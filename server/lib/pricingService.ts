@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import { computeTripFare } from '../../src/domain/pricing-engine.ts';
 import { buildTripFinancials, toLegacyPricingFields, shouldWaiveServiceFee } from '../../src/domain/financials.ts';
+import { countPaidCustomerOrders, remainingFreeServiceFeeOrders } from './customerOrderCount.ts';
 import {
   defaultPricingForService,
   mergePricingConfig,
@@ -82,10 +83,22 @@ export function createPricingService(db: admin.firestore.Firestore) {
       option,
       truckType = 'normal',
       truckCount = 1,
-      previousOrdersCount = 0,
       capacity,
       waterType,
+      userId,
     } = params;
+
+    let previousOrdersCount = Number(params.previousOrdersCount);
+    if (!Number.isFinite(previousOrdersCount) || previousOrdersCount < 0) {
+      previousOrdersCount = 0;
+    }
+    if (userId && canUseAdminFirestore()) {
+      try {
+        previousOrdersCount = await countPaidCustomerOrders(db, userId);
+      } catch (error) {
+        console.warn('[pricing] previous-orders lookup skipped:', error);
+      }
+    }
 
     const service = normalizeServiceType(serviceType);
     const pricing = await getPricing(service);
@@ -151,6 +164,8 @@ export function createPricingService(db: admin.firestore.Firestore) {
         isPriceCapApplied: fare.isPriceCapApplied,
         pricingSnapshot,
       }),
+      previousPaidOrderCount: previousOrdersCount,
+      remainingFreeOrders: remainingFreeServiceFeeOrders(previousOrdersCount),
       includedKm: fare.includedKm,
       extraDistanceKm: fare.extraKm,
       capacity: fare.capacity,

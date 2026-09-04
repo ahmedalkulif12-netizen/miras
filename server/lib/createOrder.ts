@@ -9,6 +9,7 @@ import {
 import { canonicalizeServiceType } from '../../src/domain/serviceCategories.ts';
 import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
+import { normalizeTripFinancials, toPersistedOrderMoneyFields } from '../../src/domain/financials.ts';
 
 /** Max trip / driver-to-client distance accepted (km). */
 const MAX_DISTANCE_KM = 3000;
@@ -205,12 +206,7 @@ export async function createOrderSecure(
     throw Object.assign(new Error('Pricing calculation failed'), { statusCode: 500 });
   }
 
-  const customerTotal = Number((financials as { customerTotal: number }).customerTotal);
-  const tripFare = Number((financials as { tripFare: number }).tripFare);
-  const platformFee = Number((financials as { platformFee: number }).platformFee);
-  const driverNet = Number((financials as { driverNet: number }).driverNet);
-  const serviceFee = Number((financials as { serviceFee: number }).serviceFee);
-
+  const money = toPersistedOrderMoneyFields(normalizeTripFinancials(financials));
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   const vehicleFieldNotes = sanitizeVehicleFieldNotes(
@@ -262,14 +258,9 @@ export async function createOrderSecure(
     distanceKm: body.distanceKm,
     distance: body.distanceKm,
     ...(body.matchedDriverId ? { matchedDriverId: body.matchedDriverId } : {}),
-    financials,
+    ...money,
+    previousPaidOrderCount: previousOrdersCount,
     pricing_snapshot: (quote as { pricingSnapshot?: Record<string, unknown> }).pricingSnapshot || {},
-    totalPrice: customerTotal,
-    commission_amount: platformFee,
-    driver_earning: driverNet,
-    price: customerTotal,
-    tripFare,
-    serviceFee,
     status: 'awaiting_payment',
     paymentStatus: 'pending',
     statusHistory: [
@@ -288,7 +279,7 @@ export async function createOrderSecure(
 
   return {
     orderId: ref.id,
-    financials,
+    financials: { ...money.financials },
     quote: quote as Record<string, unknown>,
   };
 }
