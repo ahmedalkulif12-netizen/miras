@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F8C31E" />
+    <meta
+      name="description"
+      content="Privacy Policy for Miras (ميراس) — the logistics platform connecting customers with independent transport providers in Saudi Arabia."
+    />
+    <title>سياسة الخصوصية | Miras Privacy Policy</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=DM+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: "#F8C31E",
+              ink: "#0A0A0A",
+              paper: "#F8F9FB",
+            },
+            fontFamily: {
+              cairo: ["Cairo", "system-ui", "sans-serif"],
+              dm: ["DM Sans", "system-ui", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      html[dir="rtl"] body {
+        font-family: "Cairo", system-ui, sans-serif;
+      }
+      html[dir="ltr"] body {
+        font-family: "DM Sans", system-ui, sans-serif;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      .toc a:hover {
+        color: #0a0a0a;
+      }
+    </style>
+  </head>
+  <body class="bg-paper text-ink antialiased">
+    <header class="sticky top-0 z-30 border-b border-stone-200/80 bg-white/90 backdrop-blur">
+      <div class="mx-auto flex max-w-4xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div class="flex items-center gap-3">
+          <svg class="h-10 w-10 shrink-0" viewBox="0 0 128 128" role="img" aria-label="Miras">
+            <circle cx="64" cy="64" r="64" fill="#F8C31E" />
+            <path
+              fill="#0A0A0A"
+              d="M22 102V26h18.5L64 78 87.5 26H106v76H90.5V48.5L71.5 102H56.5L37.5 48.5V102H22z"
+            />
+          </svg>
+          <div>
+            <p class="text-lg font-extrabold leading-none tracking-tight">Miras</p>
+            <p class="text-xs font-semibold text-stone-500" data-i18n="brand_sub">ميراس للخدمات اللوجستية</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 rounded-full bg-stone-100 p-1 text-sm font-bold">
+          <button
+            type="button"
+            id="btn-ar"
+            class="rounded-full bg-ink px-3 py-1.5 text-white"
+            onclick="setLang('ar')"
+          >
+            العربية
+          </button>
+          <button
+            type="button"
+            id="btn-en"
+            class="rounded-full px-3 py-1.5 text-stone-600"
+            onclick="setLang('en')"
+          >
+            English
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-4xl px-4 py-10 sm:px-6 sm:py-14">
+      <div class="mb-10 space-y-4">
+        <p class="inline-flex items-center gap-2 rounded-full bg-brand/20 px-3 py-1 text-xs font-bold text-ink">
+          <span class="h-2 w-2 rounded-full bg-brand"></span>
+          <span data-i18n="badge">سياسة خصوصية التطبيق</span>
+        </p>
+        <h1 class="text-3xl font-extrabold tracking-tight sm:text-5xl" data-i18n="title">
+          سياسة الخصوصية
+        </h1>
+        <p class="text-lg font-medium text-stone-600" data-i18n="intro">
+          نحن في منصة «ميراس» (Miras) للخدمات اللوجستية نلتزم بحماية خصوصيتكم والتعامل مع بياناتكم الشخصية بشفافية وأمان، وفق نظام حماية البيانات الشخصية في المملكة العربية السعودية.
+        </p>
+        <p class="text-sm font-semibold text-stone-400">
+          <span data-i18n="updated_label">آخر تحديث:</span>
+          <time datetime="2026-08-29">29 August 2026</time>
+        </p>
+      </div>
+
+      <nav class="toc mb-10 rounded-3xl border border-stone-200 bg-white p-6 shadow-sm">
+        <p class="mb-3 text-sm font-extrabold" data-i18n="toc">المحتويات</p>
+        <ol class="grid gap-2 text-sm font-semibold text-stone-500 sm:grid-cols-2">
+          <li><a href="#collect">1. <span data-i18n="s1_t">البيانات التي نجمعها</span></a></li>
+          <li><a href="#location">2. <span data-i18n="s2_t">بيانات الموقع</span></a></li>
+          <li><a href="#use">3. <span data-i18n="s3_t">كيف نستخدم البيانات</span></a></li>
+          <li><a href="#share">4. <span data-i18n="s4_t">مشاركة البيانات</span></a></li>
+          <li><a href="#firebase">5. <span data-i18n="s5_t">Firebase والأمان</span></a></li>
+          <li><a href="#payments">6. <span data-i18n="s6_t">المدفوعات</span></a></li>
+          <li><a href="#retention">7. <span data-i18n="s7_t">الاحتفاظ والحذف</span></a></li>
+          <li><a href="#rights">8. <span data-i18n="s8_t">حقوقكم</span></a></li>
+          <li><a href="#contact">9. <span data-i18n="s9_t">التواصل</span></a></li>
+        </ol>
+      </nav>
+
+      <article class="space-y-10 rounded-[2rem] border border-stone-200 bg-white p-6 shadow-xl shadow-stone-200/40 sm:p-10">
+        <section>
+          <p class="leading-relaxed text-stone-700" data-i18n="agreement">
+            باستخدام تطبيق ميراس (الويب أو Android أو iOS) فإنكم توافقون على جمع ومعالجة البيانات الموضحة في هذه السياسة. إذا لم توافقوا، يرجى عدم استخدام التطبيق.
+          </p>
+        </section>
+
+        <section id="collect">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s1_t">البيانات التي نجمعها</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s1_p">
+            نجمع فقط ما يلزم لتقديم خدمات النقل والوساطة التقنية بين العملاء والسائقين المستقلين:
+          </p>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s1_l1">
+              <strong>بيانات الحساب:</strong> الاسم، رقم الجوال (عبر التحقق برمز SMS في Firebase Authentication)، والبريد الإلكتروني عند تقديمه.
+            </li>
+            <li data-i18n="s1_l2">
+              <strong>بيانات الطلبات:</strong> مواقع الاستلام والتسليم، نوع الحمولة والمركبة، التواريخ، حالة الرحلة، والتقييمات.
+            </li>
+            <li data-i18n="s1_l3">
+              <strong>بيانات السائقين:</strong> رخصة القيادة، استمارة المركبة، الهوية الوطنية أو الإقامة، وبطاقة التشغيل عند الحاجة للتحقق.
+            </li>
+            <li data-i18n="s1_l4">
+              <strong>بيانات تقنية:</strong> نوع الجهاز، نظام التشغيل، ومعرّفات الجلسة اللازمة لأمان الحساب ومنع الاحتيال.
+            </li>
+          </ul>
+        </section>
+
+        <section id="location">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s2_t">بيانات الموقع</h2>
+          <div class="mb-4 rounded-2xl border border-brand/40 bg-brand/10 p-4 text-sm font-semibold">
+            <p data-i18n="s2_note">
+              نطلب صلاحية الموقع لتقديم الخدمة اللوجستية فقط — وليس للإعلان أو التتبع غير المرتبط بالرحلة.
+            </p>
+          </div>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s2_l1">
+              <strong>العميل:</strong> لتحديد نقطة الاستلام أو التسليم على الخريطة وحساب المسافة والسعر.
+            </li>
+            <li data-i18n="s2_l2">
+              <strong>السائق:</strong> لمشاركة الموقع أثناء المهمة حتى يتمكن العميل من تتبع الشحنة لحظة بلحظة.
+            </li>
+            <li data-i18n="s2_l3">
+              يمكنكم رفض صلاحية الموقع من إعدادات الجهاز، لكن بعض وظائف الحجز والتتبع لن تعمل بدونها.
+            </li>
+          </ul>
+        </section>
+
+        <section id="use">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s3_t">كيف نستخدم البيانات</h2>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s3_l1">إنشاء الحساب وتسجيل الدخول وحماية الهوية.</li>
+            <li data-i18n="s3_l2">تنفيذ الطلبات، مطابقة العملاء بالسائقين، والتواصل بشأن الرحلة.</li>
+            <li data-i18n="s3_l3">عرض الخرائط وحساب المسار عبر خدمات خرائط Google.</li>
+            <li data-i18n="s3_l4">معالجة المدفوعات والتسويات المحاسبية.</li>
+            <li data-i18n="s3_l5">تحسين جودة الخدمة، ومنع الاحتيال، والامتثال للأنظمة السعودية.</li>
+          </ul>
+        </section>
+
+        <section id="share">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s4_t">مشاركة البيانات</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s4_p">قد نشارك بيانات محدودة فقط في الحالات التالية:</p>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s4_l1">مع السائق أو العميل لإتمام عملية النقل (الاسم، الهاتف، مواقع الاستلام/التسليم).</li>
+            <li data-i18n="s4_l2">مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Moyasar.</li>
+            <li data-i18n="s4_l3">مع الجهات الحكومية المختصة عند طلب رسمي نظامي.</li>
+          </ul>
+          <p class="mt-4 font-extrabold" data-i18n="s4_no_sale">نحن لا نبيع بياناتكم الشخصية لأي طرف ثالث.</p>
+        </section>
+
+        <section id="firebase">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s5_t">Firebase والأمان</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s5_p">
+            الخلفية التقنية للتطبيق تعتمد على خدمات Google Firebase الآمنة:
+          </p>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s5_l1">
+              <strong>Firebase Authentication:</strong> التحقق من رقم الجوال عبر رمز لمرة واحدة، مع تخزين جلسة الدخول محلياً على الجهاز حتى تسجّلوا الخروج.
+            </li>
+            <li data-i18n="s5_l2">
+              <strong>Cloud Firestore:</strong> تخزين ملفات المستخدمين والطلبات وتتبع الموقع أثناء الرحلة وفق قواعد صلاحيات تمنع الوصول غير المصرح به.
+            </li>
+            <li data-i18n="s5_l3">
+              <strong>App Check:</strong> التحقق من أن الطلبات صادرة عن تطبيق ميراس الأصلي للحد من الإساءة.
+            </li>
+            <li data-i18n="s5_l4">
+              الاتصالات مشفّرة عبر HTTPS. قد تُعالَج بعض البيانات على خوادم Google خارج المملكة ضمن ضوابط مزود الخدمة المعتمد.
+            </li>
+          </ul>
+        </section>
+
+        <section id="payments">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s6_t">المدفوعات</h2>
+          <p class="text-stone-700" data-i18n="s6_p">
+            تتم المدفوعات الإلكترونية عبر بوابة Moyasar المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق ميراس أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.
+          </p>
+        </section>
+
+        <section id="retention">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s7_t">الاحتفاظ والحذف</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s7_p">
+            نحتفظ بالبيانات طالما الحساب نشط، أو للمدة التي تتطلبها الأنظمة المحاسبية والتنظيمية في المملكة. يمكنكم طلب حذف الحساب من داخل التطبيق.
+          </p>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s7_l1">يُحذف حساب Firebase Authentication وتُلغى الجلسات.</li>
+            <li data-i18n="s7_l2">تُزال أو تُعمّى البيانات الشخصية (الاسم، الهاتف، العناوين).</li>
+            <li data-i18n="s7_l3">قد نحتفظ بسجلات مالية مجهّلة الهوية للالتزام المحاسبي والضريبي.</li>
+          </ul>
+        </section>
+
+        <section id="rights">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s8_t">حقوقكم</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s8_p">وفقاً لنظام حماية البيانات الشخصية يحق لكم:</p>
+          <ul class="list-disc space-y-3 pe-5 text-stone-700">
+            <li data-i18n="s8_l1">الاطلاع على بياناتكم وتصحيحها.</li>
+            <li data-i18n="s8_l2">طلب حذف الحساب أو سحب الموافقة حيث ينطبق.</li>
+            <li data-i18n="s8_l3">التواصل معنا لممارسة هذه الحقوق عبر البريد أدناه.</li>
+          </ul>
+          <p class="mt-4 text-stone-700" data-i18n="s8_age">
+            الخدمة مخصصة لمن تبلغ أعمارهم 18 سنة فأكثر. لا نجمع عن علم بيانات أطفال.
+          </p>
+          <p class="mt-4 text-stone-700" data-i18n="s8_cookies">
+            قد نستخدم ملفات تعريف ارتباط أو تخزيناً محلياً ضرورياً لتشغيل الجلسة وتحسين الأداء. لا نستخدمها لبيع الإعلانات المستهدفة.
+          </p>
+          <p class="mt-4 text-stone-700" data-i18n="s8_changes">
+            قد نحدّث هذه السياسة من وقت لآخر. سننشر النسخة المحدّثة على هذه الصفحة مع تاريخ «آخر تحديث». استمرار استخدام التطبيق بعد التحديث يعني الموافقة على السياسة الجديدة.
+          </p>
+        </section>
+
+        <section id="contact">
+          <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s9_t">التواصل</h2>
+          <p class="mb-4 text-stone-600" data-i18n="s9_p">
+            لأي استفسار يتعلق بالخصوصية أو لممارسة حقوقكم:
+          </p>
+          <a
+            href="mailto:support@miras.com"
+            class="inline-flex items-center gap-3 rounded-2xl bg-stone-50 px-4 py-3 font-bold hover:bg-stone-100"
+            dir="ltr"
+          >
+            support@miras.com
+          </a>
+          <p class="mt-6 text-sm text-stone-500" data-i18n="s9_law">
+            تخضع هذه السياسة لأنظمة المملكة العربية السعودية، بما في ذلك نظام حماية البيانات الشخصية. الاختصاص القضائي لمدينة الرياض عند تعذر الحل الودي.
+          </p>
+        </section>
+      </article>
+    </main>
+
+    <footer class="border-t border-stone-200 bg-white py-8 text-center text-sm font-medium text-stone-400">
+      <p data-i18n="footer">© 2026 شركة ميراس للخدمات اللوجستية. جميع الحقوق محفوظة.</p>
+    </footer>
+
+    <script>
+      const copy = {
+        ar: {
+          brand_sub: "ميراس للخدمات اللوجستية",
+          badge: "سياسة خصوصية التطبيق",
+          title: "سياسة الخصوصية",
+          intro:
+            "نحن في منصة «ميراس» (Miras) للخدمات اللوجستية نلتزم بحماية خصوصيتكم والتعامل مع بياناتكم الشخصية بشفافية وأمان، وفق نظام حماية البيانات الشخصية في المملكة العربية السعودية.",
+          updated_label: "آخر تحديث:",
+          toc: "المحتويات",
+          agreement:
+            "باستخدام تطبيق ميراس (الويب أو Android أو iOS) فإنكم توافقون على جمع ومعالجة البيانات الموضحة في هذه السياسة. إذا لم توافقوا، يرجى عدم استخدام التطبيق.",
+          s1_t: "البيانات التي نجمعها",
+          s1_p: "نجمع فقط ما يلزم لتقديم خدمات النقل والوساطة التقنية بين العملاء والسائقين المستقلين:",
+          s1_l1: "<strong>بيانات الحساب:</strong> الاسم، رقم الجوال (عبر التحقق برمز SMS في Firebase Authentication)، والبريد الإلكتروني عند تقديمه.",
+          s1_l2: "<strong>بيانات الطلبات:</strong> مواقع الاستلام والتسليم، نوع الحمولة والمركبة، التواريخ، حالة الرحلة، والتقييمات.",
+          s1_l3: "<strong>بيانات السائقين:</strong> رخصة القيادة، استمارة المركبة، الهوية الوطنية أو الإقامة، وبطاقة التشغيل عند الحاجة للتحقق.",
+          s1_l4: "<strong>بيانات تقنية:</strong> نوع الجهاز، نظام التشغيل، ومعرّفات الجلسة اللازمة لأمان الحساب ومنع الاحتيال.",
+          s2_t: "بيانات الموقع",
+          s2_note:
+            "نطلب صلاحية الموقع لتقديم الخدمة اللوجستية فقط — وليس للإعلان أو التتبع غير المرتبط بالرحلة.",
+          s2_l1: "<strong>العميل:</strong> لتحديد نقطة الاستلام أو التسليم على الخريطة وحساب المسافة والسعر.",
+          s2_l2: "<strong>السائق:</strong> لمشاركة الموقع أثناء المهمة حتى يتمكن العميل من تتبع الشحنة لحظة بلحظة.",
+          s2_l3: "يمكنكم رفض صلاحية الموقع من إعدادات الجهاز، لكن بعض وظائف الحجز والتتبع لن تعمل بدونها.",
+          s3_t: "كيف نستخدم البيانات",
+          s3_l1: "إنشاء الحساب وتسجيل الدخول وحماية الهوية.",
+          s3_l2: "تنفيذ الطلبات، مطابقة العملاء بالسائقين، والتواصل بشأن الرحلة.",
+          s3_l3: "عرض الخرائط وحساب المسار عبر خدمات خرائط Google.",
+          s3_l4: "معالجة المدفوعات والتسويات المحاسبية.",
+          s3_l5: "تحسين جودة الخدمة، ومنع الاحتيال، والامتثال للأنظمة السعودية.",
+          s4_t: "مشاركة البيانات",
+          s4_p: "قد نشارك بيانات محدودة فقط في الحالات التالية:",
+          s4_l1: "مع السائق أو العميل لإتمام عملية النقل (الاسم، الهاتف، مواقع الاستلام/التسليم).",
+          s4_l2: "مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Moyasar.",
+          s4_l3: "مع الجهات الحكومية المختصة عند طلب رسمي نظامي.",
+          s4_no_sale: "نحن لا نبيع بياناتكم الشخصية لأي طرف ثالث.",
+          s5_t: "Firebase والأمان",
+          s5_p: "الخلفية التقنية للتطبيق تعتمد على خدمات Google Firebase الآمنة:",
+          s5_l1: "<strong>Firebase Authentication:</strong> التحقق من رقم الجوال عبر رمز لمرة واحدة، مع تخزين جلسة الدخول محلياً على الجهاز حتى تسجّلوا الخروج.",
+          s5_l2: "<strong>Cloud Firestore:</strong> تخزين ملفات المستخدمين والطلبات وتتبع الموقع أثناء الرحلة وفق قواعد صلاحيات تمنع الوصول غير المصرح به.",
+          s5_l3: "<strong>App Check:</strong> التحقق من أن الطلبات صادرة عن تطبيق ميراس الأصلي للحد من الإساءة.",
+          s5_l4: "الاتصالات مشفّرة عبر HTTPS. قد تُعالَج بعض البيانات على خوادم Google خارج المملكة ضمن ضوابط مزود الخدمة المعتمد.",
+          s6_t: "المدفوعات",
+          s6_p: "تتم المدفوعات الإلكترونية عبر بوابة Moyasar المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق ميراس أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.",
+          s7_t: "الاحتفاظ والحذف",
+          s7_p: "نحتفظ بالبيانات طالما الحساب نشط، أو للمدة التي تتطلبها الأنظمة المحاسبية والتنظيمية في المملكة. يمكنكم طلب حذف الحساب من داخل التطبيق.",
+          s7_l1: "يُحذف حساب Firebase Authentication وتُلغى الجلسات.",
+          s7_l2: "تُزال أو تُعمّى البيانات الشخصية (الاسم، الهاتف، العناوين).",
+          s7_l3: "قد نحتفظ بسجلات مالية مجهّلة الهوية للالتزام المحاسبي والضريبي.",
+          s8_t: "حقوقكم",
+          s8_p: "وفقاً لنظام حماية البيانات الشخصية يحق لكم:",
+          s8_l1: "الاطلاع على بياناتكم وتصحيحها.",
+          s8_l2: "طلب حذف الحساب أو سحب الموافقة حيث ينطبق.",
+          s8_l3: "التواصل معنا لممارسة هذه الحقوق عبر البريد أدناه.",
+          s8_age: "الخدمة مخصصة لمن تبلغ أعمارهم 18 سنة فأكثر. لا نجمع عن علم بيانات أطفال.",
+          s8_cookies: "قد نستخدم ملفات تعريف ارتباط أو تخزيناً محلياً ضرورياً لتشغيل الجلسة وتحسين الأداء. لا نستخدمها لبيع الإعلانات المستهدفة.",
+          s8_changes: "قد نحدّث هذه السياسة من وقت لآخر. سننشر النسخة المحدّثة على هذه الصفحة مع تاريخ «آخر تحديث». استمرار استخدام التطبيق بعد التحديث يعني الموافقة على السياسة الجديدة.",
+          s9_t: "التواصل",
+          s9_p: "لأي استفسار يتعلق بالخصوصية أو لممارسة حقوقكم:",
+          s9_law: "تخضع هذه السياسة لأنظمة المملكة العربية السعودية، بما في ذلك نظام حماية البيانات الشخصية. الاختصاص القضائي لمدينة الرياض عند تعذر الحل الودي.",
+          footer: "© 2026 شركة ميراس للخدمات اللوجستية. جميع الحقوق محفوظة.",
+        },
+        en: {
+          brand_sub: "Miras Logistics",
+          badge: "App Privacy Policy",
+          title: "Privacy Policy",
+          intro:
+            'We at the "Miras" (ميراس) logistics platform are committed to protecting your privacy and handling personal data transparently and securely, in accordance with the Personal Data Protection Law of the Kingdom of Saudi Arabia.',
+          updated_label: "Last updated:",
+          toc: "Contents",
+          agreement:
+            "By using the Miras app (web, Android, or iOS) you agree to the collection and processing described here. If you do not agree, please do not use the app.",
+          s1_t: "Data we collect",
+          s1_p: "We collect only what is needed to provide transport matching between customers and independent drivers:",
+          s1_l1: "<strong>Account information:</strong> name, mobile number (verified by SMS OTP via Firebase Authentication), and email if you provide one.",
+          s1_l2: "<strong>Order data:</strong> pickup and delivery locations, cargo and vehicle type, dates, trip status, and ratings.",
+          s1_l3: "<strong>Driver documents:</strong> driving licence, vehicle registration, national ID or iqama, and operating card when required for verification.",
+          s1_l4: "<strong>Technical data:</strong> device type, operating system, and session identifiers needed for account security and fraud prevention.",
+          s2_t: "Location data",
+          s2_note:
+            "We request location permission only to deliver the logistics service — not for advertising or tracking unrelated to a trip.",
+          s2_l1: "<strong>Customers:</strong> to set pickup or drop-off on the map and calculate distance and price.",
+          s2_l2: "<strong>Drivers:</strong> to share live location during an assigned job so the customer can track the shipment.",
+          s2_l3: "You may deny location permission in device settings; booking and live-tracking features will not work fully without it.",
+          s3_t: "How we use data",
+          s3_l1: "Creating accounts, signing in, and protecting identity.",
+          s3_l2: "Fulfilling orders, matching customers with drivers, and trip communications.",
+          s3_l3: "Displaying maps and routes through Google Maps.",
+          s3_l4: "Processing payments and accounting settlements.",
+          s3_l5: "Improving service quality, preventing fraud, and complying with Saudi regulations.",
+          s4_t: "Data sharing",
+          s4_p: "We share limited data only in these cases:",
+          s4_l1: "With the driver or customer to complete the trip (name, phone, pickup/drop-off).",
+          s4_l2: "With infrastructure providers: Google Firebase / Google Cloud, Google Maps, and the Moyasar payment gateway.",
+          s4_l3: "With competent government authorities when legally required.",
+          s4_no_sale: "We do not sell your personal data to third parties.",
+          s5_t: "Firebase and security",
+          s5_p: "The app backend uses secured Google Firebase services:",
+          s5_l1: "<strong>Firebase Authentication:</strong> phone verification via one-time SMS codes. The sign-in session is stored on your device until you log out.",
+          s5_l2: "<strong>Cloud Firestore:</strong> stores profiles, orders, and in-trip location under access rules that block unauthorized reads and writes.",
+          s5_l3: "<strong>App Check:</strong> helps ensure requests come from the genuine Miras app.",
+          s5_l4: "Traffic is encrypted with HTTPS. Some processing may occur on Google servers outside Saudi Arabia under the provider’s controls.",
+          s6_t: "Payments",
+          s6_p: "Electronic payments are processed by the licensed Moyasar gateway (mada, cards, and Apple Pay where available). Miras does not store full card numbers or CVV on our servers. We keep accounting records (amount, status, and transaction ID) for billing and lawful disputes.",
+          s7_t: "Retention and deletion",
+          s7_p: "We keep data while the account is active, or as required by Saudi accounting and regulatory rules. You can request account deletion from inside the app.",
+          s7_l1: "The Firebase Authentication user is deleted and sessions are revoked.",
+          s7_l2: "Personal data (name, phone, addresses) is removed or anonymized.",
+          s7_l3: "De-identified financial records may be retained for accounting and tax compliance.",
+          s8_t: "Your rights",
+          s8_p: "Under the Personal Data Protection Law you may:",
+          s8_l1: "Access and correct your data.",
+          s8_l2: "Request account deletion or withdraw consent where applicable.",
+          s8_l3: "Contact us to exercise these rights using the email below.",
+          s8_age: "The service is for people aged 18 and over. We do not knowingly collect children’s data.",
+          s8_cookies: "We may use cookies or local storage that are necessary for sessions and performance. We do not use them to sell targeted ads.",
+          s8_changes: "We may update this policy from time to time. The updated version will be posted on this page with a new “Last updated” date. Continued use of the app after a change means you accept the revised policy.",
+          s9_t: "Contact",
+          s9_p: "For privacy questions or to exercise your rights:",
+          s9_law: "This policy is governed by the laws of the Kingdom of Saudi Arabia, including the Personal Data Protection Law. Courts in Riyadh have jurisdiction if an amicable resolution is not possible.",
+          footer: "© 2026 Miras Logistics. All rights reserved.",
+        },
+      };
+
+      function setLang(lang) {
+        const dict = copy[lang] || copy.ar;
+        const html = document.documentElement;
+        html.lang = lang;
+        html.dir = lang === "ar" ? "rtl" : "ltr";
+        document.querySelectorAll("[data-i18n]").forEach((el) => {
+          const key = el.getAttribute("data-i18n");
+          if (dict[key] != null) el.innerHTML = dict[key];
+        });
+        document.getElementById("btn-ar").className =
+          lang === "ar"
+            ? "rounded-full bg-ink px-3 py-1.5 text-white"
+            : "rounded-full px-3 py-1.5 text-stone-600";
+        document.getElementById("btn-en").className =
+          lang === "en"
+            ? "rounded-full bg-ink px-3 py-1.5 text-white"
+            : "rounded-full px-3 py-1.5 text-stone-600";
+        try {
+          localStorage.setItem("miras-privacy-lang", lang);
+        } catch (e) {}
+      }
+
+      const params = new URLSearchParams(location.search);
+      const saved = (() => {
+        try {
+          return localStorage.getItem("miras-privacy-lang");
+        } catch (e) {
+          return null;
+        }
+      })();
+      const requested = params.get("lang");
+      setLang(requested === "en" || requested === "ar" ? requested : saved === "en" ? "en" : "ar");
+    </script>
+  </body>
+</html>
