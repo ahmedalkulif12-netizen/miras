@@ -38,12 +38,17 @@ workflows:
         BUNDLE_ID: com.ahmed.miras
         DEVELOPMENT_TEAM: 4TRJXRYK8A
         # Optional override. Build number lookup uses --bundle-id when this is unset.
+      # Capacitor 8.5 loads capacitor.config.ts; Node 22.6+ / current 22 LTS.
       node: 22
       xcode: latest
     scripts:
       - name: Install npm dependencies
         script: |
-          npm ci
+          set -euo pipefail
+          # Keep typescript (needed to parse capacitor.config.ts) even if the
+          # image exports NODE_ENV=production, which would omit devDependencies.
+          export NPM_CONFIG_PRODUCTION=false
+          npm ci --include=dev
       - name: Write native Firebase config
         script: |
           PLIST="$CM_BUILD_DIR/ios/App/App/GoogleService-Info.plist"
@@ -60,13 +65,16 @@ workflows:
           npx tsx scripts/verify-store-client.ts --require-ios-plist
       - name: Build web assets and sync Capacitor iOS
         script: |
+          set -euo pipefail
           unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
           export VITE_IOS_TEAM_ID="${VITE_IOS_TEAM_ID:-$DEVELOPMENT_TEAM}"
-          npx vite build
-          npx cap sync ios
-          node scripts/fix-ios-spm-app-check.mjs
+          # cap:sync:ios = Vite SPA (not npm run build/server) + cap sync + SPM fix.
+          npm run cap:sync:ios
+          test -f dist/index.html
+          test -d ios/App/CapApp-SPM/packages/CapacitorFirebaseAppCheck
+          grep -q 'path: "packages/CapacitorFirebaseAppCheck"' ios/App/CapApp-SPM/Package.swift
       - name: Install signing certificates and profiles
         script: |
           # Internal TestFlight only — skip Apple beta review. Remove
@@ -199,7 +207,10 @@ workflows:
           export CAPACITOR_BUILD=1
           npx tsx scripts/verify-store-client.ts --require-app-links
       - name: Install npm dependencies
-        script: npm ci
+        script: |
+          set -euo pipefail
+          export NPM_CONFIG_PRODUCTION=false
+          npm ci --include=dev
       - name: Write google-services.json
         script: |
           if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
@@ -211,9 +222,12 @@ workflows:
           fi
       - name: Build web and sync Android
         script: |
+          set -euo pipefail
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
+          export NODE_ENV=production
           export CAPACITOR_BUILD=1
-          node scripts/vite-capacitor.mjs
-          npx cap sync android
+          npm run cap:sync:android
+          test -f dist/index.html
       - name: Assemble release bundle
         script: |
           cd android

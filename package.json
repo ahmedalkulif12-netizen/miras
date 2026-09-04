@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && npm run build:server",
+    "build:web": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
     "clean": "node scripts/clean-build.mjs",
@@ -52,7 +53,7 @@
     "diag:imap": "tsx scripts/diag-imap-inbox.mjs"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "dependencies": {
     "@capacitor-firebase/app-check": "^8.5.0",
@@ -92,6 +93,7 @@
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tsx": "^4.23.13",
+    "typescript": "~5.8.2",
     "vite": "^6.2.0"
   },
   "devDependencies": {
@@ -101,7 +103,6 @@
     "autoprefixer": "^10.4.21",
     "sharp": "^0.35.4",
     "tailwindcss": "^4.1.14",
-    "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }
 }

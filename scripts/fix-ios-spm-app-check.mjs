@@ -72,11 +72,16 @@ if (!fs.existsSync(pluginSources)) {
 
 let text = fs.readFileSync(packageSwiftPath, 'utf8');
 text = text.replace(/\\/g, '/');
+const copiedPath = `path: "${uniqueRelPath}"`;
+// Capacitor 8.5 with experimental.ios.spm.packageOptions.symlink writes
+// `path: "symlinks/CapacitorFirebaseAppCheck"` (no leading directory).
+// The old regex required a slash before `symlinks/`, so Codemagic `cap sync`
+// left that path in place and this script exited 1.
+text = text.replace(/path:\s*"[^"]*@capacitor-firebase\/app-check"/g, copiedPath);
 text = text.replace(
-  /path:\s*"([^"]*@capacitor-firebase\/app-check)"/g,
-  `path: "${uniqueRelPath}"`,
+  /path:\s*"[^"]*(?:symlinks|packages)\/CapacitorFirebaseAppCheck"/g,
+  copiedPath,
 );
-text = text.replace(/path:\s*"([^"]*\/(?:symlinks|packages)\/CapacitorFirebaseAppCheck)"/g, `path: "${uniqueRelPath}"`);
 
 const iosPkgPath = path.join(root, 'node_modules', '@capacitor', 'ios', 'package.json');
 if (fs.existsSync(iosPkgPath)) {
@@ -88,9 +93,9 @@ if (fs.existsSync(iosPkgPath)) {
     );
   }
 }
-text = text.replace(/path:\s*"([^"]*\/app-check)"/g, (full, value) => {
+text = text.replace(/path:\s*"([^"]+)"/g, (full, value) => {
   if (String(value).includes('@capacitor-firebase/') || /(^|\/)app-check$/.test(String(value))) {
-    return `path: "${uniqueRelPath}"`;
+    return copiedPath;
   }
   return full;
 });
