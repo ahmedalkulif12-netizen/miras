@@ -17,15 +17,24 @@ async function fetchMoyasarPaymentStatus(
   secretKey: string,
   moyasarId: string
 ): Promise<string | null> {
+  const auth = { username: secretKey, password: '' };
   try {
     const response = await axios.get(`${MOYASAR_API_URL}/payments/${moyasarId}`, {
-      auth: { username: secretKey, password: '' },
+      auth,
       timeout: 12_000,
     });
     return String(response.data?.status || '').toLowerCase() || null;
-  } catch (error) {
-    console.warn('[payments] Moyasar fetch failed for', moyasarId, error);
-    return null;
+  } catch {
+    try {
+      const invoice = await axios.get(`${MOYASAR_API_URL}/invoices/${moyasarId}`, {
+        auth,
+        timeout: 12_000,
+      });
+      return String(invoice.data?.status || '').toLowerCase() || null;
+    } catch (error) {
+      console.warn('[payments] Moyasar fetch failed for', moyasarId, error);
+      return null;
+    }
   }
 }
 

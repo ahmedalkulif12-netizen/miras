@@ -32,7 +32,7 @@ import { isLocalDevRuntime } from '@/lib/localDevRuntime';
 import { useTripChatUnread } from '@/hooks/useTripChatUnread';
 import { TripChatNotifyButton } from '@/components/TripChatNotifyButton';
 import { useAuth } from '@/hooks/useAuth';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
 import { subscribeToDriverLocation, type LiveDriverPosition } from '@/lib/liveTracking';
 import { LiveTrackingMap } from '@/components/LiveTrackingMap';
@@ -602,7 +602,7 @@ const CustomerDashboard: React.FC = () => {
 
     if (!applyLocalOrder()) {
       if (
-        allowsDemoCheckout() &&
+        allowsSandboxCheckout() &&
         (pendingOrderId.startsWith('demo-') || pendingOrderId.startsWith('draft-'))
       ) {
         hydrateFromDemoSession();
@@ -618,7 +618,7 @@ const CustomerDashboard: React.FC = () => {
           if (!snap.exists()) {
             if (!applyLocalOrder()) {
               if (
-                allowsDemoCheckout() &&
+                allowsSandboxCheckout() &&
                 (pendingOrderId.startsWith('demo-') ||
                   pendingOrderId.startsWith('draft-'))
               ) {
@@ -1058,6 +1058,16 @@ const CustomerDashboard: React.FC = () => {
       toast.success(isRtl ? 'جاري توجيهك لصفحة الدفع...' : 'Redirecting to payment page...', {
         id: 'payment-toast',
       });
+
+      // Stay in the SPA for App Review / sandbox checkout (Capacitor cannot load
+      // /payment-checkout as a file path via window.location).
+      if (intent.sandbox) {
+        setIsProcessing(false);
+        navigate(
+          `/payment-checkout?draftId=${encodeURIComponent(checkoutDraftId)}&method=${encodeURIComponent(checkoutMethod)}`
+        );
+        return;
+      }
 
       // Hard navigation to checkout/gateway — do not call promote / setStep('tracking') here.
       window.location.assign(intent.paymentUrl);

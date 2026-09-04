@@ -4,7 +4,7 @@
  */
 
 import { isDevBypassAuthSession } from '@/lib/authApi';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { computeTripFare } from '@/domain/pricing-engine';
 import { buildTripFinancials, shouldWaiveServiceFee } from '@/domain/financials';
@@ -251,11 +251,11 @@ export async function prepareCheckoutDraft(
       }
       const serverError = await readApiErrorMessage(response, 'checkout-draft failed');
       console.warn('[checkout] Server draft failed:', serverError);
-      if (!allowsDemoCheckout()) {
+      if (!allowsSandboxCheckout()) {
         throw new Error(serverError || 'Checkout is unavailable. Please try again.');
       }
     } catch (err) {
-      if (!allowsDemoCheckout()) {
+      if (!allowsSandboxCheckout()) {
         throw err instanceof Error
           ? err
           : new Error('Checkout is unavailable. Please try again.');

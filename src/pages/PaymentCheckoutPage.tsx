@@ -11,7 +11,7 @@ import {
 } from '@/lib/checkoutDraft';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { buildClientOrdersPath, CUSTOMER_SERVICES_PATH } from '@/lib/authRouting';
 
 const PENDING_DRAFT_KEY = 'pending_checkout_draft_id';
@@ -68,7 +68,7 @@ const PaymentCheckoutPage: React.FC = () => {
       return;
     }
 
-    if (!allowsDemoCheckout()) {
+    if (!allowsSandboxCheckout()) {
       toast.error(
         isRtl
           ? 'الدفع التجريبي غير متاح في الإنتاج'

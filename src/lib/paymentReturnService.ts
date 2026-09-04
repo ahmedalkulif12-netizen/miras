@@ -6,7 +6,7 @@ import {
   loadCheckoutDraft,
   type CheckoutDraft,
 } from '@/lib/checkoutDraft';
-import { allowsDemoCheckout, isDemoMoyasarId } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout, isDemoMoyasarId } from '@/lib/checkoutGating';
 
 export interface PaymentReturnStatus {
   success: boolean;
@@ -33,7 +33,7 @@ function isLocalDemoGateway(params: {
   orderId?: string | null;
   moyasarId?: string | null;
 }): boolean {
-  if (!allowsDemoCheckout()) return false;
+  if (!allowsSandboxCheckout()) return false;
   const id = params.draftId || params.orderId || '';
   if (id.startsWith('demo-')) return true;
   if (isDemoMoyasarId(params.moyasarId)) return true;
@@ -245,7 +245,7 @@ export async function verifyPaymentReturn(params: {
 
     // Local DEV only: webhook lag / test keys may need a client publish.
     // Production never creates a live order without Moyasar verification.
-    if (allowsDemoCheckout() && (isPaymentSuccessStatus(params.status) || !status)) {
+    if (allowsSandboxCheckout() && (isPaymentSuccessStatus(params.status) || !status)) {
       const published = await publishIfPossible();
       if (published?.success) return published;
     }
@@ -262,7 +262,7 @@ export async function verifyPaymentReturn(params: {
       });
     }
 
-    if (allowsDemoCheckout()) {
+    if (allowsSandboxCheckout()) {
       console.warn('[payments] Return verify failed, attempting order publish:', error);
       const published = await publishIfPossible();
       if (published?.success) return published;

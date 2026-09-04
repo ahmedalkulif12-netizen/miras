@@ -54,6 +54,7 @@ import {
   isDemoMoyasarId,
   resolveMoyasarCallbackUrl,
 } from './server/lib/moyasarCallback.ts';
+import { nativeApiCors } from './server/lib/nativeApiCors.ts';
 import { verifyAdmin } from './server/middleware/verifyAdmin.ts';
 import { getAdminOverview } from './server/lib/adminOverview.ts';
 import {
@@ -125,6 +126,8 @@ async function startServer() {
 
   const app = express();
   const PORT = Number(process.env.PORT) || config.port || 8080;
+
+  app.use(nativeApiCors(config.appUrl));
 
   // Required behind reverse proxies (Railway, Cloud Run, nginx) for correct client IP / HTTPS.
   if (config.isProduction) {
@@ -320,9 +323,9 @@ async function startServer() {
         }
 
         if (isDemoMoyasarId(moyasarId)) {
-          if (config.deployEnv !== 'development') {
+          if (config.deployEnv === 'production') {
             return res.status(403).json({
-              error: 'Demo checkout is disabled in this environment',
+              error: 'Demo checkout is disabled in production',
             });
           }
           const published = await publishAfterLocalCheckout(db, {
@@ -405,9 +408,9 @@ async function startServer() {
         return res.status(400).json({ error: 'draftId is required' });
       }
 
-      if (config.deployEnv !== 'development' && isDemoMoyasarId(moyasarId)) {
+      if (config.deployEnv === 'production' && isDemoMoyasarId(moyasarId)) {
         return res.status(403).json({
-          error: 'Demo checkout is disabled in this environment',
+          error: 'Demo checkout is disabled in production',
         });
       }
 
@@ -1539,7 +1542,7 @@ async function startServer() {
           ? `Miras Order - ${serviceType} (${waterBits.join('/')})`
           : `Miras Order - ${serviceType}`;
 
-      const moyasarResponse = await moyasar.post('/payments', {
+      const moyasarPayload = {
         amount: amountInHalalas,
         currency: 'SAR',
         description: moyasarDescription,
@@ -1554,12 +1557,36 @@ async function startServer() {
             (financials?.platformFee ?? 0) + (financials?.serviceFee ?? 0),
           driverAmount: financials?.driverNet ?? 0,
         },
-        source: {
-          type: 'creditcard',
-        },
-      });
+      };
 
-      const payment = moyasarResponse.data;
+      // Hosted invoice works with sk_test_* (App Review) without collecting PAN in-app.
+      let moyasarId = '';
+      let paymentUrl = '';
+      try {
+        const invoiceResponse = await moyasar.post('/invoices', moyasarPayload);
+        const invoice = invoiceResponse.data;
+        moyasarId = String(invoice.id || '');
+        paymentUrl = String(invoice.url || invoice.source?.transaction_url || '');
+      } catch (invoiceError: any) {
+        console.warn(
+          '[payments] Moyasar /invoices failed, trying /payments:',
+          invoiceError?.response?.data || invoiceError?.message
+        );
+        const paymentResponse = await moyasar.post('/payments', moyasarPayload);
+        const payment = paymentResponse.data;
+        moyasarId = String(payment.id || '');
+        paymentUrl = String(
+          payment.source?.transaction_url ||
+            (moyasarId ? `${MOYASAR_API_URL}/payments/${moyasarId}` : '')
+        );
+      }
+
+      if (!moyasarId || !paymentUrl) {
+        return res.status(502).json({
+          error: 'Moyasar did not return a hosted checkout URL',
+          testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+        });
+      }
 
       const paymentRef = await db.collection('payments').add({
         userId,
@@ -1573,25 +1600,34 @@ async function startServer() {
         financials: financials ?? null,
         status: 'pending',
         paymentMethod,
-        transactionId: payment.id,
+        transactionId: moyasarId,
+        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       res.json({
         paymentId: paymentRef.id,
-        moyasarId: payment.id,
-        paymentUrl:
-          payment.source.transaction_url ||
-          `${MOYASAR_API_URL}/payments/${payment.id}/form`,
+        moyasarId,
+        paymentUrl,
         draftId: chargeDraftId || null,
         orderId: null,
         amount: customerTotal,
         paymentMethod,
+        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
       });
-    } catch (error) {
-      console.error('Moyasar Init Error:', error);
-      res.status(500).json({ error: 'Failed to initialize real payment with Moyasar' });
+    } catch (error: any) {
+      const statusCode = error?.statusCode || error?.response?.status || 500;
+      const moyasarMessage =
+        error?.response?.data?.message ||
+        error?.response?.data?.type ||
+        error?.message ||
+        'Failed to initialize payment with Moyasar';
+      console.error('Moyasar Init Error:', moyasarMessage, error?.response?.data || error);
+      res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+        error: String(moyasarMessage),
+        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+      });
     }
   });
 

@@ -7,7 +7,7 @@ import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { getActiveCheckoutDraftId } from '@/lib/checkoutDraft';
 import { promoteSharedOrderToBroadcasting } from '@/lib/localOrderBridge';
 import { buildClientOrdersPath } from '@/lib/authRouting';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 
 const PENDING_DRAFT_KEY = 'pending_checkout_draft_id';
 
@@ -107,7 +107,7 @@ const PaymentCallbackPage: React.FC = () => {
           moyasarId === 'demo' ||
           (moyasarId?.startsWith('demo-') ?? false) ||
           (error instanceof Error && error.message === 'DEV_BYPASS_NO_FIREBASE_SESSION');
-        if (allowsDemoCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
+        if (allowsSandboxCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
           try {
             await promoteSharedOrderToBroadcasting(id);
             sessionStorage.removeItem(PENDING_DRAFT_KEY);

@@ -10,7 +10,7 @@ import { loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { debitLocalCustomerWallet } from '@/lib/localCustomerWallet';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
@@ -367,7 +367,7 @@ export async function writeSharedLocalOrder(input: {
           debitCustomerWalletAfterPlace(firebaseUid, input.orderId, input.response.financials);
           return;
         } catch {
-          if (allowsDemoCheckout()) {
+          if (allowsSandboxCheckout()) {
             console.warn(
               '[orders] Firestore write failed — keeping local DEV order',
               input.orderId
@@ -379,7 +379,7 @@ export async function writeSharedLocalOrder(input: {
         }
       }
     }
-    if (allowsDemoCheckout()) {
+    if (allowsSandboxCheckout()) {
       console.warn('[orders] Firestore write failed — order kept locally', error);
       commitLocalFallback();
       return;

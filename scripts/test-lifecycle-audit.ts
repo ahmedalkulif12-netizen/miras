@@ -23,6 +23,9 @@ import {
   resolvePublicAppOrigin,
   shouldApplyNativeDeepLink,
 } from '../src/lib/appOrigin.ts';
+import { resolveApiOriginFrom } from '../src/lib/apiUrl.ts';
+import { sandboxCheckoutAllowed } from '../src/lib/checkoutGatingCore.ts';
+import { isAllowedNativeApiOrigin } from '../server/lib/nativeApiCors.ts';
 import {
   isDemoMoyasarId,
   resolveMoyasarCallbackUrl,
@@ -253,6 +256,46 @@ function run(): void {
       { lockToAppUrl: true }
     ) === 'https://hamula-cfc6c.web.app/payment-callback',
     'production Moyasar callback is APP_URL, never localhost'
+  );
+
+  assert(
+    resolveApiOriginFrom({
+      isNative: true,
+      publicAppOrigin: 'https://hamula-cfc6c.web.app',
+      windowOrigin: 'capacitor://hamula-cfc6c.web.app',
+    }) === 'https://hamula-cfc6c.web.app',
+    'native Capacitor API origin is Firebase Hosting'
+  );
+  assert(
+    resolveApiOriginFrom({
+      envApiOrigin: 'https://hamoula-api.example.run.app',
+      isNative: true,
+      publicAppOrigin: 'https://hamula-cfc6c.web.app',
+    }) === 'https://hamoula-api.example.run.app',
+    'VITE_API_ORIGIN wins on native'
+  );
+  assert(
+    sandboxCheckoutAllowed({
+      demoAllowed: false,
+      isNative: true,
+      deployEnv: 'staging',
+    }),
+    'TestFlight staging allows sandbox checkout'
+  );
+  assert(
+    !sandboxCheckoutAllowed({
+      demoAllowed: false,
+      isNative: true,
+      deployEnv: 'production',
+    }),
+    'live production never uses sandbox checkout'
+  );
+  assert(
+    isAllowedNativeApiOrigin(
+      'capacitor://hamula-cfc6c.web.app',
+      'https://hamula-cfc6c.web.app'
+    ),
+    'CORS allows Capacitor origin'
   );
 
   applyLocalWalletCredit(

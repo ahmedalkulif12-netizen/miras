@@ -1,7 +1,7 @@
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { getMoyasarCallbackUrl } from '@/lib/appOrigin';
-import { allowsDemoCheckout } from '@/lib/checkoutGating';
+import { allowsDemoCheckout, allowsSandboxCheckout } from '@/lib/checkoutGating';
 
 /** Customer-selected checkout method (Moyasar hosted form). */
 export type CheckoutPaymentMethod = 'mada' | 'creditcard' | 'applepay';
@@ -15,47 +15,76 @@ export interface PaymentIntent {
   draftId: string;
   amount: number;
   paymentMethod?: CheckoutPaymentMethod;
+  /** In-app review/sandbox checkout — stay in the SPA, do not open Moyasar. */
+  sandbox?: boolean;
+  testMode?: boolean;
+}
+
+function sandboxIntent(
+  draftId: string,
+  paymentMethod: CheckoutPaymentMethod
+): PaymentIntent {
+  const method = encodeURIComponent(paymentMethod);
+  return {
+    paymentId: `demo-pay-${Date.now()}`,
+    moyasarId: `demo-moyasar-${Date.now()}`,
+    paymentUrl: `/payment-checkout?draftId=${encodeURIComponent(draftId)}&method=${method}`,
+    orderId: null,
+    draftId,
+    amount: 0,
+    paymentMethod,
+    sandbox: true,
+    testMode: true,
+  };
 }
 
 /**
  * Creates Moyasar payment from a checkout draft (no `orders` document yet).
- * Dev bypass / local drafts skip Moyasar and use a mock callback URL.
+ * Local DEV and TestFlight/staging native builds may use an in-app sandbox
+ * checkout when Moyasar is unavailable so App Review can complete the step.
  */
 export const createPaymentIntent = async (
   draftId: string,
   paymentMethod: CheckoutPaymentMethod = 'mada'
 ): Promise<PaymentIntent> => {
-  // Local Vite DEV only — production/store builds always initialize live Moyasar.
   if (allowsDemoCheckout()) {
     console.info('[payments] Local checkout screen for draft', draftId);
-    const method = encodeURIComponent(paymentMethod);
-    return {
-      paymentId: `demo-pay-${Date.now()}`,
-      moyasarId: `demo-moyasar-${Date.now()}`,
-      paymentUrl: `${window.location.origin}/payment-checkout?draftId=${encodeURIComponent(draftId)}&method=${method}`,
-      orderId: null,
-      draftId,
-      amount: 0,
-      paymentMethod,
-    };
+    return sandboxIntent(draftId, paymentMethod);
   }
 
   const callbackUrl = getMoyasarCallbackUrl();
 
-  const response = await authFetch('/api/create-payment-intent', {
-    method: 'POST',
-    body: JSON.stringify({ draftId, callbackUrl, paymentMethod }),
-  });
+  try {
+    const response = await authFetch('/api/create-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify({ draftId, callbackUrl, paymentMethod }),
+    });
 
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, 'Payment initialization failed'));
+    if (response.ok) {
+      const intent = await readApiJson<PaymentIntent>(response);
+      return { ...intent, sandbox: false };
+    }
+
+    const message = await readApiErrorMessage(response, 'Payment initialization failed');
+    if (!allowsSandboxCheckout()) {
+      throw new Error(message);
+    }
+    console.warn('[payments] Moyasar init failed — using App Review sandbox checkout:', message);
+    return sandboxIntent(draftId, paymentMethod);
+  } catch (error) {
+    if (!allowsSandboxCheckout()) {
+      throw error;
+    }
+    console.warn('[payments] Moyasar unreachable — using App Review sandbox checkout:', error);
+    return sandboxIntent(draftId, paymentMethod);
   }
-
-  return readApiJson<PaymentIntent>(response);
 };
 
 export const capturePayment = async (paymentId: string, orderId: string, driverId: string) => {
-  if (allowsDemoCheckout() && (orderId.startsWith('demo-') || orderId.startsWith('draft-'))) {
+  if (
+    (allowsDemoCheckout() || allowsSandboxCheckout()) &&
+    (orderId.startsWith('demo-') || orderId.startsWith('draft-'))
+  ) {
     return { ok: true, demo: true };
   }
 
