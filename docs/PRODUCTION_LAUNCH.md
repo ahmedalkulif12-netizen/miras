@@ -219,7 +219,7 @@ node dist/server.cjs
 ### App Store checklist (manual — macOS + App Store Connect)
 
 - [ ] Apple Developer Team ID applied: `node scripts/set-ios-team-id.mjs YOURTEAMID` then `npm run deploy:hosting` so AASA is live
-- [ ] App ID `com.ahmed.miras` has Associated Domains (`applinks:hamula-cfc6c.web.app` and `applinks:hamula-cfc6c.firebaseapp.com`)
+- [ ] App ID `com.ahmed.miras` matches the App Store profile capabilities (Associated Domains is **off** until the profile includes it)
 - [ ] App Store Connect app created; bundle ID `com.ahmed.miras`; iPhone only
 - [ ] Privacy policy URL: https://ahmedalkulif12-netizen.github.io/miras-privacy/
 - [ ] Support URL + email `support@miras.com`; listing copy in `fastlane/metadata/ios/`

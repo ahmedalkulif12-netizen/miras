@@ -9,8 +9,9 @@
 # Codemagic UI required:
 # 1. Developer Portal API key name must match integrations.app_store_connect
 # 2. Code signing identities: Apple Distribution cert + App Store profile for
-#    com.ahmed.miras WITH Associated Domains enabled on the App ID:
-#    applinks:hamula-cfc6c.web.app and applinks:hamula-cfc6c.firebaseapp.com
+#    com.ahmed.miras. Do not enable Associated Domains on the Xcode target until
+#    that capability is added to the App ID and the profile is regenerated
+#    (current profile: "miras app store profile").
 # 3. Env group `miras_client` must include:
 #    VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
 #    VITE_FIREBASE_STORAGE_BUCKET, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_FIREBASE_APP_ID,

@@ -38,7 +38,7 @@ npm run cap:sync:ios:store
 
 Then on a Mac:
 
-1. Apple Developer: App ID `com.ahmed.miras` with Associated Domains (`applinks:hamula-cfc6c.web.app`, `applinks:hamula-cfc6c.firebaseapp.com`); create the App Store Connect record (iPhone only).
+1. Apple Developer: App ID `com.ahmed.miras` (iPhone only). Do **not** add Associated Domains until the App Store profile is regenerated with that capability — the current “miras app store profile” does not include it, and `App.entitlements` is empty to match.
 2. `npx cap open ios` → Signing & Capabilities → Team `4TRJXRYK8A` → Archive → TestFlight.
 3. App Privacy (nutrition labels): location (trip tracking), contact info (phone), photos (driver docs), identifiers (Firebase Auth). Tracking = no.
 4. Content rating questionnaire; primary category Navigation, secondary Business.

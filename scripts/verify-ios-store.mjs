@@ -59,11 +59,16 @@ async function main() {
     );
   }
   const entitlements = read('ios/App/App/App.entitlements');
-  if (!entitlements.includes('applinks:hamula-cfc6c.web.app')) {
-    failures.push('App.entitlements must include applinks:hamula-cfc6c.web.app');
-  }
-  if (!entitlements.includes('applinks:hamula-cfc6c.firebaseapp.com')) {
-    failures.push('App.entitlements must include applinks:hamula-cfc6c.firebaseapp.com');
+  // Codemagic profile "miras app store profile" does not include Associated
+  // Domains. Keep entitlements empty of applinks until the App ID + profile
+  // are regenerated with that capability.
+  if (
+    entitlements.includes('com.apple.developer.associated-domains') ||
+    entitlements.includes('applinks:')
+  ) {
+    failures.push(
+      'App.entitlements must not declare Associated Domains until Apple profile "miras app store profile" includes that capability'
+    );
   }
   const capSpm = read('ios/App/CapApp-SPM/Package.swift');
   if (!capSpm.includes('path: "packages/CapacitorFirebaseAppCheck"')) {
