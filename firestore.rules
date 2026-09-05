@@ -121,7 +121,8 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([
           'status', 'driverId', 'driverName', 'driverPhone',
-          'updatedAt', 'assignedAt'
+          'updatedAt', 'assignedAt',
+          'driver', 'statusHistory'
         ]);
     }
 
