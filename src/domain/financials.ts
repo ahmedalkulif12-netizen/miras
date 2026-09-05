@@ -244,14 +244,12 @@ export function toLegacyPricingFields(financials: TripFinancials, extras: {
   };
 }
 
-/** Customer-safe quote lines (no percentages) */
+/** Customer-safe quote lines — distance/total/service fee only. Never expose driver commission. */
 export function toCustomerQuoteDisplay(financials: TripFinancials) {
   return {
     tripPrice: financials.tripFare,
     serviceFee: financials.serviceFee,
     total: financials.customerTotal,
-    platformFee: financials.platformFee,
-    driverNet: financials.driverNet,
     currency: financials.currency,
   };
 }

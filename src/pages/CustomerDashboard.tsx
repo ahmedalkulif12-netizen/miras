@@ -249,8 +249,6 @@ const CustomerDashboard: React.FC = () => {
   const listedServiceFee = pricing.isServiceFeeFree
     ? roundMoney(tripFareDisplay * CUSTOMER_SERVICE_FEE_RATE)
     : pricing.serviceFee;
-  const appCommissionDisplay = Number(pricing.commission_amount) || 0;
-  const driverNetDisplay = Number(pricing.driver_earning) || 0;
 
   const [previousOrdersCount, setPreviousOrdersCount] = useState(0);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
@@ -1692,79 +1690,10 @@ const CustomerDashboard: React.FC = () => {
                         </div>
                         <h3 className={`font-bold flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}><CreditCard size={20} /> {t('price_details')}</h3>
                         <div className="space-y-3 text-sm">
-                          {serviceType === 'water_tanker' ? (
-                            <>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{t('choose_service')}</span>
-                                <span className="font-bold text-primary">{t('water_tanker')}</span>
-                              </div>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{t('water_service_type')}</span>
-                                <span className="font-bold">
-                                  {translateWaterType(waterType || 'fresh', t)}
-                                </span>
-                              </div>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">
-                                  {isRtl ? 'سعة الصهريج' : 'Tank capacity'}
-                                </span>
-                                <span className="font-bold">
-                                  {translateCapacity(
-                                    tankCapacityLabel || resolveTankCapacityLabel(serviceOption),
-                                    t
-                                  )}
-                                </span>
-                              </div>
-                            </>
-                          ) : serviceOption ? (
-                            <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span className="text-gray-500">
-                                {isRtl ? 'فئة المركبة' : 'Vehicle tier'}
-                              </span>
-                              <span className="font-bold">
-                                {t(OPTION_LABELS[serviceOption] || serviceOption)}
-                              </span>
-                            </div>
-                          ) : null}
                           <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span className="text-gray-500">{t('trip_type') || (isRtl ? 'نوع الرحلة' : 'Trip Type')}</span>
-                            <span className="font-bold text-primary">
-                              {tripTypeState === 'inside_city' ? (isRtl ? 'داخل المدينة' : 'Inside City') : (isRtl ? 'خارج المدينة' : 'Outside City')}
-                            </span>
-                          </div>
-                          <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span className="text-gray-500">
-                              {isRtl
-                                ? `السعر الأساسي (يشمل ${includedKm} كم)`
-                                : `Base price (includes ${includedKm} km)`}
-                            </span>
-                            <span>{pricing.base} {t('sar')}</span>
-                          </div>
-                          {serviceType === 'water_tanker' && (
-                            <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span className="text-gray-500">
-                                {isRtl ? 'المسافة لأقرب سائق' : 'Distance to nearest driver'}
-                              </span>
-                              <span className="font-bold">
-                                {routeDistanceKm.toFixed(1)} {t('km')}
-                                {nearestDriver?.estimated ? (
-                                  <span className="text-[10px] text-amber-600 font-bold ms-1">
-                                    ({isRtl ? 'تقديري' : 'est.'})
-                                  </span>
-                                ) : null}
-                              </span>
-                            </div>
-                          )}
-                          <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span className="text-gray-500">
-                              {isRtl
-                                ? `رسوم المسافة الإضافية (فوق ${includedKm} كم)`
-                                : `Extra distance fee (beyond ${includedKm} km)`}
-                              {' '}
-                              ({extraDistanceKm.toFixed(1)} {t('km')})
-                            </span>
-                            <span>
-                              {pricing.extraKm} {t('sar')}
+                            <span className="text-gray-500">{t('distance')}</span>
+                            <span className="font-bold">
+                              {routeDistanceKm.toFixed(1)} {t('km')}
                             </span>
                           </div>
                           <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
@@ -1774,61 +1703,16 @@ const CustomerDashboard: React.FC = () => {
                               {pricing.isServiceFeeFree && <span className="text-[10px] text-green-500 font-bold">{t('free')} ({t('first_3_orders')})</span>}
                             </div>
                           </div>
-                          {appCommissionDisplay > 0 && (
-                            <div className={`flex justify-between text-slate-500 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span>
-                                {t('platform_commission')}
-                                <span className="block text-[9px] font-medium text-slate-400 normal-case tracking-normal">
-                                  {t('commission_not_added')}
-                                </span>
-                              </span>
-                              <span>{appCommissionDisplay.toFixed(2)} {t('sar')}</span>
-                            </div>
-                          )}
-                          {driverNetDisplay > 0 && (
-                            <div className={`flex justify-between text-slate-500 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span>{t('driver_net_earning')}</span>
-                              <span>{driverNetDisplay.toFixed(2)} {t('sar')}</span>
-                            </div>
-                          )}
-                          {serviceType === 'goods_transport' && truckCount > 1 && (
-                            <div className={`flex justify-between text-blue-600 font-bold ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              <span>{t('truck_count')}</span>
-                              <span>{truckCount} {t('trucks')}</span>
-                            </div>
-                          )}
                           <div className={`pt-3 border-t border-dashed flex justify-between font-bold text-lg ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                             <span>{t('total')}</span>
                             <span className="text-primary">{checkoutTotal.toFixed(2)} {t('sar')}</span>
                           </div>
                         </div>
-                        <div className={`p-4 bg-primary/5 rounded-2xl border border-primary/10 flex items-start gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                          <Info size={16} className={`text-primary mt-0.5 shrink-0 ${isRtl ? '' : 'rotate-180'}`} />
-                          <div className={`text-[10px] text-gray-600 space-y-1 ${isRtl ? 'text-right' : 'text-left'}`}>
-                            {isLoadingPricing ? (
-                              <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                                <span>{t('loading_pricing') || 'Loading dynamic pricing...'}</span>
-                              </div>
-                            ) : pricingError ? (
-                              <p className="text-red-500 font-bold">{pricingError}</p>
-                            ) : (
-                              <>
-                                <p className="font-bold text-black border-b border-primary/10 pb-1 mb-1">{t('dynamic_pricing_active') || 'Dynamic Pricing (Real-time)'}</p>
-                                <p>{t('base_price')}: {pricing.base} {t('sar')}</p>
-                                <p>
-                                  {isRtl ? 'سعر الكيلومتر الإضافي' : 'Extra km rate'}:{' '}
-                                  {pricing.rate} {t('sar')}/{t('km')}
-                                </p>
-                                <p>
-                                  {isRtl ? 'المشمول في السعر الأساسي' : 'Included in base'}:{' '}
-                                  {includedKm} {t('km')}
-                                </p>
-                              </>
-                            )}
-                            <p className="border-t border-primary/10 pt-1 mt-1 text-black font-bold italic">{t('pricing_maps_note')}</p>
-                          </div>
-                        </div>
+                        {pricingError ? (
+                          <p className="text-xs text-red-500 font-bold">{pricingError}</p>
+                        ) : isLoadingPricing ? (
+                          <p className="text-xs text-gray-500">{t('loading_pricing') || 'Loading pricing...'}</p>
+                        ) : null}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -1936,118 +1820,12 @@ const CustomerDashboard: React.FC = () => {
                       <h3 className="font-bold text-xl border-b pb-4">{t('order_summary')}</h3>
                       
                       <div className="space-y-4">
-                        <div className={`flex justify-between items-center ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-primary">
-                              {serviceList.find(s => s.id === (activeOrder?.serviceType || serviceType))?.icon
-                                || (isWaterTankerService(activeOrder?.serviceType || serviceType)
-                                  ? <Droplets size={20} />
-                                  : <Package size={20} />)}
-                            </div>
-                            <div>
-                              {(() => {
-                                const label = formatOrderServiceLabel(
-                                  activeOrder?.serviceType || serviceType,
-                                  {
-                                    waterType:
-                                      (activeOrder?.serviceDetails as { waterType?: string } | undefined)
-                                        ?.waterType || waterType || undefined,
-                                    capacity:
-                                      (activeOrder?.serviceDetails as { capacity?: string } | undefined)
-                                        ?.capacity ||
-                                      tankCapacityLabel ||
-                                      serviceOption ||
-                                      undefined,
-                                    type:
-                                      (activeOrder?.serviceDetails as { type?: string } | undefined)
-                                        ?.type || serviceOption || undefined,
-                                  },
-                                  t
-                                );
-                                return (
-                                  <>
-                                    <p className="font-bold text-sm">{label.title}</p>
-                                    {label.subtitle ? (
-                                      <p className="text-[10px] text-gray-500">{label.subtitle}</p>
-                                    ) : null}
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                          <span className="font-bold">{pricing.base} {t('sar')}</span>
+                        <div className="flex justify-between text-sm text-gray-500">
+                          <span>{t('distance')}</span>
+                          <span className="font-bold text-neutral-800">
+                            {routeDistanceKm.toFixed(1)} {t('km')}
+                          </span>
                         </div>
-
-                        {(activeOrder?.serviceType || serviceType) === 'water_tanker' ? (
-                          <>
-                            <div className="flex justify-between text-sm text-gray-500">
-                              <span>{t('water_service_type')}</span>
-                              <span className="font-bold text-neutral-800">
-                                {translateWaterType(
-                                  (activeOrder?.serviceDetails as { waterType?: string } | undefined)
-                                    ?.waterType || waterType || 'fresh',
-                                  t
-                                )}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm text-gray-500">
-                              <span>
-                                {isRtl ? 'سعة الصهريج' : 'Tank capacity'}
-                              </span>
-                              <span className="font-bold text-neutral-800">
-                                {translateCapacity(
-                                  (activeOrder?.serviceDetails as { capacity?: string } | undefined)
-                                    ?.capacity ||
-                                    tankCapacityLabel ||
-                                    resolveTankCapacityLabel(serviceOption),
-                                  t
-                                )}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm text-gray-500">
-                              <span>
-                                {isRtl ? 'المسافة لأقرب سائق' : 'Distance to nearest driver'}
-                              </span>
-                              <span>
-                                {routeDistanceKm.toFixed(1)} {t('km')}
-                                {routeDistanceKm <= includedKm
-                                  ? ` · ${isRtl ? 'ضمن الحد المشمول' : 'within included radius'}`
-                                  : ` · ${extraDistanceKm.toFixed(1)} ${t('km')} extra`}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-sm text-gray-500">
-                              <span>
-                                {isRtl
-                                  ? `رسوم ما فوق ${includedKm} كم`
-                                  : `Fee beyond ${includedKm} km`}
-                              </span>
-                              <span>{pricing.extraKm} {t('sar')}</span>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            {serviceOption ? (
-                              <div className="flex justify-between text-sm text-gray-500">
-                                <span>{isRtl ? 'فئة المركبة' : 'Vehicle tier'}</span>
-                                <span className="font-bold text-neutral-800">
-                                  {t(OPTION_LABELS[serviceOption] || serviceOption)}
-                                </span>
-                              </div>
-                            ) : null}
-                            <div className="flex justify-between text-sm text-gray-500 hover:text-black transition-colors group cursor-help">
-                              <span className={`flex items-center gap-1 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                {t('distance')} ({routeDistanceKm} {t('km')}
-                                {extraDistanceKm > 0
-                                  ? ` · +${extraDistanceKm.toFixed(1)} ${t('km')}`
-                                  : ` · ≤${includedKm} ${t('km')}`}
-                                ){' '}
-                                <Info size={12} className="group-hover:text-primary" />
-                              </span>
-                              <span>{pricing.extraKm} {t('sar')}</span>
-                            </div>
-                          </>
-                        )}
-
                         <div className="flex justify-between text-sm text-gray-500">
                           <span>{t('service_fee')}</span>
                           <span className={pricing.isServiceFeeFree ? 'line-through text-gray-300' : ''}>
@@ -2058,23 +1836,6 @@ const CustomerDashboard: React.FC = () => {
                           <div className="flex justify-between text-sm text-green-600 font-bold">
                             <span>{t('first_3_orders')}</span>
                             <span>{t('free')}</span>
-                          </div>
-                        )}
-                        {appCommissionDisplay > 0 && (
-                          <div className="flex justify-between text-sm text-gray-500">
-                            <span>
-                              {t('platform_commission')}
-                              <span className="block text-[9px] font-medium text-slate-400">
-                                {t('commission_not_added')}
-                              </span>
-                            </span>
-                            <span>{appCommissionDisplay.toFixed(2)} {t('sar')}</span>
-                          </div>
-                        )}
-                        {driverNetDisplay > 0 && (
-                          <div className="flex justify-between text-sm text-gray-500">
-                            <span>{t('driver_net_earning')}</span>
-                            <span>{driverNetDisplay.toFixed(2)} {t('sar')}</span>
                           </div>
                         )}
 

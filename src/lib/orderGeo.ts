@@ -58,9 +58,13 @@ export function coerceLatLng(value: unknown): LatLng | null {
     }
   }
 
-  const lat = asFiniteNumber(obj.lat ?? obj.latitude);
-  const lng = asFiniteNumber(obj.lng ?? obj.longitude);
-  if (lat == null || lng == null) return null;
+  const lat = asFiniteNumber(obj.lat ?? obj.latitude ?? obj._latitude);
+  const lng = asFiniteNumber(obj.lng ?? obj.longitude ?? obj._longitude);
+  if (lat == null || lng == null) {
+    const nested = coerceLatLng(obj.location || obj.coords || obj.geopoint || obj.position);
+    if (nested) return nested;
+    return null;
+  }
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
   // Reject null-island / empty placeholders
   if (lat === 0 && lng === 0) return null;
@@ -76,11 +80,15 @@ function fromFlatDropoff(order: Order): LatLng | null {
 }
 
 function fromNestedPickup(order: Order): LatLng | null {
-  return coerceLatLng(order.pickup);
+  return coerceLatLng(order.pickup) || coerceLatLng((order as { pickupLocation?: unknown }).pickupLocation);
 }
 
 function fromNestedDropoff(order: Order): LatLng | null {
-  return coerceLatLng(order.destination);
+  return (
+    coerceLatLng(order.destination) ||
+    coerceLatLng((order as { dropoff?: unknown }).dropoff) ||
+    coerceLatLng((order as { dropoffLocation?: unknown }).dropoffLocation)
+  );
 }
 
 function fromLegacyPickup(order: Order): LatLng | null {
@@ -266,11 +274,23 @@ export function resolveDriverMapEndpoints(
 }
 
 export function getOrderPickupLatLng(order: Order | null | undefined): LatLng | null {
-  return getOrderTripCoordinates(order).pickup;
+  if (!order) return null;
+  return (
+    getOrderTripCoordinates(order).pickup ||
+    fromFlatPickup(order) ||
+    fromNestedPickup(order) ||
+    fromLegacyPickup(order)
+  );
 }
 
 export function getOrderDropoffLatLng(order: Order | null | undefined): LatLng | null {
-  return getOrderTripCoordinates(order).dropoff;
+  if (!order) return null;
+  return (
+    getOrderTripCoordinates(order).dropoff ||
+    fromFlatDropoff(order) ||
+    fromNestedDropoff(order) ||
+    fromLegacyDropoff(order)
+  );
 }
 
 /** True when `point` is within `maxKm` of either trip endpoint. */

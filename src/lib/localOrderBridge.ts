@@ -1,6 +1,7 @@
 import {
   doc,
   setDoc,
+  updateDoc,
   serverTimestamp,
   getDoc,
 } from 'firebase/firestore';
@@ -591,6 +592,7 @@ export async function assignSharedLocalOrder(
       status: 'approved',
       vehicleType: driver.vehicleType || null,
     },
+    driverName: driver.name,
     driverPhone: driver.phone,
     updatedAt: new Date().toISOString(),
   };
@@ -602,14 +604,10 @@ export async function assignSharedLocalOrder(
   });
 
   try {
-    await setDoc(
-      ref,
-      {
-        ...assignment,
-        assignedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
+    await updateDoc(ref, {
+      ...assignment,
+      assignedAt: serverTimestamp(),
+    });
   } catch (error) {
     console.warn('[orders] Firestore accept write failed — kept local assignment', error);
     if (!import.meta.env.DEV) {
@@ -641,14 +639,10 @@ export async function patchSharedLocalOrderStatus(
     /* continue with currentUser if present */
   }
   try {
-    await setDoc(
-      doc(db, 'orders', orderId),
-      {
-        status,
-        updatedAt,
-      },
-      { merge: true }
-    );
+    await updateDoc(doc(db, 'orders', orderId), {
+      status,
+      updatedAt,
+    });
   } catch (error) {
     console.warn('[orders] Status patch failed — kept local status', error);
     if (!import.meta.env.DEV) {

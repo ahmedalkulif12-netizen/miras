@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment, setDoc, where } from 'firebase/firestore';
 import { useAuth } from '@/hooks/useAuth';
 import { capturePayment } from '@/lib/paymentService';
-import { acceptOrder, completeDriverOrder, transitionOrderStatus } from '@/lib/orderService';
+import { acceptOrder, completeDriverOrder, driverOrderWriteErrorMessage, transitionOrderStatus } from '@/lib/orderService';
 import {
   isActiveTripStatus,
   isTerminalOrderStatus,
@@ -41,6 +41,8 @@ import {
 } from '@/lib/withdrawalService';
 
 import { DriverTripMap, getOrderDropoffLatLng, getOrderPickupLatLng } from '@/components/DriverTripMap';
+import { resolveDriverMapEndpoints } from '@/lib/orderGeo';
+import { geocodePlaceName } from '@/lib/cityCoordinates';
 import { openNativeMapsNavigation } from '@/lib/nativeMaps';
 import DriverProfilePage from '@/pages/DriverProfilePage';
 import { getDriverOfferMetrics } from '@/lib/driverOfferMetrics';
@@ -925,7 +927,11 @@ const DriverDashboard: React.FC = () => {
       );
     } catch (error) {
       console.error('Completion error:', error);
-      const msg = error instanceof Error ? error.message : (isRtl ? 'فشل إكمال الطلب' : 'Failed to complete order');
+      const msg = driverOrderWriteErrorMessage(
+        error,
+        isRtl,
+        isRtl ? 'فشل إكمال الطلب' : 'Failed to complete order'
+      );
       toast.error(msg);
     } finally {
       setCompletingId(null);
@@ -934,30 +940,65 @@ const DriverDashboard: React.FC = () => {
 
   /** Stage-aware optional external Maps link (destination matches current nav phase). */
   const openOrderInMaps = (order: Order, force: 'pickup' | 'dropoff' | 'auto' = 'auto') => {
-    const phase = getDriverNavPhase(order.status, order);
-    const pickup = getOrderPickupLatLng(order);
-    const dropoff = getOrderDropoffLatLng(order);
-    const deliveryOnly = order.deliveryOnly || order.serviceType === 'water_tanker';
-    let target = force === 'pickup' ? pickup : force === 'dropoff' ? dropoff : null;
-    if (!target) {
-      target =
-        deliveryOnly || phase === 'to_dropoff' || phase === 'preview'
-          ? dropoff || pickup
-          : pickup || dropoff;
-    }
-    if (!target) {
-      toast.error(isRtl ? 'إحداثيات الموقع غير متوفرة' : 'Location coordinates are unavailable');
-      return;
-    }
-    const label =
-      target === dropoff
-        ? order.dropoffAddress || 'Drop-off'
-        : order.pickupAddress || 'Pickup';
-    void openNativeMapsNavigation({ ...target, label }).then((ok) => {
-      if (!ok) {
-        toast.error(isRtl ? 'تعذر فتح الخرائط' : 'Could not open maps');
+    void (async () => {
+      const phase = getDriverNavPhase(order.status, order);
+      const exactPickup = getOrderPickupLatLng(order);
+      const exactDropoff = getOrderDropoffLatLng(order);
+      const resolved = resolveDriverMapEndpoints(order, {
+        driverPos: driverCoords,
+        driverCity: order.pickupCity || order.dropoffCity || '',
+      });
+      const pickup = exactPickup || resolved.pickup;
+      const dropoff = exactDropoff || resolved.dropoff;
+      const deliveryOnly = order.deliveryOnly || order.serviceType === 'water_tanker';
+      let target = force === 'pickup' ? pickup : force === 'dropoff' ? dropoff : null;
+      if (!target) {
+        target =
+          deliveryOnly || phase === 'to_dropoff' || phase === 'preview'
+            ? dropoff || pickup
+            : pickup || dropoff;
       }
-    });
+
+      const pickupLabel = order.pickupAddress || order.pickupCity || '';
+      const dropoffLabel = order.dropoffAddress || order.dropoffCity || '';
+      const wantsDropoff =
+        force === 'dropoff' ||
+        (force === 'auto' && (deliveryOnly || phase === 'to_dropoff' || phase === 'preview'));
+      const label =
+        (wantsDropoff ? dropoffLabel || pickupLabel : pickupLabel || dropoffLabel) ||
+        (wantsDropoff ? (isRtl ? 'التنزيل' : 'Drop-off') : (isRtl ? 'الاستلام' : 'Pickup'));
+      const addressFallback = (force === 'pickup' ? pickupLabel : force === 'dropoff' ? dropoffLabel : label).trim();
+      const usefulAddress =
+        addressFallback.length >= 3 &&
+        !/^(pickup|drop-?off|الاستلام|التنزيل)$/i.test(addressFallback)
+          ? addressFallback
+          : undefined;
+
+      if (!target && usefulAddress) {
+        const geocoded = await geocodePlaceName(usefulAddress);
+        if (geocoded) {
+          target = geocoded;
+        }
+      }
+
+      const opened = await openNativeMapsNavigation({
+        lat: target?.lat,
+        lng: target?.lng,
+        address: usefulAddress,
+        label,
+      });
+      if (!opened) {
+        toast.error(
+          target || usefulAddress
+            ? isRtl
+              ? 'تعذر فتح الخرائط'
+              : 'Could not open maps'
+            : isRtl
+              ? 'إحداثيات الموقع غير متوفرة'
+              : 'Location coordinates are unavailable'
+        );
+      }
+    })();
   };
 
   const activateLocalTrip = (order: Order) => {
@@ -1043,7 +1084,11 @@ const DriverDashboard: React.FC = () => {
       );
     } catch (error) {
       console.error('Accept error:', error);
-      const msg = error instanceof Error ? error.message : (isRtl ? 'فشل قبول المهمة' : 'Failed to accept task');
+      const msg = driverOrderWriteErrorMessage(
+        error,
+        isRtl,
+        isRtl ? 'فشل قبول المهمة' : 'Failed to accept task'
+      );
       if (msg === 'DRIVER_ALREADY_ON_TRIP') {
         toast.error(
           isRtl
@@ -1111,7 +1156,11 @@ const DriverDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Status transition error:', error);
-      const msg = error instanceof Error ? error.message : (isRtl ? 'فشل تحديث حالة الرحلة' : 'Failed to update trip status');
+      const msg = driverOrderWriteErrorMessage(
+        error,
+        isRtl,
+        isRtl ? 'فشل تحديث حالة الرحلة' : 'Failed to update trip status'
+      );
       toast.error(msg);
     } finally {
       setTransitioningId(null);

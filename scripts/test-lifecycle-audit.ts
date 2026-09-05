@@ -45,9 +45,12 @@ import {
   shouldWaiveServiceFee,
   normalizeTripFinancials,
   FREE_SERVICE_FEE_ORDERS,
+  toCustomerQuoteDisplay,
 } from '../src/domain/financials.ts';
 import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
 import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
+import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
+import { isValidMapsTarget } from '../src/lib/nativeMaps.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -366,6 +369,17 @@ function run(): void {
   assert(persistedMoney.driver_earning === 255, 'persisted driver earning matches net');
   assert(persistedMoney.price === 315, 'legacy price field stores customer total');
 
+  const customerQuote = toCustomerQuoteDisplay(charged);
+  assert(customerQuote.serviceFee === 15, 'customer quote shows 5% service fee');
+  assert(customerQuote.total === 315, 'customer quote total is trip + service fee');
+  assert(
+    !('platformFee' in customerQuote) && !('driverNet' in customerQuote),
+    'customer quote must not expose driver commission'
+  );
+  const waivedQuote = toCustomerQuoteDisplay(waived);
+  assert(waivedQuote.serviceFee === 0, 'customer quote is free for first 3 orders');
+  assert(waivedQuote.total === 300, 'waived customer quote total equals trip fare');
+
   const driverView = getDriverOfferMetrics({
     id: 'ord-1',
     financials: waived,
@@ -390,6 +404,19 @@ function run(): void {
   assert(nestedPrice?.clientTotal === 300, 'object price.total is coerced');
   assert(nestedPrice?.platformFee === 45, 'object price still yields commission');
   assert(nestedPrice != null && nestedPrice.clientTotal > 250, 'never falls back to the old 240 mock');
+
+  const nestedPickup = getOrderPickupLatLng({
+    pickup: { address: 'Riyadh', location: { lat: 24.7136, lng: 46.6753 } },
+  } as unknown as Parameters<typeof getOrderPickupLatLng>[0]);
+  assert(nestedPickup?.lat === 24.7136 && nestedPickup?.lng === 46.6753, 'nested pickup location is read');
+  const nestedDropoff = getOrderDropoffLatLng({
+    destination: { latitude: 21.4858, longitude: 39.1925 },
+  } as unknown as Parameters<typeof getOrderDropoffLatLng>[0]);
+  assert(nestedDropoff?.lat === 21.4858 && nestedDropoff?.lng === 39.1925, 'nested dropoff lat/lng aliases are read');
+
+  assert(isValidMapsTarget({ lat: 24.7136, lng: 46.6753 }), 'maps target accepts coordinates');
+  assert(isValidMapsTarget({ address: 'الرياض' }), 'maps target accepts an address fallback');
+  assert(!isValidMapsTarget({ lat: 0, lng: 0 }), 'maps target rejects null island');
 
   console.log('lifecycle-audit: all checks passed');
 }

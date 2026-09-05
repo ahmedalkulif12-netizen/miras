@@ -47,6 +47,8 @@ const PaymentCheckoutPage: React.FC = () => {
   );
 
   const amount = Number(draft?.financials?.customerTotal || 0);
+  const serviceFee = Number(draft?.financials?.serviceFee || 0);
+  const distanceKm = Number(draft?.distanceKm || 0);
   const methodLabel =
     method === 'applepay'
       ? isRtl
@@ -208,6 +210,24 @@ const PaymentCheckoutPage: React.FC = () => {
                 </span>
               </div>
             ) : null}
+            {Number.isFinite(distanceKm) && distanceKm > 0 ? (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500 font-medium">
+                  {isRtl ? 'المسافة' : 'Distance'}
+                </span>
+                <span className="font-bold">
+                  {distanceKm.toFixed(1)} {isRtl ? 'كم' : 'km'}
+                </span>
+              </div>
+            ) : null}
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500 font-medium">
+                {isRtl ? 'رسوم الخدمة' : 'Service fee'}
+              </span>
+              <span className="font-bold">
+                {serviceFee.toFixed(2)} {isRtl ? 'ر.س' : 'SAR'}
+              </span>
+            </div>
             <div className="flex justify-between text-sm">
               <span className="text-slate-500 font-medium">
                 {isRtl ? 'المبلغ المستحق' : 'Amount due'}

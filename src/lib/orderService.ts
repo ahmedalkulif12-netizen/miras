@@ -128,6 +128,32 @@ export async function acceptOrder(
   });
 }
 
+export function isFirestorePermissionError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = String((error as { code?: unknown }).code || '');
+  const message = String((error as { message?: unknown }).message || '');
+  return (
+    code === 'permission-denied' ||
+    code === 'PERMISSION_DENIED' ||
+    /missing or insufficient permissions/i.test(message) ||
+    /PERMISSION_DENIED/i.test(message)
+  );
+}
+
+export function driverOrderWriteErrorMessage(
+  error: unknown,
+  isRtl: boolean,
+  fallback: string
+): string {
+  if (isFirestorePermissionError(error)) {
+    return isRtl
+      ? 'تعذر تحديث حالة الطلب. حاول مرة أخرى.'
+      : 'Could not update the order status. Please try again.';
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export interface CompleteOrderResult {
   orderId: string;
   status: string;

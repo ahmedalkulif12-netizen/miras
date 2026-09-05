@@ -121,21 +121,49 @@ service cloud.firestore {
     }
 
     function isApprovedDriverAccount() {
-      return exists(/databases/$(database)/documents/drivers/$(uid()))
+      return (
+        exists(/databases/$(database)/documents/drivers/$(uid()))
         && get(/databases/$(database)/documents/drivers/$(uid())).data.accountStatus in [
           'approved', 'active'
-        ];
+        ]
+      ) || (
+        hasUserDoc()
+        && userDoc().role in ['b2c_driver', 'driver']
+        && userDoc().accountStatus in ['approved', 'active']
+      );
+    }
+
+    // Status patches must not require nested-map equality (financials == financials
+    // false-denies otherwise). Only these top-level keys may change.
+    function driverTripUpdateKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'status', 'updatedAt', 'statusHistory',
+          'driverId', 'driver', 'driverPhone', 'driverName', 'assignedAt',
+          'driverLat', 'driverLng', 'driverLocationUpdatedAt',
+          'completedAt', 'arrivedAt', 'pickedUpAt'
+        ]);
     }
 
     // Authenticated approved driver claiming a live offer (موافقة الطلب).
-    // Requires signed-in auth, approved accountStatus, and driverId == caller.
     function isDriverClaimingOpenOffer() {
       return request.auth != null
         && isApprovedDriverAccount()
         && isOpenOffer()
         && request.resource.data.driverId == request.auth.uid
         && request.resource.data.status in ['assigned', 'accepted']
-        && sameOrderOwner();
+        && sameOrderOwner()
+        && driverTripUpdateKeys();
+    }
+
+    function isAssignedDriverTripUpdate() {
+      return isOrderDriver()
+        && driverTripUpdateKeys()
+        && request.resource.data.driverId == resource.data.driverId
+        && request.resource.data.status in [
+          'assigned', 'accepted', 'driver_arrived', 'in_transit',
+          'in_progress', 'arrived', 'on_the_way', 'completed'
+        ];
     }
 
     // ── users/{uid} ─────────────────────────────────────────────────────────
@@ -327,18 +355,7 @@ service cloud.firestore {
           ]
         )
         || isDriverClaimingOpenOffer()
-        || (
-          isOrderDriver()
-          && request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly([
-              'status', 'updatedAt', 'statusHistory',
-              'driverLat', 'driverLng', 'driverLocationUpdatedAt'
-            ])
-          && request.resource.data.driverId == resource.data.driverId
-          && request.resource.data.userId == resource.data.userId
-          && request.resource.data.serviceType == resource.data.serviceType
-          && request.resource.data.financials == resource.data.financials
-        );
+        || isAssignedDriverTripUpdate();
 
       allow delete: if isAdmin();
 
@@ -352,6 +369,7 @@ service cloud.firestore {
         allow write: if isAdmin()
           || (
             isSignedIn()
+            && exists(/databases/$(database)/documents/orders/$(orderId))
             && get(/databases/$(database)/documents/orders/$(orderId)).data.driverId == uid()
           );
       }
