@@ -93,7 +93,7 @@ service cloud.firestore {
 
     function isOpenOffer() {
       return hasOrderResource()
-        && orderData().status in [
+        && resource.data.status in [
           'broadcasting', 'payment_authorized', 'searching_driver', 'pending'
         ];
     }
@@ -115,61 +115,40 @@ service cloud.firestore {
       return isSignedIn() && isOpenOffer();
     }
 
-    function driverAccountStatus() {
-      return exists(/databases/$(database)/documents/drivers/$(uid()))
-        ? get(/databases/$(database)/documents/drivers/$(uid())).data.accountStatus
-        : (hasUserDoc() ? userDoc().accountStatus : '');
-    }
-
-    function isBlockedDriverAccount() {
-      return driverAccountStatus() in [
-        'banned', 'suspended', 'rejected', 'blocked', 'deleted'
-      ];
-    }
-
-    // Signed-in driver who is not banned. Do not require accountStatus == approved
-    // here: users/{uid} is often still 'pending' after drivers/{uid} is approved,
-    // and localhost Start Work allows pending drivers to accept live offers.
-    function isApprovedDriverAccount() {
-      return isDriverAccount() && !isBlockedDriverAccount();
-    }
-
-    // Nested financials == financials is unreliable (false-denies). Block money /
-    // identity / service fields instead of allow-listing every operational key.
-    function changesProtectedOrderFields() {
+    // Flat claim keys only — nested `driver` maps, arrayUnion(statusHistory),
+    // and serverTimestamp sentinels have been denied in production.
+    function driverClaimKeys() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasAny([
-          'financials', 'userId', 'clientId', 'customerId',
-          'totalPrice', 'price', 'serviceFee', 'tripFare',
-          'platformFee', 'driverNet', 'commission_amount', 'driver_earning',
-          'paymentStatus', 'paymentId', 'payment',
-          'serviceType', 'requiredVehicleType'
+        .hasOnly([
+          'status', 'driverId', 'driverName', 'driverPhone',
+          'updatedAt', 'assignedAt'
         ]);
     }
 
-    function openOfferUnclaimed() {
-      return isOpenOffer()
-        && (
-          !('driverId' in resource.data)
-          || resource.data.driverId == null
-          || resource.data.driverId == ''
-          || resource.data.driverId == uid()
-        );
+    function driverTripStatusKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly([
+          'status', 'updatedAt', 'statusHistory',
+          'driverName', 'driverPhone',
+          'driverLat', 'driverLng', 'driverLocationUpdatedAt',
+          'completedAt', 'arrivedAt', 'pickedUpAt'
+        ]);
     }
 
     // Authenticated driver claiming a live offer (موافقة الطلب).
+    // Do not get() drivers.accountStatus — a missing/odd value false-denies the write.
     function isDriverClaimingOpenOffer() {
       return isSignedIn()
-        && isApprovedDriverAccount()
-        && openOfferUnclaimed()
+        && isDriverAccount()
+        && isOpenOffer()
         && request.resource.data.driverId == uid()
         && request.resource.data.status in ['assigned', 'accepted']
-        && !changesProtectedOrderFields();
+        && driverClaimKeys();
     }
 
     function isAssignedDriverTripUpdate() {
       return isOrderDriver()
-        && !changesProtectedOrderFields()
+        && driverTripStatusKeys()
         && request.resource.data.driverId == resource.data.driverId
         && request.resource.data.status in [
           'assigned', 'accepted', 'driver_arrived', 'in_transit',

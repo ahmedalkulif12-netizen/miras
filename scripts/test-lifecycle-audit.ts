@@ -423,17 +423,22 @@ function run(): void {
     driverId: 'drv-1',
     name: 'Ahmed',
     phone: '0500000000',
-    truckDetails: 'flatbed - ABC',
-    vehicleType: 'flatbed',
   });
   assert(acceptPatch.status === 'assigned', 'accept patch uses assigned status');
   assert(acceptPatch.driverId === 'drv-1', 'accept patch sets driverId');
-  assert(acceptPatch.driver.id === 'drv-1', 'accept patch nested driver id matches');
+  assert(
+    !('driver' in acceptPatch) && !('statusHistory' in acceptPatch),
+    'accept patch must not include nested driver or statusHistory'
+  );
   assert(
     Object.keys(acceptPatch).every((key) =>
       (DRIVER_ACCEPT_PATCH_KEYS as readonly string[]).includes(key)
     ),
     'accept patch keys are allowed by security rules'
+  );
+  assert(
+    typeof acceptPatch.updatedAt === 'string' && typeof acceptPatch.assignedAt === 'string',
+    'accept timestamps are ISO strings, not FieldValue sentinels'
   );
   assert(canRoleTransition('driver', 'broadcasting', 'assigned'), 'driver can accept broadcasting');
   assert(canRoleTransition('driver', 'pending', 'assigned'), 'driver can accept legacy pending');

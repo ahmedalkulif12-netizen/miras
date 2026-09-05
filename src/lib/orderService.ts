@@ -90,6 +90,11 @@ async function tryServerOrderMutation<T>(
   }
 
   const message = await readApiErrorMessage(response, fallbackMessage);
+  console.error('[orders] Order API mutation failed', {
+    path,
+    status: response.status,
+    message,
+  });
   if (!shouldUseClientOrderWrite(response.status, message)) {
     throw new Error(message);
   }

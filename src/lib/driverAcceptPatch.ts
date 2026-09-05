@@ -1,6 +1,7 @@
 /**
- * Canonical Firestore patch for a driver claiming an open offer.
- * Keys must stay compatible with firestore.rules driver claim updates.
+ * Flat Firestore patch for a driver claiming an open offer.
+ * Nested maps, nulls, and FieldValue sentinels are omitted — they trip
+ * security rules and client validation on updateDoc.
  */
 
 export const DRIVER_ACCEPT_STATUS = 'assigned' as const;
@@ -9,8 +10,7 @@ export type DriverAcceptInput = {
   driverId: string;
   name: string;
   phone: string;
-  truckDetails: string;
-  vehicleType?: string | null;
+  nowIso?: string;
 };
 
 export type DriverAcceptPatch = {
@@ -18,13 +18,8 @@ export type DriverAcceptPatch = {
   driverId: string;
   driverName: string;
   driverPhone: string;
-  driver: {
-    id: string;
-    name: string;
-    phone: string;
-    truckDetails: string;
-    vehicleType: string | null;
-  };
+  updatedAt: string;
+  assignedAt: string;
 };
 
 export const DRIVER_ACCEPT_PATCH_KEYS = [
@@ -32,8 +27,6 @@ export const DRIVER_ACCEPT_PATCH_KEYS = [
   'driverId',
   'driverName',
   'driverPhone',
-  'driver',
-  'statusHistory',
   'updatedAt',
   'assignedAt',
 ] as const;
@@ -42,20 +35,14 @@ export function buildDriverAcceptPatch(input: DriverAcceptInput): DriverAcceptPa
   const driverId = String(input.driverId || '').trim();
   const name = String(input.name || '').trim() || 'Driver';
   const phone = String(input.phone || '').trim();
-  const truckDetails = String(input.truckDetails || '').trim();
-  const vehicleType = input.vehicleType ? String(input.vehicleType).trim() : '';
+  const nowIso = input.nowIso || new Date().toISOString();
 
   return {
     status: DRIVER_ACCEPT_STATUS,
     driverId,
     driverName: name,
     driverPhone: phone,
-    driver: {
-      id: driverId,
-      name,
-      phone,
-      truckDetails,
-      vehicleType: vehicleType || null,
-    },
+    updatedAt: nowIso,
+    assignedAt: nowIso,
   };
 }

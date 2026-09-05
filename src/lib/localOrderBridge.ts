@@ -3,7 +3,6 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
-  arrayUnion,
   getDoc,
 } from 'firebase/firestore';
 import { db, ensureFirebaseReady, auth } from '@/lib/firebase';
@@ -18,6 +17,7 @@ import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStat
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
 import { buildDriverAcceptPatch } from '@/lib/driverAcceptPatch';
+import { logFirestoreWriteError } from '@/lib/firestoreWriteError';
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   const out: Record<string, unknown> = {};
@@ -550,14 +550,6 @@ export async function assignSharedLocalOrder(
     throw new Error(`ORDER_NOT_FOUND:${orderId}`);
   }
 
-  if (data.driverId && data.driverId !== driver.id) {
-    return {
-      orderId,
-      status: String(data.status || 'assigned'),
-      alreadyAssigned: true,
-    };
-  }
-
   if (driver.vehicleType && !driverMatchesRequiredVehicle(driver.vehicleType, data)) {
     throw new Error(
       `VEHICLE_TYPE_MISMATCH:driver=${driver.vehicleType || 'none'}:order=${String(
@@ -569,9 +561,19 @@ export async function assignSharedLocalOrder(
   let firebaseUid = auth.currentUser?.uid || '';
   try {
     firebaseUid = await ensureSignedInFirebaseUid();
-  } catch {
+  } catch (authError) {
+    console.error('[orders] Accept auth failed:', authError);
     firebaseUid = auth.currentUser?.uid || driver.id;
   }
+
+  if (data.driverId && data.driverId !== firebaseUid) {
+    return {
+      orderId,
+      status: String(data.status || 'assigned'),
+      alreadyAssigned: true,
+    };
+  }
+
   const alreadyBusy = loadLocalBroadcastOrders().some(
     (entry) =>
       entry.id !== orderId &&
@@ -587,8 +589,6 @@ export async function assignSharedLocalOrder(
     driverId: firebaseUid,
     name: driver.name,
     phone: driver.phone,
-    truckDetails: driver.truckDetails,
-    vehicleType: driver.vehicleType,
   });
   if (!patch.driverId) {
     throw new Error('NOT_AUTHENTICATED');
@@ -597,36 +597,24 @@ export async function assignSharedLocalOrder(
   persistLocalBroadcastOrder(orderId, {
     ...(findLocalOrderData(orderId) || data),
     ...patch,
-    assignedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    driver: {
+      id: firebaseUid,
+      name: patch.driverName,
+      phone: patch.driverPhone,
+      truckDetails: driver.truckDetails,
+      vehicleType: driver.vehicleType || null,
+    },
   });
 
-  const historyEntry = {
-    status: patch.status,
-    at: new Date().toISOString(),
-    by: firebaseUid,
-    byRole: 'driver' as const,
-  };
-
   try {
-    await updateDoc(ref, {
-      ...patch,
-      statusHistory: arrayUnion(historyEntry),
-      assignedAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    await updateDoc(ref, { ...patch });
   } catch (error) {
-    console.warn('[orders] Full accept write failed, retrying minimal claim:', error);
-    try {
-      await updateDoc(ref, {
-        status: patch.status,
-        driverId: patch.driverId,
-        updatedAt: serverTimestamp(),
-      });
-    } catch (retryError) {
-      console.warn('[orders] Firestore accept write failed', retryError);
-      throw retryError;
-    }
+    logFirestoreWriteError('accept-order', error, {
+      orderId,
+      uid: firebaseUid,
+      payload: patch,
+    });
+    throw error;
   }
 
   console.info('[orders] Assigned shared local order', orderId, '→', firebaseUid);

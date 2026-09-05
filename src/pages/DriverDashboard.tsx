@@ -12,6 +12,7 @@ import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment
 import { useAuth } from '@/hooks/useAuth';
 import { capturePayment } from '@/lib/paymentService';
 import { acceptOrder, completeDriverOrder, driverOrderWriteErrorMessage, transitionOrderStatus } from '@/lib/orderService';
+import { logFirestoreWriteError } from '@/lib/firestoreWriteError';
 import {
   isActiveTripStatus,
   isTerminalOrderStatus,
@@ -1083,7 +1084,7 @@ const DriverDashboard: React.FC = () => {
           : `Order #${result.orderId.slice(-8)} accepted — navigate to pickup`
       );
     } catch (error) {
-      console.error('Accept error:', error);
+      logFirestoreWriteError('driver-accept', error, { orderId: order.id });
       const msg = driverOrderWriteErrorMessage(
         error,
         isRtl,
@@ -1155,7 +1156,10 @@ const DriverDashboard: React.FC = () => {
         );
       }
     } catch (error) {
-      console.error('Status transition error:', error);
+      logFirestoreWriteError('driver-status', error, {
+        orderId: order.id,
+        action: getDriverPrimaryAction(order.status, order),
+      });
       const msg = driverOrderWriteErrorMessage(
         error,
         isRtl,
