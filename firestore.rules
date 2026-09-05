@@ -115,50 +115,61 @@ service cloud.firestore {
       return isSignedIn() && isOpenOffer();
     }
 
-    function sameOrderOwner() {
-      return !('userId' in resource.data)
-        || request.resource.data.userId == resource.data.userId;
+    function driverAccountStatus() {
+      return exists(/databases/$(database)/documents/drivers/$(uid()))
+        ? get(/databases/$(database)/documents/drivers/$(uid())).data.accountStatus
+        : (hasUserDoc() ? userDoc().accountStatus : '');
     }
 
+    function isBlockedDriverAccount() {
+      return driverAccountStatus() in [
+        'banned', 'suspended', 'rejected', 'blocked', 'deleted'
+      ];
+    }
+
+    // Signed-in driver who is not banned. Do not require accountStatus == approved
+    // here: users/{uid} is often still 'pending' after drivers/{uid} is approved,
+    // and localhost Start Work allows pending drivers to accept live offers.
     function isApprovedDriverAccount() {
-      return (
-        exists(/databases/$(database)/documents/drivers/$(uid()))
-        && get(/databases/$(database)/documents/drivers/$(uid())).data.accountStatus in [
-          'approved', 'active'
-        ]
-      ) || (
-        hasUserDoc()
-        && userDoc().role in ['b2c_driver', 'driver']
-        && userDoc().accountStatus in ['approved', 'active']
-      );
+      return isDriverAccount() && !isBlockedDriverAccount();
     }
 
-    // Status patches must not require nested-map equality (financials == financials
-    // false-denies otherwise). Only these top-level keys may change.
-    function driverTripUpdateKeys() {
+    // Nested financials == financials is unreliable (false-denies). Block money /
+    // identity / service fields instead of allow-listing every operational key.
+    function changesProtectedOrderFields() {
       return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly([
-          'status', 'updatedAt', 'statusHistory',
-          'driverId', 'driver', 'driverPhone', 'driverName', 'assignedAt',
-          'driverLat', 'driverLng', 'driverLocationUpdatedAt',
-          'completedAt', 'arrivedAt', 'pickedUpAt'
+        .hasAny([
+          'financials', 'userId', 'clientId', 'customerId',
+          'totalPrice', 'price', 'serviceFee', 'tripFare',
+          'platformFee', 'driverNet', 'commission_amount', 'driver_earning',
+          'paymentStatus', 'paymentId', 'payment',
+          'serviceType', 'requiredVehicleType'
         ]);
     }
 
-    // Authenticated approved driver claiming a live offer (موافقة الطلب).
+    function openOfferUnclaimed() {
+      return isOpenOffer()
+        && (
+          !('driverId' in resource.data)
+          || resource.data.driverId == null
+          || resource.data.driverId == ''
+          || resource.data.driverId == uid()
+        );
+    }
+
+    // Authenticated driver claiming a live offer (موافقة الطلب).
     function isDriverClaimingOpenOffer() {
-      return request.auth != null
+      return isSignedIn()
         && isApprovedDriverAccount()
-        && isOpenOffer()
-        && request.resource.data.driverId == request.auth.uid
+        && openOfferUnclaimed()
+        && request.resource.data.driverId == uid()
         && request.resource.data.status in ['assigned', 'accepted']
-        && sameOrderOwner()
-        && driverTripUpdateKeys();
+        && !changesProtectedOrderFields();
     }
 
     function isAssignedDriverTripUpdate() {
       return isOrderDriver()
-        && driverTripUpdateKeys()
+        && !changesProtectedOrderFields()
         && request.resource.data.driverId == resource.data.driverId
         && request.resource.data.status in [
           'assigned', 'accepted', 'driver_arrived', 'in_transit',

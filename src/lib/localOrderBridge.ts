@@ -3,6 +3,7 @@ import {
   setDoc,
   updateDoc,
   serverTimestamp,
+  arrayUnion,
   getDoc,
 } from 'firebase/firestore';
 import { db, ensureFirebaseReady, auth } from '@/lib/firebase';
@@ -16,6 +17,7 @@ import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
+import { buildDriverAcceptPatch } from '@/lib/driverAcceptPatch';
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   const out: Record<string, unknown> = {};
@@ -581,37 +583,49 @@ export async function assignSharedLocalOrder(
     throw new Error('DRIVER_ALREADY_ON_TRIP');
   }
 
-  const assignment = {
-    status: 'assigned' as const,
+  const patch = buildDriverAcceptPatch({
     driverId: firebaseUid,
-    driver: {
-      id: firebaseUid,
-      name: driver.name,
-      phone: driver.phone,
-      truckDetails: driver.truckDetails,
-      status: 'approved',
-      vehicleType: driver.vehicleType || null,
-    },
-    driverName: driver.name,
-    driverPhone: driver.phone,
-    updatedAt: new Date().toISOString(),
-  };
+    name: driver.name,
+    phone: driver.phone,
+    truckDetails: driver.truckDetails,
+    vehicleType: driver.vehicleType,
+  });
+  if (!patch.driverId) {
+    throw new Error('NOT_AUTHENTICATED');
+  }
 
   persistLocalBroadcastOrder(orderId, {
     ...(findLocalOrderData(orderId) || data),
-    ...assignment,
+    ...patch,
     assignedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
+
+  const historyEntry = {
+    status: patch.status,
+    at: new Date().toISOString(),
+    by: firebaseUid,
+    byRole: 'driver' as const,
+  };
 
   try {
     await updateDoc(ref, {
-      ...assignment,
+      ...patch,
+      statusHistory: arrayUnion(historyEntry),
       assignedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     });
   } catch (error) {
-    console.warn('[orders] Firestore accept write failed — kept local assignment', error);
-    if (!import.meta.env.DEV) {
-      throw error;
+    console.warn('[orders] Full accept write failed, retrying minimal claim:', error);
+    try {
+      await updateDoc(ref, {
+        status: patch.status,
+        driverId: patch.driverId,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (retryError) {
+      console.warn('[orders] Firestore accept write failed', retryError);
+      throw retryError;
     }
   }
 

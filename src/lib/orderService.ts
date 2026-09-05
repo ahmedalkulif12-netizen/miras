@@ -35,12 +35,19 @@ function previewOrderBlocked(orderId: string, code: string): void {
 
 function shouldUseClientOrderWrite(status: number, errorText: string): boolean {
   if (status === 409) return false;
+  if (/VEHICLE_TYPE_MISMATCH|already assigned/i.test(errorText)) return false;
   if (status === 503 || status === 501) return true;
   if (status >= 500) return true;
   if (
     /CLIENT_WRITE_REQUIRED|default credentials|Admin Firestore|Could not load the default credentials/i.test(
       errorText
     )
+  ) {
+    return true;
+  }
+  if (
+    (status === 401 || status === 403) &&
+    /not approved|App Check|Unauthorized|PERMISSION|insufficient permissions/i.test(errorText)
   ) {
     return true;
   }

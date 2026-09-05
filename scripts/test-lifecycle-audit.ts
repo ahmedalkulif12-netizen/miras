@@ -51,6 +51,7 @@ import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
 import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
 import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
 import { isValidMapsTarget } from '../src/lib/nativeMaps.ts';
+import { buildDriverAcceptPatch, DRIVER_ACCEPT_PATCH_KEYS } from '../src/lib/driverAcceptPatch.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -417,6 +418,25 @@ function run(): void {
   assert(isValidMapsTarget({ lat: 24.7136, lng: 46.6753 }), 'maps target accepts coordinates');
   assert(isValidMapsTarget({ address: 'الرياض' }), 'maps target accepts an address fallback');
   assert(!isValidMapsTarget({ lat: 0, lng: 0 }), 'maps target rejects null island');
+
+  const acceptPatch = buildDriverAcceptPatch({
+    driverId: 'drv-1',
+    name: 'Ahmed',
+    phone: '0500000000',
+    truckDetails: 'flatbed - ABC',
+    vehicleType: 'flatbed',
+  });
+  assert(acceptPatch.status === 'assigned', 'accept patch uses assigned status');
+  assert(acceptPatch.driverId === 'drv-1', 'accept patch sets driverId');
+  assert(acceptPatch.driver.id === 'drv-1', 'accept patch nested driver id matches');
+  assert(
+    Object.keys(acceptPatch).every((key) =>
+      (DRIVER_ACCEPT_PATCH_KEYS as readonly string[]).includes(key)
+    ),
+    'accept patch keys are allowed by security rules'
+  );
+  assert(canRoleTransition('driver', 'broadcasting', 'assigned'), 'driver can accept broadcasting');
+  assert(canRoleTransition('driver', 'pending', 'assigned'), 'driver can accept legacy pending');
 
   console.log('lifecycle-audit: all checks passed');
 }

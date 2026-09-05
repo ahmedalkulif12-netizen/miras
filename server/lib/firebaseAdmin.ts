@@ -174,7 +174,7 @@ export function initFirebaseAdmin(projectId: string): admin.app.App {
 
 export function isFirebaseAdminCredentialError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
-  return /default credentials|Could not load the default credentials|unable to detect a Project Id|UNAUTHENTICATED/i.test(
+  return /default credentials|Could not load the default credentials|unable to detect a Project Id|UNAUTHENTICATED|PERMISSION_DENIED|Missing or insufficient permissions/i.test(
     message
   );
 }
