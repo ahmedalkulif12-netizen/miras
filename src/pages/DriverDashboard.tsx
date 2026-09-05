@@ -8,7 +8,7 @@ import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { defaultPricingForService } from '@/lib/pricingDefaults';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment, setDoc, where } from 'firebase/firestore';
+import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment, setDoc, where, orderBy } from 'firebase/firestore';
 import { useAuth } from '@/hooks/useAuth';
 import { capturePayment } from '@/lib/paymentService';
 import { acceptOrder, completeDriverOrder, driverOrderWriteErrorMessage, transitionOrderStatus } from '@/lib/orderService';
@@ -76,6 +76,12 @@ import { OrderTripChatModal } from '@/components/OrderTripChatModal';
 import { useTripChatUnread } from '@/hooks/useTripChatUnread';
 import { TripChatNotifyButton } from '@/components/TripChatNotifyButton';
 import { toTelHref } from '@/lib/phoneDial';
+import {
+  excludeIgnoredOffers,
+  isIgnoredDriverOffer,
+  loadIgnoredDriverOfferIds,
+  persistIgnoredDriverOffer,
+} from '@/lib/ignoredDriverOffers';
 
 /** Whether this driver's vehicle category can take the offer (strict 6-category match). */
 function driverMatchesOffer(
@@ -202,6 +208,9 @@ const DriverDashboard: React.FC = () => {
   const [isOnline, setIsOnline] = useState(false);
   const [driverCoords, setDriverCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [broadcastPool, setBroadcastPool] = useState<Order[]>([]);
+  const [ignoredOfferIds, setIgnoredOfferIds] = useState<string[]>([]);
+  const ignoredOfferIdsRef = React.useRef<string[]>([]);
+  ignoredOfferIdsRef.current = ignoredOfferIds;
   const [dispatchTick, setDispatchTick] = useState(0);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
@@ -237,6 +246,9 @@ const DriverDashboard: React.FC = () => {
   useEffect(() => {
     if (profile?.uid) {
       setLocalDevWorkEnabled(readLocalDevWorkEnabled(profile.uid));
+      setIgnoredOfferIds(loadIgnoredDriverOfferIds(profile.uid));
+    } else {
+      setIgnoredOfferIds([]);
     }
   }, [profile?.uid]);
 
@@ -438,16 +450,22 @@ const DriverDashboard: React.FC = () => {
                 )
               );
               setBroadcastPool((prev) => {
-                const remoteOpen = matches.filter(
-                  (order) =>
-                    isOpenOfferStatus(order.status) &&
-                    !isTerminalOrderStatus(order.status)
+                const remoteOpen = excludeIgnoredOffers<Order>(
+                  matches.filter(
+                    (order) =>
+                      isOpenOfferStatus(order.status) &&
+                      !isTerminalOrderStatus(order.status)
+                  ),
+                  ignoredOfferIdsRef.current
                 );
-                const localOnly = prev.filter(
-                  (order) =>
-                    remoteOpen.every((remote) => remote.id !== order.id) &&
-                    isOpenOfferStatus(order.status) &&
-                    !isTerminalOrderStatus(order.status)
+                const localOnly = excludeIgnoredOffers<Order>(
+                  prev.filter(
+                    (order) =>
+                      remoteOpen.every((remote) => remote.id !== order.id) &&
+                      isOpenOfferStatus(order.status) &&
+                      !isTerminalOrderStatus(order.status)
+                  ),
+                  ignoredOfferIdsRef.current
                 );
                 return [...remoteOpen, ...localOnly].sort(
                   (a, b) => orderCreatedAtMs(b) - orderCreatedAtMs(a)
@@ -457,6 +475,15 @@ const DriverDashboard: React.FC = () => {
             (error) => {
               console.error('Firestore Error in DriverDashboard (offers):', error, label);
               if (label === 'open-in') {
+                bindOffersListener(
+                  query(
+                    collection(db, 'orders'),
+                    where('status', 'in', DRIVER_OFFER_STATUSES),
+                    limit(80)
+                  ),
+                  'open-in-no-orderBy'
+                );
+              } else if (label === 'open-in-no-orderBy') {
                 bindOffersListener(
                   query(
                     collection(db, 'orders'),
@@ -474,6 +501,7 @@ const DriverDashboard: React.FC = () => {
           query(
             collection(db, 'orders'),
             where('status', 'in', DRIVER_OFFER_STATUSES),
+            orderBy('createdAt', 'desc'),
             limit(80)
           ),
           'open-in'
@@ -565,14 +593,17 @@ const DriverDashboard: React.FC = () => {
     if (!isOnline) return;
 
     const applyLocalOffers = () => {
-      const locals = listLocalBroadcastingOrders()
-        .map((entry) => ({ id: entry.id, ...entry.data } as Order))
-        .filter(
-          (order) =>
-            isOpenOfferStatus(order.status) &&
-            !isTerminalOrderStatus(order.status) &&
-            driverMatchesOffer(profile?.vehicleType, order)
-        );
+      const locals = excludeIgnoredOffers<Order>(
+        listLocalBroadcastingOrders()
+          .map((entry) => ({ id: entry.id, ...entry.data } as Order))
+          .filter(
+            (order) =>
+              isOpenOfferStatus(order.status) &&
+              !isTerminalOrderStatus(order.status) &&
+              driverMatchesOffer(profile?.vehicleType, order)
+          ),
+        ignoredOfferIds
+      );
       setBroadcastPool((prev) => {
         const remote = prev.filter(
           (order) =>
@@ -588,7 +619,7 @@ const DriverDashboard: React.FC = () => {
 
     applyLocalOffers();
     return subscribeLocalBroadcastOrders(applyLocalOffers);
-  }, [isOnline, profile?.uid, profile?.vehicleType]);
+  }, [isOnline, profile?.uid, profile?.vehicleType, ignoredOfferIds]);
 
   useEffect(() => {
     const bump = () => setLocalOpsEpoch((n) => n + 1);
@@ -604,7 +635,7 @@ const DriverDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!isOnline) return;
-    const evaluated = broadcastPool
+    const evaluated = excludeIgnoredOffers<Order>(broadcastPool, ignoredOfferIds)
       .filter(
         (order) =>
           isOpenOfferStatus(order.status) &&
@@ -614,7 +645,7 @@ const DriverDashboard: React.FC = () => {
       .map((order) => ({
         order,
         decision: evaluateDispatchOffer({
-          order,
+          order: order as never,
           driver: {
             lat: driverCoords?.lat,
             lng: driverCoords?.lng,
@@ -652,11 +683,15 @@ const DriverDashboard: React.FC = () => {
       if (prev && isActiveTripStatus(prev.status) && !isTerminalOrderStatus(prev.status)) {
         return prev;
       }
+      if (prev && isIgnoredDriverOffer(prev.id, ignoredOfferIds)) {
+        return offer;
+      }
       return offer;
     });
   }, [
     isOnline,
     broadcastPool,
+    ignoredOfferIds,
     driverCoords,
     dispatchTick,
     profile?.vehicleType,
@@ -1210,6 +1245,20 @@ const DriverDashboard: React.FC = () => {
     !latestOrder ||
     isDriverActionBusy(latestOrder?.id) ||
     (!isDevDriverTesting && latestDriverAction === 'none');
+
+  const handleIgnoreOffer = () => {
+    if (!profile?.uid || !latestOrder) return;
+    if (isActiveTripStatus(latestOrder.status) && !isTerminalOrderStatus(latestOrder.status)) {
+      return;
+    }
+    const ignoredId = latestOrder.id;
+    const nextIgnored = persistIgnoredDriverOffer(profile.uid, ignoredId);
+    setIgnoredOfferIds(nextIgnored);
+    setBroadcastPool((prev) => prev.filter((order) => order.id !== ignoredId));
+    pendingOfferRef.current =
+      pendingOfferRef.current?.id === ignoredId ? null : pendingOfferRef.current;
+    toast.info(isRtl ? 'تم تجاهل الطلب' : 'Order ignored');
+  };
 
   const handleAcceptClick = async () => {
     if (isDriverActionBusy(latestOrder?.id)) return;
@@ -1994,10 +2043,7 @@ const DriverDashboard: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      toast.info(isRtl ? 'تم تجاهل الطلب' : 'Order ignored');
-                      setLatestOrder(null);
-                    }}
+                    onClick={handleIgnoreOffer}
                     className="w-full py-2 text-xs font-bold text-gray-400 hover:text-gray-600"
                   >
                     {t('ignore')}

@@ -606,42 +606,18 @@ export async function assignSharedLocalOrder(
     },
   });
 
-  const writePayload = omitUndefined({ ...patch });
+  // Flat string claim first — nested `driver` has been the extra key that
+  // tripped hasOnly on some rule versions. Admin SDK still writes the nested map.
+  const flatPayload = omitUndefined({ ...toFlatAcceptPatch(patch) });
   try {
-    await updateDoc(ref, writePayload);
+    await updateDoc(ref, flatPayload);
   } catch (error) {
     logFirestoreWriteError('accept-order', error, {
       orderId,
       uid: firebaseUid,
-      payload: writePayload,
+      payload: flatPayload,
     });
-    const code = String((error as { code?: string })?.code || '');
-    const message = String((error as { message?: string })?.message || '');
-    const permissionDenied =
-      code === 'permission-denied' ||
-      /missing or insufficient permissions/i.test(message);
-    if (permissionDenied) {
-      const flat = omitUndefined({ ...toFlatAcceptPatch(patch) });
-      try {
-        await updateDoc(ref, flat);
-        console.warn('[orders] Nested driver claim denied — flat accept patch succeeded', {
-          orderId,
-          uid: firebaseUid,
-          firstError: { code, message },
-          retryPayload: flat,
-        });
-      } catch (retryError) {
-        logFirestoreWriteError('accept-order-flat-retry', retryError, {
-          orderId,
-          uid: firebaseUid,
-          payload: flat,
-          firstError: { code, message },
-        });
-        throw retryError;
-      }
-    } else {
-      throw error;
-    }
+    throw error;
   }
 
   console.info('[orders] Assigned shared local order', orderId, '→', firebaseUid);

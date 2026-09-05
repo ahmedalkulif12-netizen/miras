@@ -60,6 +60,11 @@ import { cityCenterFromName } from '../src/lib/cityCoordinates.ts';
 import { cityLabelFromAddress } from '../src/lib/saudiGeo.ts';
 import { haversineKm } from '../src/lib/tripDistance.ts';
 import { computeDrivingRoute, isValidRoutePoint } from '../src/lib/computeDrivingRoute.ts';
+import {
+  excludeIgnoredOffers,
+  persistIgnoredDriverOffer,
+  isIgnoredDriverOffer,
+} from '../src/lib/ignoredDriverOffers.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -141,6 +146,18 @@ async function run(): Promise<void> {
   const older = '2026-08-16T08:00:00.000Z';
   const sorted = sortCreatedAtDesc([{ createdAt: older }, { createdAt: newest }]);
   assert(sorted[0] === newest, 'orders sort by createdAt descending');
+
+  const ignored = persistIgnoredDriverOffer('drv-ignore', 'ord-old');
+  assert(ignored.includes('ord-old'), 'تجاهل persists the order id');
+  assert(isIgnoredDriverOffer('ord-old', ignored), 'ignored id is recognized');
+  const remaining = excludeIgnoredOffers(
+    [
+      { id: 'ord-old' },
+      { id: 'ord-new' },
+    ],
+    ignored
+  );
+  assert(remaining.length === 1 && remaining[0].id === 'ord-new', 'ignored offer vanishes from the active list');
 
   const first = applyLocalWalletCredit(
     'driver-1',
@@ -482,6 +499,12 @@ async function run(): Promise<void> {
   const flatAccept = toFlatAcceptPatch(acceptPatch);
   assert(!('driver' in flatAccept), 'flat retry patch omits nested driver');
   assert(flatAccept.status === 'assigned' && flatAccept.driverId === 'drv-1', 'flat retry still claims the order');
+  assert(
+    Object.keys(flatAccept).every((key) =>
+      ['status', 'driverId', 'driverName', 'driverPhone', 'updatedAt', 'assignedAt'].includes(key)
+    ),
+    'client claim payload is the flat string subset allowed by rules'
+  );
   assert(
     formatFirestoreErrorDetails({
       code: 'permission-denied',

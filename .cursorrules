@@ -5,3 +5,36 @@
   1. Always read and analyze the existing codebase before making any changes.
   2. Briefly explain the proposed solution before executing code modifications.
   3. Keep the codebase clean, modular, and fully compatible across Web and Mobile (Capacitor) platforms.
+
+# Firebase / Firestore security rules
+- Order money, payment, and broadcast creates go through Admin SDK. Clients get narrow field updates only.
+- Driver Accept (موافقة الطلب) must `updateDoc` a **subset** of `driverClaimKeys()`: `status`, `driverId`, `driverName`, `driverPhone`, `updatedAt`, `assignedAt`. Optional nested `driver` map may contain **strings only** (`id`, `name`, `phone`, `truckDetails`).
+- Never send `undefined`, `null`, `serverTimestamp()`, or `arrayUnion(statusHistory)` on a client claim. `hasOnly` is a subset check — **any extra key is permission-denied**.
+- Canonical claim status is `assigned` (alias `accepted` is allowed by rules). Open offers: `broadcasting`, `payment_authorized`, `searching_driver`, `pending`.
+- Do **not** `get()` `users/{uid}` or `drivers/{uid}` inside the claim `allow` path. Missing profile docs false-deny Accept for drivers who can already read the offer. First writer wins: `request.resource.data.driverId == request.auth.uid`.
+- After changing `firestore.rules`, deploy `firestore:rules` to `hamula-cfc6c`. Hosting SPA JS is a separate deploy.
+
+```ts
+// ❌ BAD — extra keys / sentinels
+updateDoc(ref, { status: 'assigned', driverId: uid, financials, updatedAt: serverTimestamp() });
+
+// ✅ GOOD — flat strings only
+updateDoc(ref, { status: 'assigned', driverId: uid, driverName, driverPhone, updatedAt: iso, assignedAt: iso });
+```
+
+# Error transparency
+- Log Firestore `error.code` and `error.message` on every order write failure.
+- Never map `permission-denied` to a generic toast with no details. Show `code: message` (Arabic prefix allowed).
+- Vehicle mismatch and already-assigned must not be retried as a client claim.
+
+# Real-time query streams
+- Every `onSnapshot` must be unsubscribed on effect cleanup. Do not leak listeners across driver uid changes.
+- Driver offer query: `where('status', 'in', DRIVER_OFFER_STATUSES)` plus `orderBy('createdAt', 'desc')` when the composite index exists; always re-sort client-side by `createdAt` descending so new jobs appear first.
+- Ignore (تجاهل) is per-driver, persisted, and must **synchronously** remove the order from `broadcastPool` and the active card. Ranking effects must not resurrect ignored ids.
+- Status sync: open-offer snapshots drop claimed jobs; `driverId == uid` snapshots drive assigned → arrived → in_transit → completed without a manual refresh.
+
+# Order lifecycle validation
+- Walk client booking → geocode/coords → price → paid broadcast → driver accept → live tracking before calling a lifecycle change done.
+- Quotes must pass finite lat/lng into distance/price. Known Saudi cities (Al-Ahsa / Makkah) may use the local table; never hard-fail with an empty Routes API result.
+- Customer tracking stays disabled while searching; it activates only after `assigned`.
+- Test `npx tsc --noEmit` and `npx tsx scripts/test-lifecycle-audit.ts` after order/rules/stream changes.

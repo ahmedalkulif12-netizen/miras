@@ -139,9 +139,9 @@ service cloud.firestore {
     }
 
     // Authenticated claim of a live offer (موافقة الطلب).
-    // Do not get() users/drivers here — missing profile docs were false-denying
-    // Accept for drivers who can already read the offer. First writer wins:
-    // driverId must equal auth.uid, status assigned|accepted, claim keys only.
+    // Client writes a FLAT string subset (status, driverId, driverName, driverPhone,
+    // updatedAt, assignedAt). Nested `driver` is allowed but not required.
+    // Do not get() users/drivers — missing profile docs false-deny Accept.
     function isDriverClaimingOpenOffer() {
       return isSignedIn()
         && isOpenOffer()
