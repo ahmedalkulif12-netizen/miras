@@ -589,6 +589,7 @@ export async function assignSharedLocalOrder(
     driverId: firebaseUid,
     name: driver.name,
     phone: driver.phone,
+    truckDetails: driver.truckDetails,
   });
   if (!patch.driverId) {
     throw new Error('NOT_AUTHENTICATED');
@@ -598,16 +599,13 @@ export async function assignSharedLocalOrder(
     ...(findLocalOrderData(orderId) || data),
     ...patch,
     driver: {
-      id: firebaseUid,
-      name: patch.driverName,
-      phone: patch.driverPhone,
-      truckDetails: driver.truckDetails,
-      vehicleType: driver.vehicleType || null,
+      ...patch.driver,
+      ...(driver.vehicleType ? { vehicleType: driver.vehicleType } : {}),
     },
   });
 
   try {
-    await updateDoc(ref, { ...patch });
+    await updateDoc(ref, omitUndefined({ ...patch }));
   } catch (error) {
     logFirestoreWriteError('accept-order', error, {
       orderId,

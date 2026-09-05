@@ -52,6 +52,10 @@ import { financialsToFirestorePricingFields } from '../src/domain/order-schema.t
 import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
 import { isValidMapsTarget } from '../src/lib/nativeMaps.ts';
 import { buildDriverAcceptPatch, DRIVER_ACCEPT_PATCH_KEYS } from '../src/lib/driverAcceptPatch.ts';
+import { cityCenterFromName } from '../src/lib/cityCoordinates.ts';
+import { cityLabelFromAddress } from '../src/lib/saudiGeo.ts';
+import { haversineKm } from '../src/lib/tripDistance.ts';
+import { computeDrivingRoute, isValidRoutePoint } from '../src/lib/computeDrivingRoute.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -98,7 +102,7 @@ function sortCreatedAtDesc(rows: Array<{ createdAt: string }>): string[] {
     .map((row) => row.createdAt);
 }
 
-function run(): void {
+async function run(): Promise<void> {
   assert(DRIVER_OFFER_STATUSES.includes('broadcasting'), 'offers include broadcasting');
   assert(DRIVER_OFFER_STATUSES.includes('payment_authorized'), 'offers include payment_authorized');
   assert(DRIVER_OFFER_STATUSES.includes('searching_driver'), 'offers include searching_driver');
@@ -423,19 +427,38 @@ function run(): void {
     driverId: 'drv-1',
     name: 'Ahmed',
     phone: '0500000000',
+    truckDetails: 'flatbed - ABC 1234',
+    nowIso: '2026-09-05T12:00:00.000Z',
   });
   assert(acceptPatch.status === 'assigned', 'accept patch uses assigned status');
   assert(acceptPatch.driverId === 'drv-1', 'accept patch sets driverId');
-  assert(
-    !('driver' in acceptPatch) && !('statusHistory' in acceptPatch),
-    'accept patch must not include nested driver or statusHistory'
-  );
+  assert(acceptPatch.driverName === 'Ahmed', 'accept patch sets driverName');
+  assert(acceptPatch.driverPhone === '0500000000', 'accept patch sets driverPhone');
+  assert(acceptPatch.driver.id === 'drv-1', 'nested driver.id matches driverId');
+  assert(acceptPatch.driver.truckDetails === 'flatbed - ABC 1234', 'nested driver.truckDetails is a string');
+  assert(!('statusHistory' in acceptPatch), 'accept patch must not include statusHistory');
   assert(
     Object.keys(acceptPatch).every((key) =>
       (DRIVER_ACCEPT_PATCH_KEYS as readonly string[]).includes(key)
     ),
     'accept patch keys are allowed by security rules'
   );
+  const claimKeys = [
+    'status',
+    'driverId',
+    'driverName',
+    'driverPhone',
+    'updatedAt',
+    'assignedAt',
+    'driver',
+    'statusHistory',
+  ];
+  assert(
+    [...DRIVER_ACCEPT_PATCH_KEYS].every((key) => claimKeys.includes(key)),
+    'accept patch keys are a subset of firestore.rules driverClaimKeys'
+  );
+  const json = JSON.parse(JSON.stringify(acceptPatch)) as Record<string, unknown>;
+  assert(!JSON.stringify(json).includes('null'), 'accept patch has no nulls');
   assert(
     typeof acceptPatch.updatedAt === 'string' && typeof acceptPatch.assignedAt === 'string',
     'accept timestamps are ISO strings, not FieldValue sentinels'
@@ -443,7 +466,31 @@ function run(): void {
   assert(canRoleTransition('driver', 'broadcasting', 'assigned'), 'driver can accept broadcasting');
   assert(canRoleTransition('driver', 'pending', 'assigned'), 'driver can accept legacy pending');
 
+  const ahsa = cityCenterFromName('Al-Ahsa');
+  const ahsaAr = cityCenterFromName('الأحساء');
+  const makkah = cityCenterFromName('Makkah');
+  const makkahAr = cityCenterFromName('مكة المكرمة');
+  assert(ahsa != null && ahsaAr != null, 'Al-Ahsa / الأحساء resolve to coordinates');
+  assert(makkah != null && makkahAr != null, 'Makkah / مكة المكرمة resolve to coordinates');
+  assert(
+    Math.abs(ahsa!.lat - ahsaAr!.lat) < 0.01 && Math.abs(ahsa!.lng - ahsaAr!.lng) < 0.01,
+    'Al-Ahsa English and Arabic aliases share the same pin'
+  );
+  const ahsaToMakkahKm = haversineKm(ahsa!, makkah!);
+  assert(ahsaToMakkahKm > 800, `Al-Ahsa → Makkah must be a long trip, got ${ahsaToMakkahKm} km`);
+  assert(cityLabelFromAddress('الأحساء، المملكة العربية السعودية') === 'الأحساء', 'city parsed from typed address');
+
+  assert(!isValidRoutePoint({ lat: 0, lng: 0 }), 'null-island coords are rejected');
+  assert(isValidRoutePoint({ lat: 25.3646, lng: 49.586 }), 'Al-Ahsa coords are valid');
+
+  const fallbackRoute = await computeDrivingRoute(ahsa!, makkah!);
+  assert(fallbackRoute.distanceKm > 800, 'driving fallback still yields a long Al-Ahsa → Makkah distance');
+  assert(fallbackRoute.usedFallback, 'Node tests use haversine fallback when DirectionsService is absent');
+
   console.log('lifecycle-audit: all checks passed');
 }
 
-run();
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

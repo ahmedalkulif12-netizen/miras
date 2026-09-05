@@ -1,43 +1,67 @@
 import React, { useEffect, useRef } from 'react';
-import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
+import { useMap } from '@vis.gl/react-google-maps';
+import { isValidRoutePoint } from '@/lib/computeDrivingRoute';
 
 interface RouteDisplayProps {
   origin: string | google.maps.LatLngLiteral;
   destination: string | google.maps.LatLngLiteral;
 }
 
+function isUsableWaypoint(
+  point: string | google.maps.LatLngLiteral
+): point is string | google.maps.LatLngLiteral {
+  if (typeof point === 'string') return point.trim().length > 0;
+  return isValidRoutePoint(point);
+}
+
+/**
+ * Draw a driving polyline with classic DirectionsService.
+ * The newer Route.computeRoutes API is not enabled on this Maps key and
+ * previously produced empty routes ("لم يتم العثور على مسار صالح").
+ */
 export const RouteDisplay: React.FC<RouteDisplayProps> = ({ origin, destination }) => {
   const map = useMap();
-  const routesLib = useMapsLibrary('routes');
-  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const rendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
 
   useEffect(() => {
-    if (!routesLib || !map || !origin || !destination) return;
-    
-    // Clear previous route
-    polylinesRef.current.forEach(p => p.setMap(null));
+    if (!map || !isUsableWaypoint(origin) || !isUsableWaypoint(destination)) return;
+    if (typeof google === 'undefined' || !google.maps?.DirectionsService) return;
 
-    routesLib.Route.computeRoutes({
-      origin,
-      destination,
-      travelMode: 'DRIVING',
-      // Valid Maps JS Route fields: path (geometry), distanceMeters, durationMillis, viewport
-      fields: ['path', 'distanceMeters', 'durationMillis', 'viewport'],
-    }).then(({ routes }) => {
-      if (routes?.[0]) {
-        const newPolylines = routes[0].createPolylines();
-        newPolylines.forEach(p => p.setMap(map));
-        polylinesRef.current = newPolylines;
-        if (routes[0].viewport) {
-          map.fitBounds(routes[0].viewport, { top: 50, right: 50, bottom: 50, left: 50 });
+    const renderer = new google.maps.DirectionsRenderer({
+      map,
+      suppressMarkers: true,
+      preserveViewport: false,
+      polylineOptions: {
+        strokeColor: '#d97706',
+        strokeWeight: 5,
+        strokeOpacity: 0.9,
+      },
+    });
+    rendererRef.current = renderer;
+
+    let cancelled = false;
+    const service = new google.maps.DirectionsService();
+    service.route(
+      {
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode.DRIVING,
+        provideRouteAlternatives: false,
+      },
+      (result, status) => {
+        if (cancelled) return;
+        if (status === google.maps.DirectionsStatus.OK && result?.routes?.[0]) {
+          renderer.setDirections(result);
         }
       }
-    }).catch(err => {
-      console.error('Error computing routes:', err);
-    });
+    );
 
-    return () => polylinesRef.current.forEach(p => p.setMap(null));
-  }, [routesLib, map, origin, destination]);
+    return () => {
+      cancelled = true;
+      renderer.setMap(null);
+      rendererRef.current = null;
+    };
+  }, [map, origin, destination]);
 
   return null;
 };

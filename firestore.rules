@@ -115,8 +115,9 @@ service cloud.firestore {
       return isSignedIn() && isOpenOffer();
     }
 
-    // Flat claim keys only — nested `driver` maps, arrayUnion(statusHistory),
-    // and serverTimestamp sentinels have been denied in production.
+    // Accept (موافقة الطلب) may touch only these keys.
+    // Nested `driver` is a string map {id,name,phone,truckDetails} — optional for older clients.
+    // Do not send FieldValue sentinels or arrayUnion(statusHistory) from the SPA.
     function driverClaimKeys() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([

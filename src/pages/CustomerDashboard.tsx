@@ -79,7 +79,8 @@ import {
 } from '@/lib/waterTankerCatalog';
 import { formatOrderServiceLabel, translateWaterType, translateCapacity } from '@/lib/serviceLabels';
 import { buildCheckoutFromQuote, calculateTotal } from '@/lib/checkoutTotal';
-import { tripDistanceKm } from '@/lib/tripDistance';
+import { computeDrivingRoute, isValidRoutePoint } from '@/lib/computeDrivingRoute';
+import { cityFromAddressComponents, cityLabelFromAddress } from '@/lib/saudiGeo';
 import { canonicalizeServiceType } from '@/domain/serviceCategories';
 import {
   orderDispatchStartedAt,
@@ -256,23 +257,32 @@ const CustomerDashboard: React.FC = () => {
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [isMapVisible, setIsMapVisible] = useState(false);
 
-  const routesLib = useMapsLibrary('routes');
   const geocodingLib = useMapsLibrary('geocoding');
   const map = useMap();
   const deliveryOnly = isDeliveryOnlyService(serviceType);
 
   const reverseGeocodeCoords = async (
     coords: google.maps.LatLngLiteral
-  ): Promise<string> => {
+  ): Promise<{ address: string; city: string }> => {
     if (!geocodingLib) {
-      return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+      return {
+        address: `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+        city: '',
+      };
     }
     try {
       const geocoder = new geocodingLib.Geocoder();
       const { results } = await geocoder.geocode({ location: coords });
-      return results?.[0]?.formatted_address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+      const best = results?.[0];
+      return {
+        address: best?.formatted_address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+        city: cityFromAddressComponents(best?.address_components) || cityLabelFromAddress(best?.formatted_address || ''),
+      };
     } catch {
-      return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+      return {
+        address: `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+        city: '',
+      };
     }
   };
 
@@ -281,7 +291,7 @@ const CustomerDashboard: React.FC = () => {
     coords: google.maps.LatLngLiteral,
     options?: { force?: boolean }
   ) => {
-    const address = await reverseGeocodeCoords(coords);
+    const { address, city } = await reverseGeocodeCoords(coords);
     setUserLocation(coords);
     setGpsError(null);
 
@@ -290,6 +300,7 @@ const CustomerDashboard: React.FC = () => {
       if (options?.force || !destinationCoords) {
         setDestinationCoords(coords);
         setDestination(address);
+        if (city) setDropoffCity(city);
       }
       setPickupCoords(null);
       setPickup('');
@@ -298,6 +309,7 @@ const CustomerDashboard: React.FC = () => {
       if (options?.force || !pickupCoords) {
         setPickupCoords(coords);
         setPickup(address);
+        if (city) setPickupCity(city);
       }
       setActiveMapPin('destination');
     }
@@ -763,46 +775,44 @@ const CustomerDashboard: React.FC = () => {
         }
       } else {
         setNearestDriver(null);
-        if (!routesLib) throw new Error('Maps Routes library not loaded');
+        if (!isValidRoutePoint(pickupCoords) || !isValidRoutePoint(destinationCoords)) {
+          throw new Error(
+            isRtl
+              ? 'إحداثيات الموقع غير متوفرة. حدد الموقع من البحث أو الخريطة.'
+              : 'Location coordinates are missing. Search or pick a point on the map.'
+          );
+        }
 
-        const { routes } = await routesLib.Route.computeRoutes({
-          origin: pickupCoords!,
-          destination: destinationCoords!,
-          travelMode: 'DRIVING',
-          fields: ['distanceMeters', 'durationMillis', 'viewport', 'path'],
+        const route = await computeDrivingRoute(pickupCoords, destinationCoords);
+        distKm = route.distanceKm;
+        setRouteData({
+          origin: pickupCoords,
+          destination: destinationCoords,
+          distanceKm: distKm,
+          usedFallback: route.usedFallback,
         });
 
-        if (!routes?.[0]) throw new Error(isRtl ? 'لم يتم العثور على مسار صالح' : 'No valid route found');
-
-        const route = routes[0];
-        setRouteData(route);
-        // Exact pickup→dropoff: prefer road meters, else haversine on the same coords.
-        distKm = tripDistanceKm({
-          pickup: pickupCoords!,
-          dropoff: destinationCoords!,
-          roadDistanceMeters: route.distanceMeters,
-          minimumKm: 0.1,
-        });
-
-        if (map && route.viewport) {
-          map.fitBounds(route.viewport, { top: 50, right: 50, bottom: 50, left: 50 });
+        if (map) {
+          const bounds = new google.maps.LatLngBounds();
+          bounds.extend(pickupCoords);
+          bounds.extend(destinationCoords);
+          map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
         }
       }
 
       setRouteDistanceKm(distKm);
 
-      const mockPickupCity = 'Riyadh';
-      const mockDropoffCity = !deliveryOnly && distKm > 100 ? 'Jeddah' : 'Riyadh';
-
-      setPickupCity(mockPickupCity);
-      setDropoffCity(mockDropoffCity);
+      const resolvedPickupCity = cityLabelFromAddress(pickup, pickupCity);
+      const resolvedDropoffCity = cityLabelFromAddress(destination, dropoffCity);
+      if (resolvedPickupCity) setPickupCity(resolvedPickupCity);
+      if (resolvedDropoffCity) setDropoffCity(resolvedDropoffCity);
       setTransportType(!deliveryOnly && distKm > 100 ? 'outside' : 'inside');
 
       const calcResult = await calculateOrderPrice(
         distKm,
         serviceType,
-        mockPickupCity,
-        mockDropoffCity,
+        resolvedPickupCity,
+        resolvedDropoffCity,
         serviceType === 'flatbed'
           ? (serviceOption === 'hydraulic' ? 'hydraulic' : serviceOption === 'box' ? 'box' : 'normal')
           : truckType,
@@ -873,7 +883,13 @@ const CustomerDashboard: React.FC = () => {
       setIsMapVisible(true);
     } catch (err) {
       console.error('Calculation error:', err);
-      const msg = err instanceof Error ? err.message : (isRtl ? 'فشل حساب السعر' : 'Calculation failed');
+      const raw = err instanceof Error ? err.message : '';
+      const msg =
+        raw === 'INVALID_COORDINATES'
+          ? isRtl
+            ? 'إحداثيات الموقع غير متوفرة. حدد الموقع من البحث أو الخريطة.'
+            : 'Location coordinates are missing. Search or pick a point on the map.'
+          : raw || (isRtl ? 'فشل حساب السعر' : 'Calculation failed');
       toast.error(msg);
       setPricingError(msg);
     } finally {
@@ -1482,6 +1498,10 @@ const CustomerDashboard: React.FC = () => {
                                 onPlaceSelect={(place) => {
                                   setPickupCoords(place.location);
                                   setPickup(place.formattedAddress || place.displayName || '');
+                                  setPickupCity(
+                                    place.city ||
+                                      cityLabelFromAddress(place.formattedAddress || place.displayName)
+                                  );
                                   setActiveMapPin('destination');
                                   setIsCalculated(false);
                                 }}
@@ -1522,6 +1542,10 @@ const CustomerDashboard: React.FC = () => {
                                 onPlaceSelect={(place) => {
                                   setDestinationCoords(place.location);
                                   setDestination(place.formattedAddress || place.displayName || '');
+                                  setDropoffCity(
+                                    place.city ||
+                                      cityLabelFromAddress(place.formattedAddress || place.displayName)
+                                  );
                                   // Water tanker: never invent a customer pickup from drop-off.
                                   if (deliveryOnly) {
                                     setPickupCoords(null);
@@ -1551,10 +1575,11 @@ const CustomerDashboard: React.FC = () => {
                               isCalculated &&
                               Boolean(pickupCoords && destinationCoords)
                             }
-                            onLocationPicked={(target, coords, address) => {
+                            onLocationPicked={(target, coords, address, city) => {
                               if (deliveryOnly || target === 'destination') {
                                 setDestinationCoords(coords);
                                 setDestination(address);
+                                setDropoffCity(city || cityLabelFromAddress(address));
                                 if (deliveryOnly) {
                                   setPickupCoords(null);
                                   setPickup('');
@@ -1563,6 +1588,7 @@ const CustomerDashboard: React.FC = () => {
                               } else {
                                 setPickupCoords(coords);
                                 setPickup(address);
+                                setPickupCity(city || cityLabelFromAddress(address));
                                 setActiveMapPin('destination');
                               }
                               setUserLocation((prev) => prev || coords);

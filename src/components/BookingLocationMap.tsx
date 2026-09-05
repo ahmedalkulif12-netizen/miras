@@ -7,6 +7,7 @@ import {
 } from '@vis.gl/react-google-maps';
 import { Crosshair, MapPin, Navigation2 } from 'lucide-react';
 import { RouteDisplay } from '@/components/RouteDisplay';
+import { cityFromAddressComponents } from '@/lib/saudiGeo';
 
 export type BookingPinTarget = 'pickup' | 'destination';
 
@@ -21,7 +22,8 @@ interface BookingLocationMapProps {
   onLocationPicked: (
     target: BookingPinTarget,
     coords: google.maps.LatLngLiteral,
-    address: string
+    address: string,
+    city?: string
   ) => void;
   isRtl?: boolean;
   showRoute?: boolean;
@@ -37,12 +39,16 @@ const RIYADH_CENTER: google.maps.LatLngLiteral = { lat: 24.7136, lng: 46.6753 };
 async function reverseGeocode(
   geocoder: google.maps.Geocoder,
   coords: google.maps.LatLngLiteral
-): Promise<string> {
+): Promise<{ address: string; city: string }> {
   try {
     const { results } = await geocoder.geocode({ location: coords });
-    return results?.[0]?.formatted_address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+    const best = results?.[0];
+    return {
+      address: best?.formatted_address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`,
+      city: cityFromAddressComponents(best?.address_components) || '',
+    };
   } catch {
-    return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+    return { address: `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`, city: '' };
   }
 }
 
@@ -115,10 +121,10 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
 
   const applyCoords = useCallback(
     async (target: BookingPinTarget, coords: google.maps.LatLngLiteral) => {
-      const address = geocoder
+      const resolved = geocoder
         ? await reverseGeocode(geocoder, coords)
-        : `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
-      onLocationPicked(target, coords, address);
+        : { address: `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`, city: '' };
+      onLocationPicked(target, coords, resolved.address, resolved.city);
     },
     [geocoder, onLocationPicked]
   );

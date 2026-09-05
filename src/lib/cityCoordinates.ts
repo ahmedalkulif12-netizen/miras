@@ -35,7 +35,20 @@ const CITY_CENTERS: Record<string, LatLng> = {
   'al hofuf': { lat: 25.3646, lng: 49.586 },
   الهفوف: { lat: 25.3646, lng: 49.586 },
   ahsa: { lat: 25.3646, lng: 49.586 },
+  'al-ahsa': { lat: 25.3646, lng: 49.586 },
+  'al ahsa': { lat: 25.3646, lng: 49.586 },
+  alahsa: { lat: 25.3646, lng: 49.586 },
+  'al-hassa': { lat: 25.3646, lng: 49.586 },
+  alhassa: { lat: 25.3646, lng: 49.586 },
+  hassa: { lat: 25.3646, lng: 49.586 },
+  hasa: { lat: 25.3646, lng: 49.586 },
   الأحساء: { lat: 25.3646, lng: 49.586 },
+  الاحساء: { lat: 25.3646, lng: 49.586 },
+  الحساء: { lat: 25.3646, lng: 49.586 },
+  'مكة المكرمة': { lat: 21.3891, lng: 39.8579 },
+  مكه: { lat: 21.3891, lng: 39.8579 },
+  'مكه المكرمه': { lat: 21.3891, lng: 39.8579 },
+  'makkah al mukarramah': { lat: 21.3891, lng: 39.8579 },
   dhahran: { lat: 26.2886, lng: 50.1139 },
   الظهران: { lat: 26.2886, lng: 50.1139 },
   jubail: { lat: 27.0046, lng: 49.6225 },
@@ -53,7 +66,8 @@ function normalizeCityKey(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/city$/i, '')
-    .replace(/[,].*$/, '')
+    .replace(/[,،].*$/, '')
+    .replace(/-/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -66,12 +80,18 @@ export function cityCenterFromName(name: string | null | undefined): LatLng | nu
   const direct = CITY_CENTERS[raw] || CITY_CENTERS[normalizeCityKey(raw)];
   if (direct) return direct;
   const key = normalizeCityKey(raw);
+  if (key.length < 3) return null;
+  let best: { point: LatLng; score: number } | null = null;
   for (const [label, point] of Object.entries(CITY_CENTERS)) {
-    if (key.includes(normalizeCityKey(label)) || normalizeCityKey(label).includes(key)) {
-      return point;
+    const token = normalizeCityKey(label);
+    if (token.length < 3) continue;
+    if (key === token) return point;
+    if (key.includes(token) || token.includes(key)) {
+      const score = Math.min(key.length, token.length);
+      if (!best || score > best.score) best = { point, score };
     }
   }
-  return null;
+  return best?.point || null;
 }
 
 export const DEFAULT_MAP_CITY: LatLng = CITY_CENTERS.riyadh;
@@ -87,7 +107,11 @@ export function geocodePlaceName(name: string | null | undefined): Promise<LatLn
   return new Promise((resolve) => {
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode(
-      { address: `${query}, Saudi Arabia` },
+      {
+        address: /saudi|السعودية|المملكة/i.test(query) ? query : `${query}, Saudi Arabia`,
+        componentRestrictions: { country: 'SA' },
+        region: 'sa',
+      },
       (results, status) => {
         if (status === google.maps.GeocoderStatus.OK && results?.[0]?.geometry?.location) {
           const loc = results[0].geometry.location;
