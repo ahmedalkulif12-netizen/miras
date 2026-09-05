@@ -54,7 +54,8 @@ import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
 import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
 import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
 import { isValidMapsTarget } from '../src/lib/nativeMaps.ts';
-import { buildDriverAcceptPatch, DRIVER_ACCEPT_PATCH_KEYS } from '../src/lib/driverAcceptPatch.ts';
+import { buildDriverAcceptPatch, DRIVER_ACCEPT_PATCH_KEYS, toFlatAcceptPatch } from '../src/lib/driverAcceptPatch.ts';
+import { formatFirestoreErrorDetails } from '../src/lib/firestoreWriteError.ts';
 import { cityCenterFromName } from '../src/lib/cityCoordinates.ts';
 import { cityLabelFromAddress } from '../src/lib/saudiGeo.ts';
 import { haversineKm } from '../src/lib/tripDistance.ts';
@@ -478,6 +479,16 @@ async function run(): Promise<void> {
     typeof acceptPatch.updatedAt === 'string' && typeof acceptPatch.assignedAt === 'string',
     'accept timestamps are ISO strings, not FieldValue sentinels'
   );
+  const flatAccept = toFlatAcceptPatch(acceptPatch);
+  assert(!('driver' in flatAccept), 'flat retry patch omits nested driver');
+  assert(flatAccept.status === 'assigned' && flatAccept.driverId === 'drv-1', 'flat retry still claims the order');
+  assert(
+    formatFirestoreErrorDetails({
+      code: 'permission-denied',
+      message: 'Missing or insufficient permissions.',
+    }) === 'permission-denied: Missing or insufficient permissions.',
+    'accept errors expose Firestore code and message'
+  );
   assert(canRoleTransition('driver', 'broadcasting', 'assigned'), 'driver can accept broadcasting');
   assert(canRoleTransition('driver', 'pending', 'assigned'), 'driver can accept legacy pending');
 
@@ -501,6 +512,12 @@ async function run(): Promise<void> {
   const fallbackRoute = await computeDrivingRoute(ahsa!, makkah!);
   assert(fallbackRoute.distanceKm > 800, 'driving fallback still yields a long Al-Ahsa → Makkah distance');
   assert(fallbackRoute.usedFallback, 'Node tests use haversine fallback when DirectionsService is absent');
+
+  const { geocodeSaudiQuery } = await import('../src/lib/saudiGeo.ts');
+  const ahsaGeo = await geocodeSaudiQuery('Al-Ahsa');
+  const makkahGeo = await geocodeSaudiQuery('مكة');
+  assert(ahsaGeo != null && ahsaGeo.location.lat > 25, 'Al-Ahsa geocode returns coordinates without Google');
+  assert(makkahGeo != null && makkahGeo.location.lng > 39, 'مكة geocode returns coordinates without Google');
 
   console.log('lifecycle-audit: all checks passed');
 }

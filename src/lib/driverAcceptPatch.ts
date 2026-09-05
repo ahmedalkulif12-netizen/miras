@@ -61,3 +61,14 @@ export function buildDriverAcceptPatch(input: DriverAcceptInput): DriverAcceptPa
     },
   };
 }
+
+/** JSON clone — strips undefined and non-serializable FieldValue sentinels. */
+export function toPlainAcceptPatch(patch: DriverAcceptPatch): DriverAcceptPatch {
+  return JSON.parse(JSON.stringify(patch)) as DriverAcceptPatch;
+}
+
+/** Subset that still passes older rules that did not allow nested `driver`. */
+export function toFlatAcceptPatch(patch: DriverAcceptPatch): Omit<DriverAcceptPatch, 'driver'> {
+  const { driver: _driver, ...flat } = toPlainAcceptPatch(patch);
+  return flat;
+}

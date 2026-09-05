@@ -79,6 +79,14 @@ export async function geocodeSaudiQuery(
   const q = String(query || '').trim();
   if (!q) return null;
 
+  // Known cities (الأحساء, مكة, Al-Ahsa, Makkah) — table first so quotes never
+  // wait on Places/Geocoder or fail with an empty route.
+  const tokenCount = q.split(/[\s,،]+/).filter(Boolean).length;
+  const tableHit = tableGeocodeHit(q);
+  if (tableHit && tokenCount <= 4) {
+    return tableHit;
+  }
+
   if (typeof google !== 'undefined' && google.maps?.Geocoder) {
     const geocoder = new google.maps.Geocoder();
     const request: google.maps.GeocoderRequest = {
@@ -108,5 +116,5 @@ export async function geocodeSaudiQuery(
     }
   }
 
-  return tableGeocodeHit(q);
+  return tableHit;
 }

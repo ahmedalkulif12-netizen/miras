@@ -16,7 +16,7 @@ import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
-import { buildDriverAcceptPatch } from '@/lib/driverAcceptPatch';
+import { buildDriverAcceptPatch, toFlatAcceptPatch, toPlainAcceptPatch } from '@/lib/driverAcceptPatch';
 import { logFirestoreWriteError } from '@/lib/firestoreWriteError';
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -585,12 +585,14 @@ export async function assignSharedLocalOrder(
     throw new Error('DRIVER_ALREADY_ON_TRIP');
   }
 
-  const patch = buildDriverAcceptPatch({
-    driverId: firebaseUid,
-    name: driver.name,
-    phone: driver.phone,
-    truckDetails: driver.truckDetails,
-  });
+  const patch = toPlainAcceptPatch(
+    buildDriverAcceptPatch({
+      driverId: firebaseUid,
+      name: driver.name,
+      phone: driver.phone,
+      truckDetails: driver.truckDetails,
+    })
+  );
   if (!patch.driverId) {
     throw new Error('NOT_AUTHENTICATED');
   }
@@ -604,15 +606,42 @@ export async function assignSharedLocalOrder(
     },
   });
 
+  const writePayload = omitUndefined({ ...patch });
   try {
-    await updateDoc(ref, omitUndefined({ ...patch }));
+    await updateDoc(ref, writePayload);
   } catch (error) {
     logFirestoreWriteError('accept-order', error, {
       orderId,
       uid: firebaseUid,
-      payload: patch,
+      payload: writePayload,
     });
-    throw error;
+    const code = String((error as { code?: string })?.code || '');
+    const message = String((error as { message?: string })?.message || '');
+    const permissionDenied =
+      code === 'permission-denied' ||
+      /missing or insufficient permissions/i.test(message);
+    if (permissionDenied) {
+      const flat = omitUndefined({ ...toFlatAcceptPatch(patch) });
+      try {
+        await updateDoc(ref, flat);
+        console.warn('[orders] Nested driver claim denied — flat accept patch succeeded', {
+          orderId,
+          uid: firebaseUid,
+          firstError: { code, message },
+          retryPayload: flat,
+        });
+      } catch (retryError) {
+        logFirestoreWriteError('accept-order-flat-retry', retryError, {
+          orderId,
+          uid: firebaseUid,
+          payload: flat,
+          firstError: { code, message },
+        });
+        throw retryError;
+      }
+    } else {
+      throw error;
+    }
   }
 
   console.info('[orders] Assigned shared local order', orderId, '→', firebaseUid);

@@ -12,7 +12,7 @@ import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment
 import { useAuth } from '@/hooks/useAuth';
 import { capturePayment } from '@/lib/paymentService';
 import { acceptOrder, completeDriverOrder, driverOrderWriteErrorMessage, transitionOrderStatus } from '@/lib/orderService';
-import { logFirestoreWriteError } from '@/lib/firestoreWriteError';
+import { logFirestoreWriteError, formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
 import {
   isActiveTripStatus,
   isTerminalOrderStatus,
@@ -1085,18 +1085,30 @@ const DriverDashboard: React.FC = () => {
       );
     } catch (error) {
       logFirestoreWriteError('driver-accept', error, { orderId: order.id });
+      const details = formatFirestoreErrorDetails(error);
       const msg = driverOrderWriteErrorMessage(
         error,
         isRtl,
         isRtl ? 'فشل قبول المهمة' : 'Failed to accept task'
       );
-      if (msg === 'DRIVER_ALREADY_ON_TRIP') {
+      console.error('[driver] موافقة الطلب failed', {
+        orderId: order.id,
+        uid: profile.uid,
+        details,
+        error,
+      });
+      if (msg === 'DRIVER_ALREADY_ON_TRIP' || details === 'DRIVER_ALREADY_ON_TRIP') {
         toast.error(
           isRtl
             ? 'أكمل المهمة الحالية قبل قبول طلب جديد'
             : 'Finish the current trip before accepting another order'
         );
-      } else if (msg === 'ACCEPT_REQUIRES_CUSTOMER_ORDER' || msg.startsWith('ORDER_NOT_FOUND')) {
+      } else if (
+        msg === 'ACCEPT_REQUIRES_CUSTOMER_ORDER' ||
+        details === 'ACCEPT_REQUIRES_CUSTOMER_ORDER' ||
+        msg.startsWith('ORDER_NOT_FOUND') ||
+        details.startsWith('ORDER_NOT_FOUND')
+      ) {
         toast.error(
           isRtl
             ? 'لا يوجد طلب عميل مرتبط — أكمل الدفع من حساب العميل أولاً'

@@ -5,6 +5,7 @@ import { isLocalDevRuntime } from '@/lib/localDevRuntime';
 import { getApiOrigin } from '@/lib/apiUrl';
 import { auth } from '@/lib/firebase';
 import { prepareCheckoutDraft } from '@/lib/checkoutDraft';
+import { formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
 import {
   assignSharedLocalOrder,
   patchSharedLocalOrderStatus,
@@ -157,12 +158,13 @@ export function driverOrderWriteErrorMessage(
   isRtl: boolean,
   fallback: string
 ): string {
+  const details = formatFirestoreErrorDetails(error);
   if (isFirestorePermissionError(error)) {
     return isRtl
-      ? 'تعذر تحديث حالة الطلب. حاول مرة أخرى.'
-      : 'Could not update the order status. Please try again.';
+      ? `تعذر تحديث حالة الطلب — ${details}`
+      : `Could not update the order status — ${details}`;
   }
-  if (error instanceof Error && error.message) return error.message;
+  if (details && details !== 'unknown-error') return details;
   return fallback;
 }
 
