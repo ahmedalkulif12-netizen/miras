@@ -289,6 +289,8 @@ export function buildBroadcastingOrderPlainDocument(input: {
     pickupLng: body.pickupLng,
     dropoffLat: body.dropoffLat,
     dropoffLng: body.dropoffLng,
+    pickupCoords: { lat: body.pickupLat, lng: body.pickupLng },
+    destinationCoords: { lat: body.dropoffLat, lng: body.dropoffLng },
     distanceKm: body.distanceKm,
     distance: body.distanceKm,
     ...(body.matchedDriverId ? { matchedDriverId: body.matchedDriverId } : {}),

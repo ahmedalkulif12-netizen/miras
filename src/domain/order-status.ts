@@ -36,6 +36,9 @@ export const DRIVER_OFFER_STATUSES: string[] = [
   OrderStatus.PAYMENT_AUTHORIZED,
   'searching_driver',
   'pending',
+  'awaiting_driver',
+  'open',
+  'available',
 ];
 
 /** Active trip — assigned driver */

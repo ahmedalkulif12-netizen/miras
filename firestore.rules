@@ -128,11 +128,13 @@ service cloud.firestore {
         ]);
     }
 
+    // Assigned-driver trip patches, GPS mirrors, and Accept retries after the
+    // first successful claim (status is already assigned — isOpenOffer is false).
     function driverTripStatusKeys() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly([
           'status', 'updatedAt', 'statusHistory',
-          'driverName', 'driverPhone',
+          'driverId', 'driverName', 'driverPhone', 'assignedAt', 'driver',
           'driverLat', 'driverLng', 'driverLocationUpdatedAt',
           'completedAt', 'arrivedAt', 'pickedUpAt'
         ]);
@@ -149,6 +151,17 @@ service cloud.firestore {
             || resource.data.driverId == uid()
             || resource.data.driverId == ''
             || resource.data.driverId == null)
+        && request.resource.data.driverId == uid()
+        && request.resource.data.status in ['assigned', 'accepted']
+        && driverClaimKeys();
+    }
+
+    // Retry / idempotent Accept after the first write already set assigned.
+    function isIdempotentDriverClaim() {
+      return isSignedIn()
+        && hasOrderResource()
+        && resource.data.driverId == uid()
+        && resource.data.status in ['assigned', 'accepted']
         && request.resource.data.driverId == uid()
         && request.resource.data.status in ['assigned', 'accepted']
         && driverClaimKeys();
@@ -353,6 +366,7 @@ service cloud.firestore {
           ]
         )
         || isDriverClaimingOpenOffer()
+        || isIdempotentDriverClaim()
         || isAssignedDriverTripUpdate();
 
       allow delete: if isAdmin();

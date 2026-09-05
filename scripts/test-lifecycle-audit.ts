@@ -115,6 +115,7 @@ async function run(): Promise<void> {
   assert(DRIVER_OFFER_STATUSES.includes('broadcasting'), 'offers include broadcasting');
   assert(DRIVER_OFFER_STATUSES.includes('payment_authorized'), 'offers include payment_authorized');
   assert(DRIVER_OFFER_STATUSES.includes('searching_driver'), 'offers include searching_driver');
+  assert(DRIVER_OFFER_STATUSES.includes('awaiting_driver'), 'offers include awaiting_driver');
   assert(isOpenOfferStatus('broadcasting'), 'broadcasting is an open offer');
   assert(isOpenOfferStatus('payment_authorized'), 'payment_authorized is an open offer');
   assert(!isOpenOfferStatus('assigned'), 'assigned is not an open offer');
@@ -158,6 +159,36 @@ async function run(): Promise<void> {
     ignored
   );
   assert(remaining.length === 1 && remaining[0].id === 'ord-new', 'ignored offer vanishes from the active list');
+
+  const { evaluateDispatchOffer } = await import('../src/lib/dispatchOfferFilter.ts');
+  const farSameCity = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'flatbed',
+      requiredVehicleType: 'flatbed',
+      pickupLat: 25.3646,
+      pickupLng: 49.586,
+      pickupCity: 'الأحساء',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    driver: { lat: 25.6, lng: 49.8, vehicleType: 'flatbed' },
+    nowMs: Date.parse('2026-01-01T00:10:00.000Z'),
+  });
+  assert(farSameCity.visible, 'expanded same-city search still shows Al-Ahsa offers beyond 35 km');
+  const intercity = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'furniture_moving',
+      requiredVehicleType: 'furniture_moving',
+      tripType: 'outside_city',
+      pickupLat: 25.3646,
+      pickupLng: 49.586,
+      pickupCity: 'الأحساء',
+      createdAt: new Date().toISOString(),
+    },
+    driver: { lat: 25.9, lng: 50.1, vehicleType: 'furniture_moving' },
+  });
+  assert(intercity.visible, 'outside_city offers stay visible to pickup-city drivers');
 
   const first = applyLocalWalletCredit(
     'driver-1',
@@ -504,6 +535,21 @@ async function run(): Promise<void> {
       ['status', 'driverId', 'driverName', 'driverPhone', 'updatedAt', 'assignedAt'].includes(key)
     ),
     'client claim payload is the flat string subset allowed by rules'
+  );
+  const { toLegacyFlatAcceptPatch, driverClaimAttempts, DRIVER_CLAIM_FLAT_KEYS, DRIVER_CLAIM_LEGACY_FLAT_KEYS } =
+    await import('../src/lib/driverAcceptPatch.ts');
+  const legacyAccept = toLegacyFlatAcceptPatch(acceptPatch);
+  assert(!('assignedAt' in legacyAccept), 'legacy retry omits assignedAt');
+  assert(
+    Object.keys(legacyAccept).every((key) => (DRIVER_CLAIM_LEGACY_FLAT_KEYS as readonly string[]).includes(key)),
+    'legacy claim keys match older rules'
+  );
+  const attempts = driverClaimAttempts(acceptPatch);
+  assert(attempts.length >= 3, 'accept retries canonical, legacy, and nested payloads');
+  assert(attempts[0].label === 'flat-canonical', 'first claim attempt is the canonical flat patch');
+  assert(
+    Object.keys(attempts[0].payload).every((key) => (DRIVER_CLAIM_FLAT_KEYS as readonly string[]).includes(key)),
+    'canonical claim keys match firestore.rules driverClaimKeys minus nested driver'
   );
   assert(
     formatFirestoreErrorDetails({

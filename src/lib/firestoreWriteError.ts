@@ -20,6 +20,28 @@ export function formatFirestoreErrorDetails(error: unknown): string {
   return message || code || 'unknown-error';
 }
 
+export function isFirestorePermissionError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, message } = firestoreErrorParts(error);
+  return (
+    code === 'permission-denied' ||
+    code === 'PERMISSION_DENIED' ||
+    /missing or insufficient permissions/i.test(message) ||
+    /PERMISSION_DENIED/i.test(message)
+  );
+}
+
+export function isFirestoreNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const { code, message } = firestoreErrorParts(error);
+  return (
+    code === 'not-found' ||
+    code === 'NOT_FOUND' ||
+    /No document to update/i.test(message) ||
+    /NOT_FOUND/i.test(message)
+  );
+}
+
 export function logFirestoreWriteError(
   context: string,
   error: unknown,

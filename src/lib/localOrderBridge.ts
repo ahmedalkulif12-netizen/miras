@@ -4,6 +4,7 @@ import {
   updateDoc,
   serverTimestamp,
   getDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { db, ensureFirebaseReady, auth } from '@/lib/firebase';
 import type { CreateOrderRequest, CreateOrderResponse } from '@/lib/orderContract';
@@ -16,8 +17,12 @@ import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
-import { buildDriverAcceptPatch, toFlatAcceptPatch, toPlainAcceptPatch } from '@/lib/driverAcceptPatch';
-import { logFirestoreWriteError } from '@/lib/firestoreWriteError';
+import { buildDriverAcceptPatch, driverClaimAttempts, toPlainAcceptPatch } from '@/lib/driverAcceptPatch';
+import {
+  isFirestoreNotFoundError,
+  isFirestorePermissionError,
+  logFirestoreWriteError,
+} from '@/lib/firestoreWriteError';
 
 function omitUndefined<T extends Record<string, unknown>>(value: T): T {
   const out: Record<string, unknown> = {};
@@ -509,6 +514,40 @@ function findLocalOrderData(orderId: string): Record<string, unknown> | null {
   return entry?.data || null;
 }
 
+function isAssignedToDriver(
+  data: { status?: string; driverId?: string } | null | undefined,
+  uid: string
+): boolean {
+  if (!data || !uid) return false;
+  return String(data.driverId || '') === uid && isActiveTripStatus(String(data.status || ''));
+}
+
+async function readOrderForClaim(orderId: string): Promise<Record<string, unknown> | null> {
+  try {
+    const snap = await getDoc(doc(db, 'orders', orderId));
+    if (snap.exists()) return snap.data() as Record<string, unknown>;
+  } catch (error) {
+    console.warn('[orders] Could not read order before accept:', error);
+  }
+  return findLocalOrderData(orderId);
+}
+
+function persistAssignedLocalOrder(
+  orderId: string,
+  existing: Record<string, unknown>,
+  patch: ReturnType<typeof toPlainAcceptPatch>,
+  vehicleType?: string
+): void {
+  persistLocalBroadcastOrder(orderId, {
+    ...existing,
+    ...patch,
+    driver: {
+      ...patch.driver,
+      ...(vehicleType ? { vehicleType } : {}),
+    },
+  });
+}
+
 /** Driver accept — claim a broadcasting order (Firestore when allowed, else local). */
 export async function assignSharedLocalOrder(
   orderId: string,
@@ -523,29 +562,7 @@ export async function assignSharedLocalOrder(
   await ensureFirebaseReady();
   const ref = doc(db, 'orders', orderId);
 
-  let data: {
-    status?: string;
-    driverId?: string;
-    serviceType?: string;
-    requiredVehicleType?: string;
-    truckType?: string;
-  } | null = null;
-  try {
-    const snap = await getDoc(ref);
-    if (snap.exists()) {
-      data = snap.data() as typeof data;
-    }
-  } catch (error) {
-    console.warn('[orders] Could not read order before accept:', error);
-  }
-
-  if (!data) {
-    const local = findLocalOrderData(orderId);
-    if (local) {
-      data = local as NonNullable<typeof data>;
-    }
-  }
-
+  const data = await readOrderForClaim(orderId);
   if (!data) {
     throw new Error(`ORDER_NOT_FOUND:${orderId}`);
   }
@@ -566,12 +583,28 @@ export async function assignSharedLocalOrder(
     firebaseUid = auth.currentUser?.uid || driver.id;
   }
 
-  if (data.driverId && data.driverId !== firebaseUid) {
+  if (!firebaseUid) {
+    throw new Error('NOT_AUTHENTICATED');
+  }
+
+  if (data.driverId && String(data.driverId) !== firebaseUid) {
     return {
       orderId,
       status: String(data.status || 'assigned'),
       alreadyAssigned: true,
     };
+  }
+
+  if (isAssignedToDriver(data, firebaseUid)) {
+    persistAssignedLocalOrder(orderId, data, toPlainAcceptPatch(
+      buildDriverAcceptPatch({
+        driverId: firebaseUid,
+        name: driver.name,
+        phone: driver.phone,
+        truckDetails: driver.truckDetails,
+      })
+    ), driver.vehicleType);
+    return { orderId, status: 'assigned', alreadyAssigned: true };
   }
 
   const alreadyBusy = loadLocalBroadcastOrders().some(
@@ -593,35 +626,117 @@ export async function assignSharedLocalOrder(
       truckDetails: driver.truckDetails,
     })
   );
-  if (!patch.driverId) {
-    throw new Error('NOT_AUTHENTICATED');
+
+  const attempts = driverClaimAttempts(patch).map((attempt) => ({
+    ...attempt,
+    payload: omitUndefined(attempt.payload),
+  }));
+  let lastError: unknown = null;
+
+  for (const attempt of attempts) {
+    try {
+      await runTransaction(db, async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists()) {
+          throw Object.assign(new Error(`ORDER_NOT_FOUND:${orderId}`), { code: 'not-found' });
+        }
+        const live = snap.data() as Record<string, unknown>;
+        const liveDriverId = String(live.driverId || '');
+        if (liveDriverId && liveDriverId !== firebaseUid) {
+          throw Object.assign(new Error('ORDER_ALREADY_ASSIGNED'), { code: 'already-exists' });
+        }
+        if (isAssignedToDriver(live, firebaseUid)) {
+          return;
+        }
+        if (!isOpenOfferStatus(String(live.status || '')) && !isAssignedToDriver(live, firebaseUid)) {
+          throw Object.assign(
+            new Error(`ORDER_NOT_CLAIMABLE:${String(live.status || '')}`),
+            { code: 'failed-precondition' }
+          );
+        }
+        tx.update(ref, attempt.payload as { [key: string]: string | Record<string, string> });
+      });
+      persistAssignedLocalOrder(orderId, { ...data, ...attempt.payload }, patch, driver.vehicleType);
+      console.info('[orders] Assigned shared local order', {
+        orderId,
+        uid: firebaseUid,
+        attempt: attempt.label,
+        keys: Object.keys(attempt.payload),
+      });
+      return { orderId, status: 'assigned' };
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('ORDER_NOT_FOUND') || message === 'ORDER_ALREADY_ASSIGNED') {
+        break;
+      }
+      if (message.startsWith('ORDER_NOT_CLAIMABLE')) {
+        const live = await readOrderForClaim(orderId);
+        if (isAssignedToDriver(live, firebaseUid)) {
+          persistAssignedLocalOrder(orderId, live || data, patch, driver.vehicleType);
+          return { orderId, status: 'assigned', alreadyAssigned: true };
+        }
+        logFirestoreWriteError('accept-order', error, {
+          orderId,
+          uid: firebaseUid,
+          attempt: attempt.label,
+          payload: attempt.payload,
+        });
+        throw error;
+      }
+      if (isFirestorePermissionError(error) || isFirestoreNotFoundError(error)) {
+        const live = await readOrderForClaim(orderId);
+        if (isAssignedToDriver(live, firebaseUid)) {
+          persistAssignedLocalOrder(orderId, live || data, patch, driver.vehicleType);
+          console.info('[orders] Accept already applied (idempotent)', {
+            orderId,
+            uid: firebaseUid,
+            attempt: attempt.label,
+          });
+          return { orderId, status: 'assigned', alreadyAssigned: true };
+        }
+        logFirestoreWriteError('accept-order', error, {
+          orderId,
+          uid: firebaseUid,
+          attempt: attempt.label,
+          payload: attempt.payload,
+          nextAttempt: true,
+        });
+        continue;
+      }
+      logFirestoreWriteError('accept-order', error, {
+        orderId,
+        uid: firebaseUid,
+        attempt: attempt.label,
+        payload: attempt.payload,
+      });
+      throw error;
+    }
   }
 
-  persistLocalBroadcastOrder(orderId, {
-    ...(findLocalOrderData(orderId) || data),
-    ...patch,
-    driver: {
-      ...patch.driver,
-      ...(driver.vehicleType ? { vehicleType: driver.vehicleType } : {}),
-    },
-  });
+  if (String(lastError instanceof Error ? lastError.message : lastError).startsWith('ORDER_NOT_FOUND')) {
+    if (allowsSandboxCheckout()) {
+      persistAssignedLocalOrder(orderId, data, patch, driver.vehicleType);
+      console.warn('[orders] Accept kept local — Firestore order missing', orderId);
+      return { orderId, status: 'assigned' };
+    }
+    throw lastError instanceof Error ? lastError : new Error(`ORDER_NOT_FOUND:${orderId}`);
+  }
 
-  // Flat string claim first — nested `driver` has been the extra key that
-  // tripped hasOnly on some rule versions. Admin SDK still writes the nested map.
-  const flatPayload = omitUndefined({ ...toFlatAcceptPatch(patch) });
-  try {
-    await updateDoc(ref, flatPayload);
-  } catch (error) {
-    logFirestoreWriteError('accept-order', error, {
+  if (String(lastError instanceof Error ? lastError.message : lastError) === 'ORDER_ALREADY_ASSIGNED') {
+    return { orderId, status: 'assigned', alreadyAssigned: true };
+  }
+
+  if (lastError) {
+    logFirestoreWriteError('accept-order-exhausted', lastError, {
       orderId,
       uid: firebaseUid,
-      payload: flatPayload,
+      attempts: attempts.map((item) => item.label),
     });
-    throw error;
+    throw lastError;
   }
 
-  console.info('[orders] Assigned shared local order', orderId, '→', firebaseUid);
-  return { orderId, status: 'assigned' };
+  throw new Error('Failed to accept order');
 }
 
 /** Local/dev status transitions on the same order document. */
@@ -630,11 +745,17 @@ export async function patchSharedLocalOrderStatus(
   status: string
 ): Promise<void> {
   const updatedAt = new Date().toISOString();
+  const extras: Record<string, unknown> = {};
+  if (status === 'completed') extras.completedAt = updatedAt;
+  if (status === 'driver_arrived' || status === 'arrived') extras.arrivedAt = updatedAt;
+  if (status === 'in_transit' || status === 'in_progress') extras.pickedUpAt = updatedAt;
+
   const existing = findLocalOrderData(orderId);
   persistLocalBroadcastOrder(orderId, {
     ...(existing || {}),
     status,
     updatedAt,
+    ...extras,
   });
 
   await ensureFirebaseReady();
@@ -643,15 +764,17 @@ export async function patchSharedLocalOrderStatus(
   } catch {
     /* continue with currentUser if present */
   }
+  const payload = omitUndefined({ status, updatedAt, ...extras });
   try {
-    await updateDoc(doc(db, 'orders', orderId), {
-      status,
-      updatedAt,
-    });
+    await updateDoc(doc(db, 'orders', orderId), payload);
   } catch (error) {
-    console.warn('[orders] Status patch failed — kept local status', error);
-    if (!import.meta.env.DEV) {
+    logFirestoreWriteError('status-patch', error, { orderId, payload });
+    if (isFirestorePermissionError(error) && !allowsSandboxCheckout() && !import.meta.env.DEV) {
       throw error;
     }
+    if (!import.meta.env.DEV && !allowsSandboxCheckout()) {
+      throw error;
+    }
+    console.warn('[orders] Status patch failed — kept local status', error);
   }
 }

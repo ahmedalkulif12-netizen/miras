@@ -99,17 +99,24 @@ async function publishPosition(
   );
 
   // Mirror coords onto the order so the customer snapshot has a fallback
-  // if the tracking/live listener is delayed or denied.
+  // if the tracking/live listener is delayed or denied. ISO strings — no FieldValue
+  // sentinels — match firestore.rules `driverTripStatusKeys()`.
+  const nowIso = new Date().toISOString();
   const orderWrite = updateDoc(doc(db, 'orders', orderId), {
     driverLat: coords.lat,
     driverLng: coords.lng,
-    driverLocationUpdatedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    driverLocationUpdatedAt: nowIso,
+    updatedAt: nowIso,
   }).catch((error) => {
     console.warn('[liveTracking] order GPS mirror failed:', error);
   });
 
-  await Promise.all([trackingWrite, orderWrite]);
+  try {
+    await trackingWrite;
+  } catch (error) {
+    console.warn('[liveTracking] tracking/live write failed:', error);
+  }
+  await orderWrite;
 }
 
 /**

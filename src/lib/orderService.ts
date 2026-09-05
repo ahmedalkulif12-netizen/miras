@@ -5,7 +5,10 @@ import { isLocalDevRuntime } from '@/lib/localDevRuntime';
 import { getApiOrigin } from '@/lib/apiUrl';
 import { auth } from '@/lib/firebase';
 import { prepareCheckoutDraft } from '@/lib/checkoutDraft';
-import { formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
+import {
+  formatFirestoreErrorDetails,
+  isFirestorePermissionError,
+} from '@/lib/firestoreWriteError';
 import {
   assignSharedLocalOrder,
   patchSharedLocalOrderStatus,
@@ -36,7 +39,13 @@ function previewOrderBlocked(orderId: string, code: string): void {
 
 function shouldUseClientOrderWrite(status: number, errorText: string): boolean {
   if (status === 409) return false;
-  if (/VEHICLE_TYPE_MISMATCH|already assigned/i.test(errorText)) return false;
+  if (
+    /VEHICLE_TYPE_MISMATCH|already assigned|Driver account is not approved|blocked from accepting|Only approved drivers|VEHICLE_TYPE_REQUIRED/i.test(
+      errorText
+    )
+  ) {
+    return false;
+  }
   if (status === 503 || status === 501) return true;
   if (status >= 500) return true;
   if (
@@ -48,7 +57,7 @@ function shouldUseClientOrderWrite(status: number, errorText: string): boolean {
   }
   if (
     (status === 401 || status === 403) &&
-    /not approved|App Check|Unauthorized|PERMISSION|insufficient permissions/i.test(errorText)
+    /App Check|App attestation|Unauthorized|PERMISSION|insufficient permissions/i.test(errorText)
   ) {
     return true;
   }
@@ -141,17 +150,7 @@ export async function acceptOrder(
   });
 }
 
-export function isFirestorePermissionError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false;
-  const code = String((error as { code?: unknown }).code || '');
-  const message = String((error as { message?: unknown }).message || '');
-  return (
-    code === 'permission-denied' ||
-    code === 'PERMISSION_DENIED' ||
-    /missing or insufficient permissions/i.test(message) ||
-    /PERMISSION_DENIED/i.test(message)
-  );
-}
+export { isFirestorePermissionError };
 
 export function driverOrderWriteErrorMessage(
   error: unknown,

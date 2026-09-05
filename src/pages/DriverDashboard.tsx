@@ -1113,6 +1113,9 @@ const DriverDashboard: React.FC = () => {
 
       // Accept → bind UI to this exact Firestore order ID (customer tracks the same ID)
       activateLocalTrip({ ...order, id: result.orderId, status: result.status || 'assigned' });
+      setBroadcastPool((prev) =>
+        prev.filter((item) => item.id !== order.id && item.id !== result.orderId)
+      );
       toast.success(
         isRtl
           ? `تم قبول المهمة #${result.orderId.slice(-8)} — توجه إلى موقع الاستلام`
@@ -1253,10 +1256,24 @@ const DriverDashboard: React.FC = () => {
     }
     const ignoredId = latestOrder.id;
     const nextIgnored = persistIgnoredDriverOffer(profile.uid, ignoredId);
+    ignoredOfferIdsRef.current = nextIgnored;
     setIgnoredOfferIds(nextIgnored);
-    setBroadcastPool((prev) => prev.filter((order) => order.id !== ignoredId));
-    pendingOfferRef.current =
-      pendingOfferRef.current?.id === ignoredId ? null : pendingOfferRef.current;
+    setBroadcastPool((prev) => {
+      const remaining = prev.filter((order) => order.id !== ignoredId);
+      const nextOffer =
+        remaining
+          .filter(
+            (order) =>
+              isOpenOfferStatus(order.status) &&
+              !isTerminalOrderStatus(order.status) &&
+              !isIgnoredDriverOffer(order.id, nextIgnored) &&
+              driverMatchesOffer(profile.vehicleType, order)
+          )
+          .sort((a, b) => orderCreatedAtMs(b) - orderCreatedAtMs(a))[0] || null;
+      pendingOfferRef.current = nextOffer;
+      setLatestOrder(nextOffer);
+      return remaining;
+    });
     toast.info(isRtl ? 'تم تجاهل الطلب' : 'Order ignored');
   };
 

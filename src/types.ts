@@ -94,7 +94,11 @@ export interface Order {
   };
   /** Denormalized contact for trip parties (set on accept / publish). */
   driverPhone?: string;
+  driverName?: string;
   driverId?: string;
+  assignedAt?: string;
+  driverLat?: number;
+  driverLng?: number;
   customerPhone?: string;
   customerName?: string;
   /** Water tanker / delivery-only — customer sets drop-off only. */

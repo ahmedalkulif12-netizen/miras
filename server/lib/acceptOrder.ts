@@ -110,14 +110,16 @@ export async function executeAcceptOrder(
     transaction.update(orderRef, {
       status: OrderStatus.ASSIGNED,
       driverId,
+      driverName,
+      driverPhone,
+      assignedAt: admin.firestore.FieldValue.serverTimestamp(),
       driver: {
         id: driverId,
         name: driverName,
         phone: driverPhone,
         truckDetails,
-        vehicleType: vehicleType || null,
+        ...(vehicleType ? { vehicleType } : {}),
       },
-      driverPhone,
       statusHistory,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });

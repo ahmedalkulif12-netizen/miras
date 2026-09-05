@@ -23,6 +23,7 @@ export function evaluateDispatchOffer(input: {
     serviceType?: string;
     requiredVehicleType?: string;
     truckType?: string;
+    tripType?: string;
     pickupLat?: number;
     pickupLng?: number;
     pickupCity?: string;
@@ -49,6 +50,7 @@ export function evaluateDispatchOffer(input: {
   const driverLat = Number(input.driver.lat);
   const driverLng = Number(input.driver.lng);
   const hasDriverGps = Number.isFinite(driverLat) && Number.isFinite(driverLng);
+  const tripType = String(input.order.tripType || '');
 
   if (!sameDispatchCity(orderDispatchCity(input.order), input.driver.city)) {
     return { visible: false, distanceKm: null, window, reason: 'cross_city' };
@@ -79,8 +81,15 @@ export function evaluateDispatchOffer(input: {
   const distanceKm = haversineKm(pickup, { lat: driverLat, lng: driverLng });
   const cap = Math.min(window.radiusKm, DISPATCH_MAX_RADIUS_KM);
   if (distanceKm > cap) {
-    if (input.relaxRadius) {
-      return { visible: true, distanceKm, window, reason: 'outside_radius_relaxed' };
+    // Intercity jobs and fully-expanded same-city search must not vanish from the feed
+    // (Al-Ahsa metro is larger than the 35 km cap).
+    if (input.relaxRadius || window.atMax || tripType === 'outside_city') {
+      return {
+        visible: true,
+        distanceKm,
+        window,
+        reason: window.atMax ? 'outside_radius_at_max' : 'outside_radius_relaxed',
+      };
     }
     return { visible: false, distanceKm, window, reason: 'outside_radius' };
   }

@@ -39,6 +39,25 @@ export const DRIVER_ACCEPT_PATCH_KEYS = [
   'driver',
 ] as const;
 
+/** Canonical client claim — matches firestore.rules `driverClaimKeys()` minus optional nested `driver`. */
+export const DRIVER_CLAIM_FLAT_KEYS = [
+  'status',
+  'driverId',
+  'driverName',
+  'driverPhone',
+  'updatedAt',
+  'assignedAt',
+] as const;
+
+/** Older deployed rules that allowed claim fields but not `assignedAt`. */
+export const DRIVER_CLAIM_LEGACY_FLAT_KEYS = [
+  'status',
+  'driverId',
+  'driverName',
+  'driverPhone',
+  'updatedAt',
+] as const;
+
 export function buildDriverAcceptPatch(input: DriverAcceptInput): DriverAcceptPatch {
   const driverId = String(input.driverId || '').trim();
   const name = String(input.name || '').trim() || 'Driver';
@@ -71,4 +90,33 @@ export function toPlainAcceptPatch(patch: DriverAcceptPatch): DriverAcceptPatch 
 export function toFlatAcceptPatch(patch: DriverAcceptPatch): Omit<DriverAcceptPatch, 'driver'> {
   const { driver: _driver, ...flat } = toPlainAcceptPatch(patch);
   return flat;
+}
+
+/** Drop `assignedAt` for rule versions that only allowed the 5-key claim. */
+export function toLegacyFlatAcceptPatch(
+  patch: DriverAcceptPatch
+): Pick<DriverAcceptPatch, 'status' | 'driverId' | 'driverName' | 'driverPhone' | 'updatedAt'> {
+  const flat = toFlatAcceptPatch(patch);
+  return {
+    status: flat.status,
+    driverId: flat.driverId,
+    driverName: flat.driverName,
+    driverPhone: flat.driverPhone,
+    updatedAt: flat.updatedAt,
+  };
+}
+
+export type DriverClaimAttempt = {
+  label: string;
+  payload: Record<string, unknown>;
+};
+
+/** Ordered claim payloads — first match against current rules, then older deployed rules. */
+export function driverClaimAttempts(patch: DriverAcceptPatch): DriverClaimAttempt[] {
+  const plain = toPlainAcceptPatch(patch);
+  return [
+    { label: 'flat-canonical', payload: { ...toFlatAcceptPatch(plain) } },
+    { label: 'flat-legacy-no-assignedAt', payload: { ...toLegacyFlatAcceptPatch(plain) } },
+    { label: 'nested-driver', payload: { ...plain } },
+  ];
 }
