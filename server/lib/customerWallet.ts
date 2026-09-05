@@ -88,3 +88,51 @@ export async function debitCustomerWalletOnOrder(
     console.warn('[wallet] Customer debit failed:', error);
   }
 }
+
+function readWalletBalance(data: Record<string, unknown> | undefined): number {
+  const balance = Number(data?.balance);
+  return Number.isFinite(balance) ? roundMoney(balance) : 0;
+}
+
+/**
+ * Pay a checkout draft from wallets/{userId} and publish the broadcasting order.
+ */
+export async function payCheckoutDraftWithWallet(
+  db: admin.firestore.Firestore,
+  input: {
+    userId: string;
+    draftId: string;
+    publish: () => Promise<{ orderId: string; status: string }>;
+    amount: number;
+  }
+): Promise<{ orderId: string; status: string; walletBalance: number }> {
+  const userId = String(input.userId || '').trim();
+  const amount = roundMoney(Math.max(0, Number(input.amount) || 0));
+  if (!userId || amount <= 0) {
+    throw Object.assign(new Error('Invalid wallet payment'), { statusCode: 400 });
+  }
+
+  const walletRef = db.collection('wallets').doc(userId);
+  const snap = await walletRef.get();
+  const balance = readWalletBalance(snap.data() as Record<string, unknown> | undefined);
+  if (balance < amount) {
+    throw Object.assign(new Error('Insufficient wallet balance'), {
+      statusCode: 400,
+      code: 'INSUFFICIENT_WALLET',
+    });
+  }
+
+  const published = await input.publish();
+  await debitCustomerWalletOnOrder(db, {
+    userId,
+    orderId: published.orderId,
+    amount,
+  });
+
+  const after = await walletRef.get();
+  return {
+    orderId: published.orderId,
+    status: published.status,
+    walletBalance: readWalletBalance(after.data() as Record<string, unknown> | undefined),
+  };
+}

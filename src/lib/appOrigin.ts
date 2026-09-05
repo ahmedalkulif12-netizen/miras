@@ -78,8 +78,11 @@ export function getPublicAppOrigin(): string {
   });
 }
 
-export function getMoyasarCallbackUrl(): string {
-  return `${getPublicAppOrigin()}/payment-callback`;
+export function getMoyasarCallbackUrl(draftId?: string): string {
+  const base = `${getPublicAppOrigin()}/payment-callback`;
+  const id = String(draftId || '').trim();
+  if (!id) return base;
+  return `${base}?draftId=${encodeURIComponent(id)}`;
 }
 
 /** Map an App Link / custom-scheme URL to an in-app SPA path. */

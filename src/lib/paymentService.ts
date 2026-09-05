@@ -3,8 +3,8 @@ import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { getMoyasarCallbackUrl } from '@/lib/appOrigin';
 import { allowsDemoCheckout, allowsSandboxCheckout } from '@/lib/checkoutGating';
 
-/** Customer-selected checkout method (Moyasar hosted form). */
-export type CheckoutPaymentMethod = 'mada' | 'creditcard' | 'applepay';
+/** Customer-selected checkout method (Moyasar hosted form or in-app wallet). */
+export type CheckoutPaymentMethod = 'mada' | 'creditcard' | 'applepay' | 'wallet';
 
 export interface PaymentIntent {
   paymentId: string;
@@ -52,7 +52,7 @@ export const createPaymentIntent = async (
     return sandboxIntent(draftId, paymentMethod);
   }
 
-  const callbackUrl = getMoyasarCallbackUrl();
+  const callbackUrl = getMoyasarCallbackUrl(draftId);
 
   try {
     const response = await authFetch('/api/create-payment-intent', {

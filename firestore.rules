@@ -286,6 +286,9 @@ service cloud.firestore {
         || (isDriverAccount() && isOpenOffer());
 
       allow list: if isAdmin()
+        || (isSignedIn() && resource.data.userId == uid())
+        || (isSignedIn() && resource.data.clientId == uid())
+        || (isSignedIn() && resource.data.customerId == uid())
         || isOrderCustomer()
         || isOrderDriver()
         || canReadOpenOffer()

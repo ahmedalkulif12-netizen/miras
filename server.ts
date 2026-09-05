@@ -49,7 +49,10 @@ import { verifyPaymentReturnStatus } from './server/lib/paymentReturn.ts';
 import {
   finalizePaidCheckoutReturn,
   isMoyasarTestSecret,
+  resolveDraftIdFromMoyasarPayment,
 } from './server/lib/finalizePaidCheckout.ts';
+import { listOrdersForCustomer } from './server/lib/customerOrders.ts';
+import { payCheckoutDraftWithWallet } from './server/lib/customerWallet.ts';
 import {
   isDemoMoyasarId,
   resolveMoyasarCallbackUrl,
@@ -224,12 +227,41 @@ async function startServer() {
             }
             console.log(`Payment ${id} verified and order broadcast triggered.`);
           } else {
-            await eventRef.set({
-              transactionId: id,
-              status,
-              processedAt: admin.firestore.FieldValue.serverTimestamp(),
-              note: 'payment_doc_not_found',
-            });
+            const meta = (paymentData?.metadata || {}) as Record<string, unknown>;
+            const metaDraftId = String(meta.draftId || '').trim();
+            const metaUserId = String(meta.userId || '').trim();
+            if (metaDraftId && metaUserId) {
+              try {
+                const finalized = await finalizeOrderFromCheckoutDraft(db, {
+                  userId: metaUserId,
+                  draftId: metaDraftId,
+                  moyasarId: id,
+                  testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+                });
+                await eventRef.set({
+                  transactionId: id,
+                  status,
+                  processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  note: 'finalized_from_metadata',
+                  orderId: finalized.orderId,
+                });
+              } catch (metaErr) {
+                console.error('Finalize from webhook metadata failed:', metaErr);
+                await eventRef.set({
+                  transactionId: id,
+                  status,
+                  processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                  note: 'payment_doc_not_found',
+                });
+              }
+            } else {
+              await eventRef.set({
+                transactionId: id,
+                status,
+                processedAt: admin.firestore.FieldValue.serverTimestamp(),
+                note: 'payment_doc_not_found',
+              });
+            }
           }
         } else {
           await eventRef.set({
@@ -295,13 +327,15 @@ async function startServer() {
     try {
       const draftId = String(req.query.draftId || '');
       const orderId = String(req.query.orderId || '');
-      if (!draftId && !orderId) {
-        return res.status(400).json({ error: 'draftId or orderId is required' });
+      const moyasarIdEarly = req.query.moyasarId ? String(req.query.moyasarId) : '';
+      if (!draftId && !orderId && !moyasarIdEarly) {
+        return res.status(400).json({ error: 'draftId, orderId, or moyasarId is required' });
       }
 
       const moyasarId = req.query.moyasarId ? String(req.query.moyasarId) : undefined;
       const returnStatus = req.query.status ? String(req.query.status) : undefined;
       const uid = req.firebaseUid!;
+      let resolvedDraftId = draftId;
 
       if (returnStatus && ['failed', 'voided', 'cancelled'].includes(returnStatus.toLowerCase())) {
         return res.json({
@@ -314,8 +348,12 @@ async function startServer() {
         });
       }
 
+      if (!resolvedDraftId && moyasarId) {
+        resolvedDraftId = (await resolveDraftIdFromMoyasarPayment(db, uid, moyasarId)) || '';
+      }
+
       // Finalize unpaid checkout draft after Moyasar paid (including test keys).
-      if (draftId) {
+      if (resolvedDraftId) {
         if (!moyasarId) {
           return res.status(400).json({
             error: 'moyasarId is required to finalize a checkout draft',
@@ -330,7 +368,7 @@ async function startServer() {
           }
           const published = await publishAfterLocalCheckout(db, {
             userId: uid,
-            draftId,
+            draftId: resolvedDraftId,
             moyasarId,
             testMode: true,
           });
@@ -346,12 +384,39 @@ async function startServer() {
 
         const finalized = await finalizePaidCheckoutReturn(db, {
           uid,
-          draftId,
+          draftId: resolvedDraftId,
           moyasarId,
           returnStatus,
           moyasarSecretKey: config.moyasarSecretKey,
         });
         return res.json(finalized);
+      }
+
+      if (!orderId && moyasarId) {
+        const paymentsQuery = await db
+          .collection('payments')
+          .where('transactionId', '==', moyasarId)
+          .limit(1)
+          .get();
+        if (!paymentsQuery.empty) {
+          const payment = paymentsQuery.docs[0].data() as Record<string, unknown>;
+          const linked = String(payment.orderId || '');
+          if (linked) {
+            const result = await verifyPaymentReturnStatus(db, {
+              uid,
+              orderId: linked,
+              moyasarId,
+              returnStatus,
+            });
+            return res.json(result);
+          }
+        }
+      }
+
+      if (!orderId) {
+        return res.status(404).json({
+          error: 'Checkout draft not found for this payment',
+        });
       }
 
       const result = await verifyPaymentReturnStatus(db, {
@@ -496,9 +561,81 @@ async function startServer() {
             'Local Admin credentials unavailable - client will write the order'
           );
         }
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to publish order after checkout',
+        code: 'PUBLISH_FAILED',
+      });
+      }
+    }
+  );
+
+  // Authenticated customer — Admin SDK list so My Orders works even if client queries fail.
+  app.get('/api/orders/mine', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const userId = req.firebaseUid!;
+      const orders = await listOrdersForCustomer(db, userId);
+      res.json({ orders });
+    } catch (error: any) {
+      console.error('List my orders error:', error);
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to load orders',
+      });
+    }
+  });
+
+  app.post(
+    '/api/orders/pay-with-wallet',
+    ...secureApi,
+    async (req: AuthenticatedRequest, res: any) => {
+      try {
+        if (!canUseAdminFirestore()) {
+          return res.status(503).json({
+            error: 'Wallet checkout requires Admin Firestore',
+            code: 'ADMIN_SDK_REQUIRED',
+          });
+        }
+        const userId = req.firebaseUid!;
+        const draftId = String(req.body?.draftId || '');
+        if (!draftId) {
+          return res.status(400).json({ error: 'draftId is required' });
+        }
+
+        const draftSnap = await db.collection('checkout_drafts').doc(draftId).get();
+        if (!draftSnap.exists) {
+          return res.status(404).json({ error: 'Checkout draft not found' });
+        }
+        const draft = draftSnap.data() as Record<string, unknown>;
+        if (String(draft.userId || '') !== userId) {
+          return res.status(403).json({ error: 'Draft does not belong to authenticated user' });
+        }
+        const financials = (draft.financials || {}) as Record<string, unknown>;
+        const amount = Number(financials.customerTotal || 0);
+
+        const paid = await payCheckoutDraftWithWallet(db, {
+          userId,
+          draftId,
+          amount,
+          publish: () =>
+            finalizeOrderFromCheckoutDraft(db, {
+              userId,
+              draftId,
+            }),
+        });
+
+        res.json({
+          success: true,
+          orderId: paid.orderId,
+          status: paid.status,
+          paymentStatus: 'captured',
+          orderStatus: paid.status,
+          startTracking: true,
+          walletBalance: paid.walletBalance,
+        });
+      } catch (error: any) {
+        console.error('Wallet checkout error:', error);
         res.status(error?.statusCode ?? 500).json({
-          error: error?.message || 'Failed to publish order after checkout',
-          code: 'PUBLISH_FAILED',
+          error: error?.message || 'Wallet payment failed',
+          code: error?.code,
         });
       }
     }
@@ -1533,7 +1670,10 @@ async function startServer() {
       const moyasarCallbackUrl = resolveMoyasarCallbackUrl(
         callbackUrl,
         config.appUrl,
-        { lockToAppUrl: config.deployEnv !== 'development' }
+        {
+          lockToAppUrl: config.deployEnv !== 'development',
+          draftId: chargeDraftId || undefined,
+        }
       );
 
       const waterBits = [
@@ -1545,11 +1685,14 @@ async function startServer() {
           ? `Miras Order - ${serviceType} (${waterBits.join('/')})`
           : `Miras Order - ${serviceType}`;
 
+      const moyasarMethods = paymentMethod === 'applepay' ? ['applepay'] : undefined;
+
       const moyasarPayload = {
         amount: amountInHalalas,
         currency: 'SAR',
         description: moyasarDescription,
         callback_url: moyasarCallbackUrl,
+        ...(moyasarMethods ? { methods: moyasarMethods } : {}),
         metadata: {
           userId,
           draftId: chargeDraftId || null,

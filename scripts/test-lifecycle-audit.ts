@@ -265,6 +265,14 @@ function run(): void {
     ) === 'https://hamula-cfc6c.web.app/payment-callback',
     'production Moyasar callback is APP_URL, never localhost'
   );
+  assert(
+    resolveMoyasarCallbackUrl(
+      'https://localhost/payment-callback',
+      'https://hamula-cfc6c.web.app',
+      { lockToAppUrl: true, draftId: 'draft-abc' }
+    ) === 'https://hamula-cfc6c.web.app/payment-callback?draftId=draft-abc',
+    'production Moyasar callback keeps checkout draftId'
+  );
 
   assert(
     resolveApiOriginFrom({

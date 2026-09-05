@@ -344,6 +344,8 @@ export async function writeBroadcastingOrder(
     /** Keep a stable id for local `draft-*` tracking URLs when safe. */
     preferredOrderId?: string;
     testMode?: boolean;
+    /** Only debit wallets/{userId} when the customer paid with wallet. */
+    debitCustomerWallet?: boolean;
   }
 ): Promise<{ orderId: string; status: string }> {
   if (input.checkoutDraftId) {
@@ -354,11 +356,13 @@ export async function writeBroadcastingOrder(
       .get();
     if (!existingByDraft.empty) {
       const doc = existingByDraft.docs[0];
-      await debitCustomerWalletOnOrder(db, {
-        userId: input.userId,
-        orderId: doc.id,
-        amount: Number(input.financials?.customerTotal || doc.data()?.financials?.customerTotal || 0),
-      });
+      if (input.debitCustomerWallet) {
+        await debitCustomerWalletOnOrder(db, {
+          userId: input.userId,
+          orderId: doc.id,
+          amount: Number(input.financials?.customerTotal || doc.data()?.financials?.customerTotal || 0),
+        });
+      }
       return {
         orderId: doc.id,
         status: String(doc.data()?.status || OrderStatus.BROADCASTING),
@@ -385,11 +389,13 @@ export async function writeBroadcastingOrder(
   if (preferLocalId) {
     const existing = await orderRef.get();
     if (existing.exists) {
-      await debitCustomerWalletOnOrder(db, {
-        userId: input.userId,
-        orderId: orderRef.id,
-        amount: Number(input.financials?.customerTotal || existing.data()?.financials?.customerTotal || 0),
-      });
+      if (input.debitCustomerWallet) {
+        await debitCustomerWalletOnOrder(db, {
+          userId: input.userId,
+          orderId: orderRef.id,
+          amount: Number(input.financials?.customerTotal || existing.data()?.financials?.customerTotal || 0),
+        });
+      }
       return {
         orderId: orderRef.id,
         status: String(existing.data()?.status || OrderStatus.BROADCASTING),
@@ -435,11 +441,13 @@ export async function writeBroadcastingOrder(
 
   await orderRef.set(orderDoc);
   console.info('[orders] Broadcasting order written', orderRef.id, { serviceType });
-  await debitCustomerWalletOnOrder(db, {
-    userId: input.userId,
-    orderId: orderRef.id,
-    amount: Number(input.financials?.customerTotal || 0),
-  });
+  if (input.debitCustomerWallet) {
+    await debitCustomerWalletOnOrder(db, {
+      userId: input.userId,
+      orderId: orderRef.id,
+      amount: Number(input.financials?.customerTotal || 0),
+    });
+  }
   return { orderId: orderRef.id, status: OrderStatus.BROADCASTING };
 }
 

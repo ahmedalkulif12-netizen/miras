@@ -149,6 +149,9 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
               accountStatus: 'pending',
               submittedAt: now,
               createdAt: now,
+              reviewDueAt: new Date(
+                Date.now() + DRIVER_REVIEW_SLA_HOURS * 60 * 60 * 1000
+              ).toISOString(),
             }),
         updatedAt: now,
       },

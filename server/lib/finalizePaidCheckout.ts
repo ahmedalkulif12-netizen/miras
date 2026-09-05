@@ -163,3 +163,30 @@ export async function finalizePaidCheckoutReturn(
     testMode,
   };
 }
+
+/**
+ * Resolve checkout draft from a Moyasar payment/invoice id when the callback
+ * URL did not keep `draftId` (common after App Link round-trips).
+ */
+export async function resolveDraftIdFromMoyasarPayment(
+  db: admin.firestore.Firestore,
+  uid: string,
+  moyasarId: string
+): Promise<string | null> {
+  const id = String(moyasarId || '').trim();
+  if (!id) return null;
+  const paymentsQuery = await db
+    .collection('payments')
+    .where('transactionId', '==', id)
+    .limit(1)
+    .get();
+  if (paymentsQuery.empty) return null;
+  const payment = paymentsQuery.docs[0].data() as Record<string, unknown>;
+  if (payment.userId && payment.userId !== uid) {
+    throw Object.assign(new Error('Payment does not belong to authenticated user'), {
+      statusCode: 403,
+    });
+  }
+  const draftId = String(payment.draftId || '').trim();
+  return draftId || null;
+}

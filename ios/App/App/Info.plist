@@ -74,5 +74,12 @@
 	<string>تستخدم مَرَاس مكتبة الصور لإرفاق المستندات وصور التسليم. Miras may access your photo library to attach documents and delivery photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>قد تحفظ مَرَاس صور التسليم في مكتبة الصور. Miras may save delivery photos to your photo library.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>comgooglemaps</string>
+		<string>googlechromes</string>
+		<string>maps</string>
+		<string>geo</string>
+	</array>
 </dict>
 </plist>

@@ -9,12 +9,17 @@ import {
   getActiveCheckoutDraftId,
   loadCheckoutDraft,
 } from '@/lib/checkoutDraft';
+import {
+  clearPendingCheckoutDraftId,
+  persistPendingCheckoutDraftId,
+  readPendingCheckoutDraftId,
+} from '@/lib/pendingCheckout';
+import { rememberCustomerOrderId } from '@/lib/customerOrderMemory';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { buildClientOrdersPath, CUSTOMER_SERVICES_PATH } from '@/lib/authRouting';
-
-const PENDING_DRAFT_KEY = 'pending_checkout_draft_id';
+import { auth } from '@/lib/firebase';
 
 /**
  * Explicit payment checkout screen (local/demo gateway stand-in).
@@ -30,7 +35,7 @@ const PaymentCheckoutPage: React.FC = () => {
 
   const draftId =
     searchParams.get('draftId') ||
-    sessionStorage.getItem(PENDING_DRAFT_KEY) ||
+    readPendingCheckoutDraftId() ||
     getActiveCheckoutDraftId() ||
     '';
 
@@ -56,7 +61,7 @@ const PaymentCheckoutPage: React.FC = () => {
           : 'Mada';
 
   const cancelPayment = () => {
-    sessionStorage.removeItem(PENDING_DRAFT_KEY);
+    clearPendingCheckoutDraftId();
     toast.message(isRtl ? 'تم إلغاء الدفع' : 'Payment cancelled');
     navigate(CUSTOMER_SERVICES_PATH, { replace: true });
   };
@@ -84,14 +89,14 @@ const PaymentCheckoutPage: React.FC = () => {
     });
 
     try {
-      // Explicit user confirmation → then finalize order (same as Moyasar success callback).
+      persistPendingCheckoutDraftId(draftId);
       const result = await verifyPaymentReturn({
         draftId,
         moyasarId: `demo-checkout-${Date.now()}`,
         status: 'paid',
       });
 
-      sessionStorage.removeItem(PENDING_DRAFT_KEY);
+      clearPendingCheckoutDraftId();
 
       if (!result.success) {
         toast.error(
@@ -106,6 +111,10 @@ const PaymentCheckoutPage: React.FC = () => {
       toast.success(isRtl ? 'تم الدفع بنجاح' : 'Payment successful', {
         id: 'gateway-pay',
       });
+      const uid = auth.currentUser?.uid || '';
+      if (uid && result.orderId) {
+        rememberCustomerOrderId(uid, result.orderId);
+      }
       navigate(
         buildClientOrdersPath({
           placed: result.orderId,

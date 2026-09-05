@@ -228,6 +228,8 @@ export async function createOrderSecure(
 
   const orderDoc = {
     userId,
+    clientId: userId,
+    customerId: userId,
     serviceType: canonicalService,
     truckType: body.truckType || 'normal',
     tripType: body.tripType || (quote as { tripType?: string }).tripType || 'inside_city',

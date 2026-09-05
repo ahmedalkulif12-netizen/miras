@@ -112,7 +112,7 @@ export function getActiveCheckoutDraftId(): string | null {
 export function loadDemoOrderFromSession(
   orderId: string
 ): (CreateOrderRequest & CreateOrderResponse) | null {
-  if (!orderId.startsWith('demo-') && !orderId.startsWith('draft-')) return null;
+  if (!orderId) return null;
   try {
     const keys = [
       `${DEMO_ORDER_PREFIX}${orderId}`,

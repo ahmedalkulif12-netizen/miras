@@ -5,11 +5,16 @@ import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { getActiveCheckoutDraftId } from '@/lib/checkoutDraft';
+import {
+  clearPendingCheckoutDraftId,
+  readPendingCheckoutDraftId,
+} from '@/lib/pendingCheckout';
+import { rememberCustomerOrderId } from '@/lib/customerOrderMemory';
 import { promoteSharedOrderToBroadcasting } from '@/lib/localOrderBridge';
 import { buildClientOrdersPath } from '@/lib/authRouting';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
-
-const PENDING_DRAFT_KEY = 'pending_checkout_draft_id';
+import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
+import { auth } from '@/lib/firebase';
 
 /**
  * Moyasar redirects here after checkout (callback_url).
@@ -29,16 +34,22 @@ const PaymentCallbackPage: React.FC = () => {
     let cancelled = false;
 
     async function handleReturn() {
+      try {
+        await ensureSignedInFirebaseUid(12000);
+      } catch (error) {
+        console.warn('[payments] Auth not ready on payment return:', error);
+      }
+
       const draftId =
         searchParams.get('draftId') ||
-        sessionStorage.getItem(PENDING_DRAFT_KEY) ||
+        readPendingCheckoutDraftId() ||
         getActiveCheckoutDraftId();
       const legacyOrderId = searchParams.get('orderId');
       const moyasarId = searchParams.get('id');
       const status = searchParams.get('status');
       const failedStatuses = new Set(['failed', 'voided', 'cancelled']);
 
-      if (!draftId && !legacyOrderId) {
+      if (!draftId && !legacyOrderId && !moyasarId) {
         if (!cancelled) {
           setState('error');
           setMessage(isRtl ? 'لم يتم العثور على جلسة الدفع' : 'Checkout session not found');
@@ -51,7 +62,7 @@ const PaymentCallbackPage: React.FC = () => {
       }
 
       if (status && failedStatuses.has(status.toLowerCase())) {
-        sessionStorage.removeItem(PENDING_DRAFT_KEY);
+        clearPendingCheckoutDraftId();
         if (!cancelled) {
           setState('error');
           setMessage(isRtl ? 'فشل الدفع أو تم إلغاؤه' : 'Payment failed or was cancelled');
@@ -71,8 +82,7 @@ const PaymentCallbackPage: React.FC = () => {
           status,
         });
 
-        sessionStorage.removeItem(PENDING_DRAFT_KEY);
-        sessionStorage.removeItem('pending_order_id');
+        clearPendingCheckoutDraftId();
 
         if (cancelled) return;
 
@@ -91,6 +101,10 @@ const PaymentCallbackPage: React.FC = () => {
 
         setState('success');
         setMessage(isRtl ? 'تم الدفع بنجاح — جاري فتح طلباتي...' : 'Payment successful — opening My Orders...');
+        const uid = auth.currentUser?.uid || '';
+        if (uid && result.orderId) {
+          rememberCustomerOrderId(uid, result.orderId);
+        }
         navigate(
           buildClientOrdersPath({
             placed: result.orderId,
@@ -110,7 +124,7 @@ const PaymentCallbackPage: React.FC = () => {
         if (allowsSandboxCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
           try {
             await promoteSharedOrderToBroadcasting(id);
-            sessionStorage.removeItem(PENDING_DRAFT_KEY);
+            clearPendingCheckoutDraftId();
             if (!cancelled) {
               setState('success');
               setMessage(

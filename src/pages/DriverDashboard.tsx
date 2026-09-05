@@ -41,6 +41,7 @@ import {
 } from '@/lib/withdrawalService';
 
 import { DriverTripMap, getOrderDropoffLatLng, getOrderPickupLatLng } from '@/components/DriverTripMap';
+import { openNativeMapsNavigation } from '@/lib/nativeMaps';
 import DriverProfilePage from '@/pages/DriverProfilePage';
 import { getDriverOfferMetrics } from '@/lib/driverOfferMetrics';
 import { MIN_WITHDRAWAL_SAR } from '@/domain/financials';
@@ -932,19 +933,31 @@ const DriverDashboard: React.FC = () => {
   };
 
   /** Stage-aware optional external Maps link (destination matches current nav phase). */
-  const openOrderInMaps = (order: Order) => {
+  const openOrderInMaps = (order: Order, force: 'pickup' | 'dropoff' | 'auto' = 'auto') => {
     const phase = getDriverNavPhase(order.status, order);
     const pickup = getOrderPickupLatLng(order);
     const dropoff = getOrderDropoffLatLng(order);
-    const target = phase === 'to_dropoff' || phase === 'preview' ? dropoff : pickup;
-    // Water tanker / delivery-only: always open drop-off.
-    const finalTarget =
-      order.deliveryOnly || order.serviceType === 'water_tanker'
-        ? dropoff || target
-        : target;
-    if (!finalTarget) return;
-    const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${finalTarget.lat},${finalTarget.lng}&travelmode=driving`;
-    window.open(mapsUrl, '_blank');
+    const deliveryOnly = order.deliveryOnly || order.serviceType === 'water_tanker';
+    let target = force === 'pickup' ? pickup : force === 'dropoff' ? dropoff : null;
+    if (!target) {
+      target =
+        deliveryOnly || phase === 'to_dropoff' || phase === 'preview'
+          ? dropoff || pickup
+          : pickup || dropoff;
+    }
+    if (!target) {
+      toast.error(isRtl ? 'إحداثيات الموقع غير متوفرة' : 'Location coordinates are unavailable');
+      return;
+    }
+    const label =
+      target === dropoff
+        ? order.dropoffAddress || 'Drop-off'
+        : order.pickupAddress || 'Pickup';
+    void openNativeMapsNavigation({ ...target, label }).then((ok) => {
+      if (!ok) {
+        toast.error(isRtl ? 'تعذر فتح الخرائط' : 'Could not open maps');
+      }
+    });
   };
 
   const activateLocalTrip = (order: Order) => {
@@ -1875,15 +1888,21 @@ const DriverDashboard: React.FC = () => {
                     </button>
                     <button
                       type="button"
-                      onClick={() => openOrderInMaps(latestOrder)}
+                      onClick={() => openOrderInMaps(latestOrder, 'pickup')}
                       className="w-full py-2 text-xs font-bold text-teal-700 hover:text-teal-900 transition-colors"
                     >
-                      {getDriverNavPhase(latestOrder.status, latestOrder) === 'to_dropoff'
-                        ? (isRtl ? 'فتح موقع التنزيل في خرائط Google (اختياري)' : 'Open dropoff in Google Maps (optional)')
-                        : (isRtl ? 'فتح موقع الاستلام في خرائط Google (اختياري)' : 'Open pickup in Google Maps (optional)')}
+                      {isRtl ? 'فتح موقع الاستلام في الخرائط' : 'Open pickup in Maps'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openOrderInMaps(latestOrder, 'dropoff')}
+                      className="w-full py-2 text-xs font-bold text-teal-700 hover:text-teal-900 transition-colors"
+                    >
+                      {isRtl ? 'فتح موقع التنزيل في الخرائط' : 'Open drop-off in Maps'}
                     </button>
                   </div>
                 ) : (
+                  <>
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     <button 
                       type="button"
@@ -1900,17 +1919,25 @@ const DriverDashboard: React.FC = () => {
                                 : null)
                           )}
                     </button>
-                    <button 
+                    <button
                       type="button"
-                      onClick={() => {
-                        toast.info(isRtl ? 'تم تجاهل الطلب' : 'Order ignored');
-                        setLatestOrder(null);
-                      }}
-                      className="py-4 bg-gray-100 text-gray-600 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                      onClick={() => openOrderInMaps(latestOrder, 'auto')}
+                      className="py-4 bg-gray-100 text-teal-800 rounded-2xl font-bold hover:bg-gray-200 transition-all"
                     >
-                      {t('ignore')}
+                      {isRtl ? 'الخرائط' : 'Maps'}
                     </button>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.info(isRtl ? 'تم تجاهل الطلب' : 'Order ignored');
+                      setLatestOrder(null);
+                    }}
+                    className="w-full py-2 text-xs font-bold text-gray-400 hover:text-gray-600"
+                  >
+                    {t('ignore')}
+                  </button>
+                  </>
                 )}
               </div>
                       ) : (

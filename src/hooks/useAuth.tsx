@@ -593,12 +593,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...(input.extraData || {}),
     };
 
-    setProfile(newProfile);
-    saveCachedProfile(newProfile);
-    setUser(firebaseUser);
-    setPendingRegistration(null);
-    clearOnboarding();
-
     try {
       await establishUserSession(newProfile.role as LoginRole);
     } catch (error) {
@@ -620,9 +614,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await submitDriverRegistrationToApi(newProfile);
         } catch (retryError) {
           console.error('[auth] driver registration API upsert failed:', retryError);
+          throw retryError;
         }
       }
     }
+
+    setProfile(newProfile);
+    saveCachedProfile(newProfile);
+    setUser(firebaseUser);
+    setPendingRegistration(null);
+    clearOnboarding();
 
     return newProfile;
   };

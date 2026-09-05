@@ -224,6 +224,17 @@ export async function verifyPaymentReturn(params: {
   if (params.moyasarId) query.set('moyasarId', params.moyasarId);
   if (params.status) query.set('status', params.status);
 
+  if (!query.toString()) {
+    return {
+      success: false,
+      orderId: '',
+      paymentStatus: 'failed',
+      orderStatus: 'awaiting_payment',
+      startTracking: false,
+      message: 'Missing checkout identifiers',
+    };
+  }
+
   const publishIfPossible = async (): Promise<PaymentReturnStatus | null> => {
     if (!draftId) return null;
     return publishLocalCheckoutOrder({

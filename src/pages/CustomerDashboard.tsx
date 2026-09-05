@@ -34,9 +34,19 @@ import { TripChatNotifyButton } from '@/components/TripChatNotifyButton';
 import { useAuth } from '@/hooks/useAuth';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
+import {
+  persistPendingCheckoutDraftId,
+  clearPendingCheckoutDraftId,
+} from '@/lib/pendingCheckout';
+import { fetchMyOrders, payCheckoutDraftWithWallet } from '@/lib/customerOrdersApi';
+import {
+  loadRememberedCustomerOrderIds,
+  rememberCustomerOrderId,
+} from '@/lib/customerOrderMemory';
+import { openNativeMapsNavigation } from '@/lib/nativeMaps';
 import { subscribeToDriverLocation, type LiveDriverPosition } from '@/lib/liveTracking';
 import { LiveTrackingMap } from '@/components/LiveTrackingMap';
-import { getOrderTripCoordinates } from '@/lib/orderGeo';
+import { coerceLatLng, getOrderTripCoordinates } from '@/lib/orderGeo';
 import { OrderDriverCallModal } from '@/components/OrderDriverCallModal';
 import { OrderTripChatModal } from '@/components/OrderTripChatModal';
 import { resolveDriverPhoneFromOrder } from '@/lib/orderChat';
@@ -76,6 +86,7 @@ import {
   resolveDispatchWindow,
 } from '@/domain/dispatchMatching';
 import { isWaterTankerService } from '@/domain/waterTanker';
+import { buildClientOrdersPath } from '@/lib/authRouting';
 
 /** Water tanker is delivery-only (GPS = dropoff). All other services use GPS as pickup. */
 function isDeliveryOnlyService(service: LogisticsServiceType): boolean {
@@ -1070,9 +1081,39 @@ const CustomerDashboard: React.FC = () => {
     });
 
     try {
+      if (checkoutMethod === 'wallet') {
+        if (walletBalance < checkoutTotal) {
+          toast.error(
+            isRtl ? 'رصيد المحفظة غير كافٍ' : 'Insufficient wallet balance',
+            { id: 'payment-toast' }
+          );
+          setIsProcessing(false);
+          return;
+        }
+        persistPendingCheckoutDraftId(checkoutDraftId);
+        const paid = await payCheckoutDraftWithWallet(checkoutDraftId);
+        clearPendingCheckoutDraftId();
+        const uid = auth.currentUser?.uid || profile?.uid || '';
+        if (uid && paid.orderId) {
+          rememberCustomerOrderId(uid, paid.orderId);
+        }
+        toast.success(isRtl ? 'تم الدفع من المحفظة' : 'Paid from wallet', {
+          id: 'payment-toast',
+        });
+        setIsProcessing(false);
+        navigate(
+          buildClientOrdersPath({
+            placed: paid.orderId,
+            payment: 'success',
+          }),
+          { replace: true }
+        );
+        return;
+      }
+
       const intent = await createPaymentIntent(checkoutDraftId, checkoutMethod);
 
-      sessionStorage.setItem('pending_checkout_draft_id', checkoutDraftId);
+      persistPendingCheckoutDraftId(checkoutDraftId);
       // Keep UI on payment until the gateway page loads; order/searching only after success callback.
       toast.success(isRtl ? 'جاري توجيهك لصفحة الدفع...' : 'Redirecting to payment page...', {
         id: 'payment-toast',
@@ -1822,7 +1863,7 @@ const CustomerDashboard: React.FC = () => {
                      <h2 className="text-2xl font-bold">{t('payment_method')}</h2>
                    </div>
 
-                   <div className="grid grid-cols-3 gap-3">
+                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                      <PaymentMethod
                        active={checkoutMethod === 'mada'}
                        onClick={() => setCheckoutMethod('mada')}
@@ -1841,11 +1882,29 @@ const CustomerDashboard: React.FC = () => {
                        icon={<Navigation size={20} />}
                        label={t('apple_pay')}
                      />
+                     <PaymentMethod
+                       active={checkoutMethod === 'wallet'}
+                       onClick={() => {
+                         if (walletBalance < checkoutTotal) {
+                           toast.error(
+                             isRtl ? 'رصيد المحفظة غير كافٍ' : 'Insufficient wallet balance'
+                           );
+                           return;
+                         }
+                         setCheckoutMethod('wallet');
+                       }}
+                       icon={<Wallet size={20} />}
+                       label={t('wallet')}
+                     />
                    </div>
 
                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
                      <p className="text-sm font-bold text-slate-800">
-                       {checkoutMethod === 'applepay'
+                       {checkoutMethod === 'wallet'
+                         ? isRtl
+                           ? `سيتم خصم ${checkoutTotal.toFixed(2)} ر.س من محفظتك (الرصيد ${walletBalance.toFixed(2)} ر.س).`
+                           : `${checkoutTotal.toFixed(2)} SAR will be deducted from your wallet (balance ${walletBalance.toFixed(2)} SAR).`
+                         : checkoutMethod === 'applepay'
                          ? isRtl
                            ? 'ستُفتح صفحة Moyasar الآمنة — اختر Apple Pay إن كان متاحاً على جهازك.'
                            : 'You will open Moyasar’s secure page — choose Apple Pay if available on your device.'
@@ -2648,6 +2707,10 @@ type HistoryRow = {
   type?: string;
   pickupAddress?: string;
   dropoffAddress?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropoffLat?: number;
+  dropoffLng?: number;
   driverName?: string;
   paymentStatus?: string;
 };
@@ -2693,6 +2756,18 @@ function mapOrderHistoryRow(id: string, data: Record<string, unknown>): HistoryR
     type: details.type != null ? String(details.type) : undefined,
     pickupAddress: String(data.pickupAddress || pickup?.address || ''),
     dropoffAddress: String(data.dropoffAddress || destination?.address || ''),
+    pickupLat: coerceLatLng({ lat: data.pickupLat, lng: data.pickupLng })?.lat
+      ?? coerceLatLng(data.pickup)?.lat
+      ?? coerceLatLng(data.pickupCoords)?.lat,
+    pickupLng: coerceLatLng({ lat: data.pickupLat, lng: data.pickupLng })?.lng
+      ?? coerceLatLng(data.pickup)?.lng
+      ?? coerceLatLng(data.pickupCoords)?.lng,
+    dropoffLat: coerceLatLng({ lat: data.dropoffLat, lng: data.dropoffLng })?.lat
+      ?? coerceLatLng(data.destination)?.lat
+      ?? coerceLatLng(data.destinationCoords)?.lat,
+    dropoffLng: coerceLatLng({ lat: data.dropoffLat, lng: data.dropoffLng })?.lng
+      ?? coerceLatLng(data.destination)?.lng
+      ?? coerceLatLng(data.destinationCoords)?.lng,
     driverName: String(driver?.name || data.driverName || data.driverPhone || ''),
     paymentStatus: String(data.paymentStatus || ''),
   };
@@ -2746,6 +2821,10 @@ function mergeHistoryRows(rows: HistoryRow[]): HistoryRow[] {
       type: row.type || prev.type,
       pickupAddress: row.pickupAddress || prev.pickupAddress,
       dropoffAddress: row.dropoffAddress || prev.dropoffAddress,
+      pickupLat: row.pickupLat ?? prev.pickupLat,
+      pickupLng: row.pickupLng ?? prev.pickupLng,
+      dropoffLat: row.dropoffLat ?? prev.dropoffLat,
+      dropoffLng: row.dropoffLng ?? prev.dropoffLng,
       driverName: row.driverName || prev.driverName,
       paymentStatus: row.paymentStatus || prev.paymentStatus,
     });
@@ -2765,6 +2844,10 @@ function sessionFallbackRow(orderId: string): HistoryRow | null {
     serviceDetails: demo.serviceDetails || {},
     totalPrice: demo.financials?.customerTotal,
     price: demo.financials?.customerTotal,
+    pickupLat: demo.pickupLat,
+    pickupLng: demo.pickupLng,
+    dropoffLat: demo.dropoffLat,
+    dropoffLng: demo.dropoffLng,
   });
 }
 
@@ -2801,6 +2884,12 @@ const CustomerOrderHistory: React.FC<{
   }, [orders, selected]);
 
   useEffect(() => {
+    if (placedId && customerUid) {
+      rememberCustomerOrderId(customerUid, placedId);
+    }
+  }, [placedId, customerUid]);
+
+  useEffect(() => {
     let cancelled = false;
     const unsubs: Array<() => void> = [];
     const firestoreRows = new Map<string, HistoryRow>();
@@ -2830,6 +2919,7 @@ const CustomerOrderHistory: React.FC<{
     const remember = (id: string, data: Record<string, unknown>) => {
       if (matchUid && !ownerMatches(data, matchUid)) return;
       firestoreRows.set(id, mapOrderHistoryRow(id, data));
+      if (matchUid) rememberCustomerOrderId(matchUid, id);
       const prevLocal = loadLocalBroadcastOrders().find((entry) => entry.id === id)?.data;
       const incomingStatus = String(data.status || '');
       if (
@@ -2884,6 +2974,7 @@ const CustomerOrderHistory: React.FC<{
           [
             ...loadLocalBroadcastOrders().map((entry) => entry.id),
             ...firestoreRows.keys(),
+            ...loadRememberedCustomerOrderIds(ownerUid),
             placedId,
           ].filter(Boolean)
         );
@@ -2916,6 +3007,19 @@ const CustomerOrderHistory: React.FC<{
         return;
       }
       matchUid = ownerUid;
+
+      try {
+        const remote = await fetchMyOrders();
+        if (!cancelled) {
+          remote.forEach((row) => {
+            remember(row.id, row.data);
+            rememberCustomerOrderId(ownerUid, row.id);
+          });
+          publish();
+        }
+      } catch (error) {
+        console.warn('[CustomerOrderHistory] /api/orders/mine failed:', error);
+      }
 
       const q = query(
         collection(db, 'orders'),
@@ -2962,7 +3066,7 @@ const CustomerOrderHistory: React.FC<{
         )
       );
 
-      [...loadLocalBroadcastOrders().map((entry) => entry.id), placedId]
+      [...loadLocalBroadcastOrders().map((entry) => entry.id), placedId, ...loadRememberedCustomerOrderIds(ownerUid)]
         .filter(Boolean)
         .forEach((id) => listenDoc(id));
 
@@ -3150,6 +3254,45 @@ const CustomerOrderHistory: React.FC<{
                 {selected.amount.toFixed(2)} {t('sar')}
               </p>
             </div>
+
+            {(selected.pickupAddress || selected.dropoffAddress) && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openNativeMapsNavigation(
+                      selected.pickupLat != null && selected.pickupLng != null
+                        ? { lat: selected.pickupLat, lng: selected.pickupLng, label: selected.pickupAddress }
+                        : null
+                    ).then((ok) => {
+                      if (!ok) {
+                        toast.error(isRtl ? 'موقع الاستلام غير متوفر' : 'Pickup location is unavailable');
+                      }
+                    });
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-stone-50 font-bold text-xs text-teal-800"
+                >
+                  {isRtl ? 'خرائط الاستلام' : 'Maps: pickup'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openNativeMapsNavigation(
+                      selected.dropoffLat != null && selected.dropoffLng != null
+                        ? { lat: selected.dropoffLat, lng: selected.dropoffLng, label: selected.dropoffAddress }
+                        : null
+                    ).then((ok) => {
+                      if (!ok) {
+                        toast.error(isRtl ? 'موقع التنزيل غير متوفر' : 'Drop-off location is unavailable');
+                      }
+                    });
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-stone-50 font-bold text-xs text-teal-800"
+                >
+                  {isRtl ? 'خرائط التنزيل' : 'Maps: drop-off'}
+                </button>
+              </div>
+            )}
 
             <ol className="space-y-2">
               {(() => {
