@@ -1,4 +1,4 @@
-import { doc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, ensureFirebaseReady } from '@/lib/firebase';
 import { requestLocationPermission, watchDriverPosition, type GeoCoordinates } from '@/lib/geolocation';
 
@@ -16,6 +16,26 @@ export interface LiveDriverPosition {
 let stopWatch: (() => void) | null = null;
 let lastWriteMs = 0;
 const MIN_WRITE_INTERVAL_MS = 4000;
+
+export function parseLiveDriverPosition(
+  data: Record<string, unknown> | null | undefined
+): LiveDriverPosition | null {
+  if (!data) return null;
+  const lat = Number(data.lat ?? data.driverLat ?? data.latitude);
+  const lng = Number(data.lng ?? data.driverLng ?? data.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  const heading = data.heading != null ? Number(data.heading) : undefined;
+  const speed = data.speed != null ? Number(data.speed) : undefined;
+  return {
+    lat,
+    lng,
+    heading: heading != null && Number.isFinite(heading) ? heading : undefined,
+    speed: speed != null && Number.isFinite(speed) ? speed : undefined,
+    updatedAt: data.updatedAt ?? data.driverLocationUpdatedAt,
+  };
+}
 
 /**
  * Customer-side: subscribe to live driver position via Firestore snapshot.
@@ -38,24 +58,8 @@ export function subscribeToDriverLocation(
           onUpdate(null);
           return;
         }
-        const data = snap.data() as Record<string, unknown>;
-        const lat = Number(data.lat);
-        const lng = Number(data.lng);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          onUpdate(null);
-          return;
-        }
-        if (lat === 0 && lng === 0) {
-          onUpdate(null);
-          return;
-        }
-        onUpdate({
-          lat,
-          lng,
-          heading: data.heading != null ? Number(data.heading) : undefined,
-          speed: data.speed != null ? Number(data.speed) : undefined,
-          updatedAt: data.updatedAt,
-        });
+        const parsed = parseLiveDriverPosition(snap.data() as Record<string, unknown>);
+        onUpdate(parsed);
       },
       (error) => {
         console.warn('[liveTracking] subscribe failed:', error);
@@ -81,7 +85,7 @@ async function publishPosition(
 
   await ensureFirebaseReady();
 
-  await setDoc(
+  const trackingWrite = setDoc(
     doc(db, 'orders', orderId, 'tracking', LIVE_TRACKING_DOC_ID),
     {
       driverId,
@@ -93,6 +97,19 @@ async function publishPosition(
     },
     { merge: true }
   );
+
+  // Mirror coords onto the order so the customer snapshot has a fallback
+  // if the tracking/live listener is delayed or denied.
+  const orderWrite = updateDoc(doc(db, 'orders', orderId), {
+    driverLat: coords.lat,
+    driverLng: coords.lng,
+    driverLocationUpdatedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }).catch((error) => {
+    console.warn('[liveTracking] order GPS mirror failed:', error);
+  });
+
+  await Promise.all([trackingWrite, orderWrite]);
 }
 
 /**

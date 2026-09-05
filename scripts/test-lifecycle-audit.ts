@@ -8,6 +8,9 @@ import {
   isOpenOfferStatus,
   isTerminalOrderStatus,
   canRoleTransition,
+  canOpenLiveTracking,
+  isAwaitingDriverAccept,
+  getDriverNavPhase,
 } from '../src/domain/order-status.ts';
 import {
   applyLocalWalletCredit,
@@ -119,6 +122,18 @@ async function run(): Promise<void> {
   assert(
     canRoleTransition('driver', 'broadcasting', 'assigned'),
     'driver can accept a broadcasting offer'
+  );
+  assert(isAwaitingDriverAccept('broadcasting'), 'broadcasting waits for a driver');
+  assert(isAwaitingDriverAccept('searching_driver'), 'searching_driver waits for a driver');
+  assert(!canOpenLiveTracking('broadcasting'), 'searching customer cannot open live tracking');
+  assert(canOpenLiveTracking('assigned'), 'accepted order can open live tracking');
+  assert(canOpenLiveTracking('in_transit'), 'in-transit order can open live tracking');
+  assert(!canOpenLiveTracking('completed'), 'completed trip is not live tracking');
+  assert(getDriverNavPhase('assigned') === 'to_pickup', 'accepted trip navigates to pickup');
+  assert(getDriverNavPhase('in_transit') === 'to_dropoff', 'picked-up trip navigates to dropoff');
+  assert(
+    getDriverNavPhase('assigned', 'water_tanker') === 'to_dropoff',
+    'water tanker skips pickup and goes to dropoff'
   );
 
   const newest = '2026-08-16T10:00:00.000Z';

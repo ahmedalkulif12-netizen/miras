@@ -221,6 +221,16 @@ export function isOpenOfferStatus(status: string | undefined): boolean {
   );
 }
 
+/** Paid order still waiting for a driver to tap Accept (موافقة الطلب). */
+export function isAwaitingDriverAccept(status: string | undefined): boolean {
+  return isOpenOfferStatus(status);
+}
+
+/** Customer may open live tracking — driver is assigned and the trip is in progress. */
+export function canOpenLiveTracking(status: string | undefined): boolean {
+  return isActiveTripStatus(status);
+}
+
 export function isActiveTripStatus(status: string | undefined): boolean {
   if (!status) return false;
   return DRIVER_ACTIVE_STATUSES.includes(status) || DRIVER_ACTIVE_STATUSES.includes(normalizeOrderStatus(status));

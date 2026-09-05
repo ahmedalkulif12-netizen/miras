@@ -16,7 +16,7 @@ import {
   subscribeLocalBroadcastOrders,
   upsertLocalBroadcastOrder,
 } from '@/lib/localOrderBridge';
-import { mapOrderStatusToTrackingUI, normalizeOrderStatus, isActiveTripStatus, clientTimelineStep, preferFresherOrderStatus } from '@/domain/order-status';
+import { mapOrderStatusToTrackingUI, normalizeOrderStatus, isActiveTripStatus, clientTimelineStep, preferFresherOrderStatus, getDriverNavPhase, isAwaitingDriverAccept, canOpenLiveTracking } from '@/domain/order-status';
 import { FREE_SERVICE_FEE_ORDERS, buildTripFinancials, coerceMoney, normalizeTripFinancials, CUSTOMER_SERVICE_FEE_RATE, roundMoney } from '@/domain/financials';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { tryCountCustomerPaidOrders } from '@/lib/customerOrderCount';
@@ -44,7 +44,7 @@ import {
   rememberCustomerOrderId,
 } from '@/lib/customerOrderMemory';
 import { openNativeMapsNavigation } from '@/lib/nativeMaps';
-import { subscribeToDriverLocation, type LiveDriverPosition } from '@/lib/liveTracking';
+import { subscribeToDriverLocation, parseLiveDriverPosition, type LiveDriverPosition } from '@/lib/liveTracking';
 import { LiveTrackingMap } from '@/components/LiveTrackingMap';
 import { coerceLatLng, getOrderTripCoordinates } from '@/lib/orderGeo';
 import { OrderDriverCallModal } from '@/components/OrderDriverCallModal';
@@ -199,6 +199,7 @@ const CustomerDashboard: React.FC = () => {
   const [checkoutDraftId, setCheckoutDraftId] = useState<string | null>(null);
   const [checkoutMethod, setCheckoutMethod] = useState<CheckoutPaymentMethod>('mada');
   const [driverLocation, setDriverLocation] = useState<LiveDriverPosition | null>(null);
+  const [orderDriverGps, setOrderDriverGps] = useState<LiveDriverPosition | null>(null);
   const [dispatchTick, setDispatchTick] = useState(0);
   const [routeData, setRouteData] = useState<any>(null);
   const [showDriverCallModal, setShowDriverCallModal] = useState(false);
@@ -562,6 +563,8 @@ const CustomerDashboard: React.FC = () => {
         : incoming;
       activeOrderRef.current = merged;
       setActiveOrder(merged);
+      const fromOrder = parseLiveDriverPosition(merged as unknown as Record<string, unknown>);
+      setOrderDriverGps(fromOrder);
       const uiStatus = mapOrderStatusToTrackingUI(merged.status);
       setTrackingStatus(uiStatus);
       const trip = getOrderTripCoordinates(merged);
@@ -671,9 +674,14 @@ const CustomerDashboard: React.FC = () => {
     };
   }, [step, pendingOrderId, profile?.uid]);
 
-  // Live driver GPS — orders/{orderId}/tracking/live
+  // Live driver GPS — orders/{orderId}/tracking/live (plus order.driverLat fallback)
   useEffect(() => {
-    if (step !== 'tracking' || !pendingOrderId) return;
+    if (step !== 'tracking' || !pendingOrderId) {
+      setDriverLocation(null);
+      setOrderDriverGps(null);
+      return;
+    }
+    setDriverLocation(null);
     return subscribeToDriverLocation(pendingOrderId, setDriverLocation);
   }, [step, pendingOrderId]);
 
@@ -1914,9 +1922,10 @@ const CustomerDashboard: React.FC = () => {
                       const mapPickup = trip.pickup ?? pickupCoords;
                       const mapDropoff = trip.dropoff ?? destinationCoords;
                       const hasTripPins = Boolean(mapPickup || mapDropoff);
+                      const liveDriver = driverLocation || orderDriverGps;
+                      const navPhase = getDriverNavPhase(activeOrder.status, activeOrder);
                       const followDriver =
-                        Boolean(driverLocation) &&
-                        trackingStatus !== 'searching_driver';
+                        Boolean(liveDriver) && canOpenLiveTracking(activeOrder.status);
                       return (
                         <>
                     <LiveTrackingMap
@@ -1926,7 +1935,7 @@ const CustomerDashboard: React.FC = () => {
                           : mapPickup
                       }
                       dropoff={mapDropoff}
-                      driver={driverLocation}
+                      driver={liveDriver}
                       pickupLabel={t('pickup_point')}
                       dropoffLabel={
                         isWaterTankerService(activeOrder.serviceType)
@@ -1937,10 +1946,11 @@ const CustomerDashboard: React.FC = () => {
                       }
                       driverLabel={activeOrder.driver?.name || t('driver')}
                       followDriver={followDriver}
+                      navPhase={navPhase}
                     />
 
                     {/* Searching badge — real map pins already mark pickup/dropoff */}
-                    {!driverLocation && trackingStatus === 'searching_driver' && (
+                    {!liveDriver && isAwaitingDriverAccept(activeOrder.status) && (
                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
                         <div className="bg-white/95 backdrop-blur px-4 py-2 rounded-full text-xs font-bold shadow-lg border border-stone-100 flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -1962,17 +1972,23 @@ const CustomerDashboard: React.FC = () => {
                       </div>
                     )}
 
-                    {followDriver && driverLocation && (
+                    {followDriver && liveDriver && (
                       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
                         <div className="bg-black/90 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
                           <Truck size={14} />
-                          {isRtl ? 'تتبع مباشر للسائق' : 'Live driver tracking'}
+                          {navPhase === 'to_dropoff'
+                            ? isRtl
+                              ? 'في الطريق إلى موقع التسليم'
+                              : 'En route to drop-off'
+                            : isRtl
+                              ? 'السائق متوجه إلى موقع الاستلام'
+                              : 'Driver heading to pickup'}
                         </div>
                       </div>
                     )}
 
                     {/* Fallback animated truck only when we lack coords and live GPS */}
-                    {trackingStatus !== 'searching_driver' && !driverLocation && !hasTripPins && (
+                    {canOpenLiveTracking(activeOrder.status) && !liveDriver && !hasTripPins && (
                       <motion.div
                         animate={{
                           x: trackingStatus === 'arrived' ? -100 : [0, -50, -100],
@@ -2574,15 +2590,6 @@ function historyStatusTone(status: string): string {
   return 'text-amber-600';
 }
 
-function isLiveTrackingStatus(status: string): boolean {
-  const normalized = normalizeOrderStatus(status);
-  return (
-    normalized === 'assigned' ||
-    normalized === 'driver_arrived' ||
-    normalized === 'in_transit'
-  );
-}
-
 function ownerMatches(data: Record<string, unknown>, uid: string): boolean {
   if (!uid) return true;
   return [data.userId, data.clientId, data.customerId].some((value) => String(value || '') === uid);
@@ -2958,7 +2965,25 @@ const CustomerOrderHistory: React.FC<{
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between w-full md:w-auto md:gap-12">
+                  <div className="flex items-center justify-between w-full md:w-auto md:gap-8">
+                    {(isAwaitingDriverAccept(order.status) || canOpenLiveTracking(order.status)) && (
+                      <span
+                        role={canOpenLiveTracking(order.status) ? 'button' : 'status'}
+                        aria-disabled={!canOpenLiveTracking(order.status)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!canOpenLiveTracking(order.status)) return;
+                          navigate(`/b2c/client?track=${encodeURIComponent(order.id)}`);
+                        }}
+                        className={`shrink-0 px-4 py-2 rounded-2xl text-[11px] font-black ${
+                          canOpenLiveTracking(order.status)
+                            ? 'bg-neutral-900 text-white hover:bg-black'
+                            : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {isRtl ? 'تتبع' : 'Track'}
+                      </span>
+                    )}
                     <div className="text-center md:text-right">
                       <p className="text-lg font-black">
                         {order.amount.toFixed(2)} {t('sar')}
@@ -3128,17 +3153,36 @@ const CustomerOrderHistory: React.FC<{
               ))}
             </ol>
 
-            {isLiveTrackingStatus(selected.status) ||
-            normalizeOrderStatus(selected.status) === 'broadcasting' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  navigate(`/b2c/client?track=${encodeURIComponent(selected.id)}`);
-                }}
-                className="w-full py-4 bg-neutral-900 text-white rounded-2xl font-black"
-              >
-                {isRtl ? 'تتبع الطلب' : 'Track order'}
-              </button>
+            {isAwaitingDriverAccept(selected.status) || canOpenLiveTracking(selected.status) ? (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={!canOpenLiveTracking(selected.status)}
+                  onClick={() => {
+                    if (!canOpenLiveTracking(selected.status)) {
+                      toast.info(
+                        isRtl
+                          ? 'التتبع المباشر يتاح بعد قبول السائق للطلب'
+                          : 'Live tracking opens after a driver accepts the order'
+                      );
+                      return;
+                    }
+                    navigate(`/b2c/client?track=${encodeURIComponent(selected.id)}`);
+                  }}
+                  className={`w-full py-4 rounded-2xl font-black transition-colors ${
+                    canOpenLiveTracking(selected.status)
+                      ? 'bg-neutral-900 text-white'
+                      : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                  }`}
+                >
+                  {isRtl ? 'تتبع الطلب' : 'Track order'}
+                </button>
+                {!canOpenLiveTracking(selected.status) ? (
+                  <p className={`text-[11px] font-bold text-stone-400 ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {t('tracking_waiting')}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
         </div>
