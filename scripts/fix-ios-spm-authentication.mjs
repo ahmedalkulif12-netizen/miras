@@ -103,6 +103,9 @@ if (!text.includes(`path: "${uniqueRelPath}"`)) {
 
 fs.writeFileSync(packageSwiftPath, text);
 
+text = injectFirebaseAuthForPhoneAuth(text);
+fs.writeFileSync(packageSwiftPath, text);
+
 if (!text.includes(`path: "${uniqueRelPath}"`)) {
   console.error(`Package.swift is missing path: "${uniqueRelPath}" for CapacitorFirebaseAuthentication.`);
   process.exit(1);
@@ -115,3 +118,59 @@ if (destStat.isSymbolicLink()) {
 }
 
 console.log(`SPM authentication is CapacitorFirebaseAuthentication (${uniqueRelPath}, Lite, no Google/Facebook SDKs).`);
+
+function injectFirebaseAuthForPhoneAuth(source) {
+  let next = source;
+  const sdkDep =
+    '.package(url: "https://github.com/firebase/firebase-ios-sdk.git", .upToNextMajor(from: "12.7.0")),';
+  if (!next.includes('firebase-ios-sdk.git')) {
+    next = next.replace(
+      '.package(url: "https://github.com/ionic-team/capacitor-swift-pm.git"',
+      `${sdkDep}\n        .package(url: "https://github.com/ionic-team/capacitor-swift-pm.git"`,
+    );
+  }
+  const authProduct = '.product(name: "FirebaseAuth", package: "firebase-ios-sdk"),';
+  const coreProduct = '.product(name: "FirebaseCore", package: "firebase-ios-sdk"),';
+  if (!next.includes(authProduct)) {
+    next = next.replace(
+      '.product(name: "CapacitorFirebaseAuthentication", package: "CapacitorFirebaseAuthentication"),',
+      `.product(name: "CapacitorFirebaseAuthentication", package: "CapacitorFirebaseAuthentication"),\n                ${authProduct}\n                ${coreProduct}`,
+    );
+  }
+
+  const handlerPath = path.join(destDir, 'ios', 'Plugin', 'Handlers', 'PhoneAuthProviderHandler.swift');
+  if (fs.existsSync(handlerPath)) {
+    let handler = fs.readFileSync(handlerPath, 'utf8');
+    if (!handler.includes('[PhoneAuth] Init native verifyPhoneNumber')) {
+      handler = handler.replace(
+        `    private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
+        PhoneAuthProvider.provider()
+            .verifyPhoneNumber(options.getPhoneNumber(), uiDelegate: nil) { verificationID, error in
+                if let error = error {
+                    self.pluginImplementation.handlePhoneVerificationFailed(error)
+                } else {
+                    self.pluginImplementation.handlePhoneCodeSent(verificationID ?? "")
+                }
+            }
+    }`,
+        `    private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
+        let phoneNumber = options.getPhoneNumber()
+        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \\(phoneNumber)")
+        PhoneAuthProvider.provider()
+            .verifyPhoneNumber(phoneNumber, uiDelegate: nil) { verificationID, error in
+                if let error = error {
+                    CAPLog.print("[PhoneAuth] verifyPhoneNumber failed \\(error.localizedDescription)")
+                    self.pluginImplementation.handlePhoneVerificationFailed(error)
+                } else {
+                    CAPLog.print("[PhoneAuth] Verification ID Received")
+                    self.pluginImplementation.handlePhoneCodeSent(verificationID ?? "")
+                }
+            }
+    }`,
+      );
+      fs.writeFileSync(handlerPath, handler);
+    }
+  }
+
+  return next;
+}

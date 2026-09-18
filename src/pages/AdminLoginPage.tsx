@@ -10,8 +10,9 @@ import { usePostLoginRedirect } from '@/hooks/usePostLoginRedirect';
 import { getRoleHomePath } from '@/lib/authRouting';
 import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { AdminAccessDeniedError, isAuthorizedAdminPhone } from '@/lib/adminAuth';
-import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
+import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
+import { logPhoneAuth } from '@/lib/nativePhoneAuth';
 import { DevBypassPanel } from '@/components/DevBypassPanel';
 import { APP_ROLES } from '@/domain/user-schema';
 import { useTranslation } from 'react-i18next';
@@ -35,6 +36,7 @@ const AdminLoginPage: React.FC = () => {
 
   useEffect(() => {
     if (hasPendingOtp) {
+      logPhoneAuth('Navigating to OTP');
       setStep('otp');
     }
   }, [hasPendingOtp]);
@@ -69,16 +71,18 @@ const AdminLoginPage: React.FC = () => {
 
     try {
       setIsSubmitting(true);
-      // Normalize once so Auth always receives E.164 (+9665…).
+      logPhoneAuth('Init');
       const phoneE164 = toFirebasePhoneE164(phone);
-      // Client gate — server still enforces the same allowlist.
+      logPhoneAuth('E164 Formatted', phoneE164);
       if (!isAuthorizedAdminPhone(phoneE164)) {
         toast.error('This phone number is not authorized for Miras Admin');
         return;
       }
       await loginAdminWithPhone(phoneE164);
+      logPhoneAuth('Navigating to OTP');
       setStep('otp');
       setResendCooldown(30);
+      setIsSubmitting(false);
       toast.success('Verification code sent');
     } catch (error) {
       if (error instanceof AdminAccessDeniedError) {

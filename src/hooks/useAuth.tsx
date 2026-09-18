@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { onAuthStateChanged, signInAnonymously, signOut, type User } from 'firebase/auth';
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
 import { sendPhoneOtp, confirmPhoneOtp, resetPhoneAuthFlow } from '@/lib/phoneAuth';
+import { logPhoneAuth, shouldUseNativeIosPhoneAuth } from '@/lib/nativePhoneAuth';
 import {
   loadCachedProfile,
   saveCachedProfile,
@@ -344,7 +345,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * User must explicitly logout before logging in again.
    */
   const assertCanRequestOtp = async (): Promise<void> => {
-    await ensureFirebaseReady();
+    if (shouldUseNativeIosPhoneAuth()) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timer = window.setTimeout(() => {
+            reject(Object.assign(new Error('FIREBASE_READY_TIMEOUT'), { code: 'FIREBASE_READY_TIMEOUT' }));
+          }, 4_000);
+          void ensureFirebaseReady().then(
+            () => {
+              window.clearTimeout(timer);
+              resolve();
+            },
+            (error) => {
+              window.clearTimeout(timer);
+              reject(error);
+            }
+          );
+        });
+      } catch (error) {
+        console.warn(
+          '[PhoneAuth] Init: Firebase ready timed out — continuing native OTP without waiting for App Check',
+          error
+        );
+      }
+    } else {
+      await ensureFirebaseReady();
+    }
     const current = auth.currentUser;
     if (!current) {
       return;
@@ -432,6 +458,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     saveLoginIntent(role, phoneE164, mode);
     setPendingRegistration({ phone, phoneE164, role });
     setPendingAdminLogin(null);
+    logPhoneAuth('Navigating to OTP');
   };
 
   const loginAdminWithPhone = async (phone: string, recaptchaContainerId?: string) => {
@@ -443,6 +470,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const phoneE164 = await sendPhoneOtp(phone, recaptchaContainerId);
     setPendingAdminLogin({ phone, phoneE164 });
     setPendingRegistration(null);
+    logPhoneAuth('Navigating to OTP');
   };
 
   /** One SMS for the current pending phone — used by Resend OTP (cooldown enforced in UI). */

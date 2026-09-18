@@ -15,6 +15,7 @@ export const PhoneAuthRecaptcha: React.FC<{ id?: string }> = ({
 }) => {
   useEffect(() => {
     if (shouldUseNativeIosPhoneAuth()) {
+      console.info('[PhoneAuth] Init', 'skipping JS reCAPTCHA on native iOS');
       return;
     }
     ensurePersistentRecaptchaContainer(id);

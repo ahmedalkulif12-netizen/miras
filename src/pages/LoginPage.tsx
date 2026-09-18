@@ -16,8 +16,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import {
   PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
-  stabilizeRecaptchaForOtpEntry,
 } from '@/lib/phoneAuth';
+import { logPhoneAuth } from '@/lib/nativePhoneAuth';
 import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
@@ -196,6 +196,7 @@ const LoginPage: React.FC = () => {
 
   useEffect(() => {
     if (hasPendingOtp) {
+      logPhoneAuth('Navigating to OTP');
       setStep('otp');
     }
   }, [hasPendingOtp]);
@@ -260,16 +261,19 @@ const LoginPage: React.FC = () => {
 
     try {
       setIsSubmitting(true);
+      logPhoneAuth('Init');
       const formattedPhone = toFirebasePhoneE164(phone);
+      logPhoneAuth('E164 Formatted', formattedPhone);
       await loginWithPhone(
         formattedPhone,
         role,
         PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
         authMode ?? 'login'
       );
-      stabilizeRecaptchaForOtpEntry(PHONE_AUTH_RECAPTCHA_CONTAINER_ID);
+      logPhoneAuth('Navigating to OTP');
       setStep('otp');
       setResendCooldown(30);
+      setIsSubmitting(false);
       toast.success(isRtl ? 'تم إرسال رمز التحقق إلى جوالك' : 'Verification code sent to your phone');
     } catch (error: unknown) {
       console.error('[Login] OTP send failed:', getPhoneAuthErrorCode(error), error);

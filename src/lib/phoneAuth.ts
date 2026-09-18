@@ -27,6 +27,7 @@ import { getPhoneAuthErrorCode } from '@/lib/phoneAuthErrors';
 import { buildCaptchaHostnameHint, getBrowserHostname } from '@/lib/phoneAuthDomains';
 import { getClientPublicEnv } from '@/lib/publicEnv';
 import {
+  logPhoneAuth,
   resetNativePhoneAuth,
   sendNativeIosPhoneOtp,
   shouldUseNativeIosPhoneAuth,
@@ -36,7 +37,7 @@ export const PHONE_AUTH_RECAPTCHA_CONTAINER_ID = 'miras-recaptcha';
 
 /** Prevents hung App Check / Firebase SMS from locking the login UI forever. */
 const OTP_SEND_TIMEOUT_MS = 45_000;
-const OTP_SEND_NATIVE_TIMEOUT_MS = 90_000;
+const OTP_SEND_NATIVE_TIMEOUT_MS = 40_000;
 const OTP_CONFIRM_TIMEOUT_MS = 30_000;
 
 type WindowWithRecaptcha = Window & {
@@ -163,6 +164,11 @@ async function clearRecaptchaVerifier(): Promise<void> {
 async function createInvisibleVerifier(
   containerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID
 ): Promise<RecaptchaVerifier> {
+  if (shouldUseNativeIosPhoneAuth()) {
+    throw Object.assign(new Error('NATIVE_PHONE_AUTH_REQUIRED'), {
+      code: 'NATIVE_PHONE_AUTH_REQUIRED',
+    });
+  }
   await clearRecaptchaVerifier();
   ensurePersistentRecaptchaContainer(containerId);
 
@@ -213,6 +219,11 @@ export async function preparePhoneAuthRecaptcha(
   recaptchaContainerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
   _options?: { forceNew?: boolean }
 ): Promise<RecaptchaVerifier> {
+  if (shouldUseNativeIosPhoneAuth()) {
+    throw Object.assign(new Error('NATIVE_PHONE_AUTH_REQUIRED'), {
+      code: 'NATIVE_PHONE_AUTH_REQUIRED',
+    });
+  }
   return createInvisibleVerifier(recaptchaContainerId);
 }
 
@@ -253,6 +264,32 @@ async function sendPhoneOtpOnce(
     });
   }
 
+  if (useNativeIos) {
+    // Native verifyPhoneNumber must not wait on JS App Check / reCAPTCHA / App Attest.
+    // Attestation continues in the background; APNs fallback is handled by the iOS SDK.
+    void ensureFirebaseReady().catch((error) => {
+      console.warn('[PhoneAuth] Init: Firebase bootstrap still pending — continuing native OTP', error);
+    });
+    try {
+      activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
+      logPhoneAuth('Verification ID Received', activeConfirmation.verificationId);
+    } catch (error) {
+      const authError = preserveAuthError(error);
+      if (isAppCheckAttestationFailure(authError)) {
+        throw Object.assign(
+          new Error(
+            'Phone verification was blocked by App Check on this device. ' +
+              'Register the iOS app in Firebase Console → App Check (App Attest / DeviceCheck) ' +
+              'or set Authentication App Check to Monitor until TestFlight attestation works.'
+          ),
+          { code: 'auth/failed-precondition' }
+        );
+      }
+      throw authError;
+    }
+    return phoneE164;
+  }
+
   if (!shouldRelaxAuthAppCheck()) {
     await ensureFirebaseReady();
     try {
@@ -270,26 +307,6 @@ async function sendPhoneOtpOnce(
     }
   } else {
     await ensureFirebaseReady();
-  }
-
-  if (useNativeIos) {
-    try {
-      activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
-    } catch (error) {
-      const authError = preserveAuthError(error);
-      if (isAppCheckAttestationFailure(authError)) {
-        throw Object.assign(
-          new Error(
-            'Phone verification was blocked by App Check on this device. ' +
-              'Register the iOS app in Firebase Console → App Check (App Attest / DeviceCheck) ' +
-              'or set Authentication App Check to Monitor until TestFlight attestation works.'
-          ),
-          { code: 'auth/failed-precondition' }
-        );
-      }
-      throw authError;
-    }
-    return phoneE164;
   }
 
   const verifier = await createInvisibleVerifier(recaptchaContainerId);
@@ -336,9 +353,11 @@ export async function sendPhoneOtp(
   rawPhone: string,
   recaptchaContainerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID
 ): Promise<string> {
+  logPhoneAuth('Init');
   let phoneE164: string;
   try {
     phoneE164 = toFirebasePhoneE164(rawPhone);
+    logPhoneAuth('E164 Formatted', phoneE164);
   } catch (error) {
     throw preserveAuthError(error);
   }

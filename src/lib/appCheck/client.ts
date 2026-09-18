@@ -36,6 +36,27 @@ export class AppCheckInitError extends Error {
   }
 }
 
+/** App Attest / DeviceCheck must not block Phone OTP if the token never arrives. */
+const NATIVE_APP_CHECK_PROBE_TIMEOUT_MS = 6_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => {
+      reject(new AppCheckInitError(code, `Timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 /**
  * Capacitor iOS/Android WebView — never use web reCAPTCHA v3 here.
  * Also treats capacitor:// origins as native if the bridge reports late.
@@ -133,33 +154,38 @@ async function initNativeAppCheck(app: FirebaseApp): Promise<void> {
     }
   }
 
-  await FirebaseAppCheck.initialize(initOptions);
+  await withTimeout(
+    (async () => {
+      await FirebaseAppCheck.initialize(initOptions);
+      const first = await FirebaseAppCheck.getToken({ forceRefresh: true });
+      if (!first.token) {
+        throw new AppCheckInitError(
+          'APP_CHECK_NATIVE_TOKEN_MISSING',
+          `Native App Check (${nativePlatformLabel()}) did not return a token.`
+        );
+      }
 
-  const first = await FirebaseAppCheck.getToken({ forceRefresh: true });
-  if (!first.token) {
-    throw new AppCheckInitError(
-      'APP_CHECK_NATIVE_TOKEN_MISSING',
-      `Native App Check (${nativePlatformLabel()}) did not return a token.`
-    );
-  }
-
-  jsAppCheckInstance = initializeAppCheck(app, {
-    provider: new CustomProvider({
-      getToken: async () => {
-        const { token, expireTimeMillis } = await FirebaseAppCheck.getToken({
-          forceRefresh: false,
-        });
-        if (!token) {
-          throw new Error('Native App Check token empty');
-        }
-        return {
-          token,
-          expireTimeMillis: expireTimeMillis ?? Date.now() + 55 * 60 * 1000,
-        };
-      },
-    }),
-    isTokenAutoRefreshEnabled: true,
-  });
+      jsAppCheckInstance = initializeAppCheck(app, {
+        provider: new CustomProvider({
+          getToken: async () => {
+            const { token, expireTimeMillis } = await FirebaseAppCheck.getToken({
+              forceRefresh: false,
+            });
+            if (!token) {
+              throw new Error('Native App Check token empty');
+            }
+            return {
+              token,
+              expireTimeMillis: expireTimeMillis ?? Date.now() + 55 * 60 * 1000,
+            };
+          },
+        }),
+        isTokenAutoRefreshEnabled: true,
+      });
+    })(),
+    NATIVE_APP_CHECK_PROBE_TIMEOUT_MS,
+    'APP_CHECK_NATIVE_TIMEOUT'
+  );
 }
 
 async function initWebRecaptchaV3(app: FirebaseApp): Promise<void> {
