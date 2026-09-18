@@ -47,6 +47,11 @@ async function main() {
   if (!infoPlist.includes('com.ahmed.miras')) {
     failures.push('Info.plist URL scheme must include com.ahmed.miras');
   }
+  if (!infoPlist.includes('com.googleusercontent.apps.')) {
+    failures.push(
+      'Info.plist URL schemes must include the Firebase REVERSED_CLIENT_ID (com.googleusercontent.apps.…) for native iOS Phone Auth reCAPTCHA fallback'
+    );
+  }
   if (!infoPlist.includes('<string>comgooglemaps</string>')) {
     failures.push('Info.plist LSApplicationQueriesSchemes must include comgooglemaps for Google Maps navigation');
   }
@@ -91,6 +96,13 @@ async function main() {
   if (!capSpm.includes('path: "packages/CapacitorFirebaseAppCheck"')) {
     failures.push(
       'CapApp-SPM/Package.swift must point at packages/CapacitorFirebaseAppCheck (not node_modules/.../app-check)'
+    );
+  }
+  if (
+    !capSpm.includes('path: "packages/CapacitorFirebaseAuthentication"')
+  ) {
+    failures.push(
+      'CapApp-SPM/Package.swift must point at packages/CapacitorFirebaseAuthentication for native iOS Phone Auth'
     );
   }
   if (/path:\s*"[^"]*\/app-check"/.test(capSpm)) {

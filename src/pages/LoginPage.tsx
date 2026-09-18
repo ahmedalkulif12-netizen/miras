@@ -18,7 +18,7 @@ import {
   PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
   stabilizeRecaptchaForOtpEntry,
 } from '@/lib/phoneAuth';
-import { isValidSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
+import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
 import {
@@ -770,7 +770,7 @@ const LoginPage: React.FC = () => {
                     <input
                       type="tel"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                      onChange={(e) => setPhone(sanitizeSaudiPhoneInput(e.target.value))}
                       placeholder={t('phone_placeholder')}
                       className={`w-full ${isRtl ? 'pr-12 pl-4' : 'pl-12 pr-4'} py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800`}
                     />

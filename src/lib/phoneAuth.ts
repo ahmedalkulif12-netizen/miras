@@ -1,8 +1,9 @@
 /**
- * Firebase Phone Auth — invisible RecaptchaVerifier + signInWithPhoneNumber.
+ * Firebase Phone Auth.
  *
- * Keep this path simple: malformed captcha tokens usually come from over-hiding
- * the widget (opacity/visibility/pointer-events) or mixing test-mode with a real verifier.
+ * Web: invisible RecaptchaVerifier + signInWithPhoneNumber.
+ * iOS Capacitor: CapacitorFirebaseAuthentication native verifyPhoneNumber, then
+ * JS signInWithCredential so Firestore keeps the web Auth session.
  *
  * SMS is sent at most once per in-flight request for a given E.164 number
  * (double-clicks / React Strict Mode coalesce; different numbers wait then send once).
@@ -25,11 +26,17 @@ import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { getPhoneAuthErrorCode } from '@/lib/phoneAuthErrors';
 import { buildCaptchaHostnameHint, getBrowserHostname } from '@/lib/phoneAuthDomains';
 import { getClientPublicEnv } from '@/lib/publicEnv';
+import {
+  resetNativePhoneAuth,
+  sendNativeIosPhoneOtp,
+  shouldUseNativeIosPhoneAuth,
+} from '@/lib/nativePhoneAuth';
 
 export const PHONE_AUTH_RECAPTCHA_CONTAINER_ID = 'miras-recaptcha';
 
 /** Prevents hung App Check / Firebase SMS from locking the login UI forever. */
 const OTP_SEND_TIMEOUT_MS = 45_000;
+const OTP_SEND_NATIVE_TIMEOUT_MS = 90_000;
 const OTP_CONFIRM_TIMEOUT_MS = 30_000;
 
 type WindowWithRecaptcha = Window & {
@@ -107,6 +114,16 @@ function placeContainerOffscreen(container: HTMLElement): void {
 export function ensurePersistentRecaptchaContainer(
   containerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID
 ): HTMLElement {
+  if (shouldUseNativeIosPhoneAuth()) {
+    let container = document.getElementById(containerId);
+    if (!container) {
+      container = document.createElement('div');
+      container.id = containerId;
+      container.setAttribute('data-native-ios-phone-auth', 'true');
+      document.body.appendChild(container);
+    }
+    return container;
+  }
   let container = document.getElementById(containerId);
   if (!container) {
     container = document.createElement('div');
@@ -184,6 +201,10 @@ export async function resetRecaptchaVerifier(
 export async function resetPhoneAuthFlow(): Promise<void> {
   activeConfirmation = null;
   confirmInFlight = null;
+  await resetNativePhoneAuth();
+  if (shouldUseNativeIosPhoneAuth()) {
+    return;
+  }
   await clearRecaptchaVerifier();
   ensurePersistentRecaptchaContainer();
 }
@@ -206,8 +227,11 @@ async function sendPhoneOtpOnce(
   phoneE164: string,
   recaptchaContainerId: string
 ): Promise<string> {
+  const useNativeIos = shouldUseNativeIosPhoneAuth();
+
   // Firebase Auth policy: hostname "localhost" is not allowed for Phone Auth.
-  if (typeof window !== 'undefined') {
+  // Native iOS uses CapacitorFirebaseAuthentication and never hits this WebView host check.
+  if (!useNativeIos && typeof window !== 'undefined') {
     const host = window.location.hostname;
     if (host === 'localhost' || host === '[::1]') {
       throw Object.assign(
@@ -246,6 +270,26 @@ async function sendPhoneOtpOnce(
     }
   } else {
     await ensureFirebaseReady();
+  }
+
+  if (useNativeIos) {
+    try {
+      activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
+    } catch (error) {
+      const authError = preserveAuthError(error);
+      if (isAppCheckAttestationFailure(authError)) {
+        throw Object.assign(
+          new Error(
+            'Phone verification was blocked by App Check on this device. ' +
+              'Register the iOS app in Firebase Console → App Check (App Attest / DeviceCheck) ' +
+              'or set Authentication App Check to Monitor until TestFlight attestation works.'
+          ),
+          { code: 'auth/failed-precondition' }
+        );
+      }
+      throw authError;
+    }
+    return phoneE164;
   }
 
   const verifier = await createInvisibleVerifier(recaptchaContainerId);
@@ -329,15 +373,19 @@ export async function sendPhoneOtp(
     try {
       return await withTimeout(
         sendPhoneOtpOnce(phoneE164, recaptchaContainerId),
-        OTP_SEND_TIMEOUT_MS,
+        shouldUseNativeIosPhoneAuth() ? OTP_SEND_NATIVE_TIMEOUT_MS : OTP_SEND_TIMEOUT_MS,
         'OTP_SEND_TIMEOUT'
       );
     } catch (error) {
       activeConfirmation = null;
       const authError = preserveAuthError(error);
       console.error('[phoneAuth] sendPhoneOtp failed:', getPhoneAuthErrorCode(authError), authError);
-      await clearRecaptchaVerifier();
-      ensurePersistentRecaptchaContainer(recaptchaContainerId);
+      if (shouldUseNativeIosPhoneAuth()) {
+        await resetNativePhoneAuth();
+      } else {
+        await clearRecaptchaVerifier();
+        ensurePersistentRecaptchaContainer(recaptchaContainerId);
+      }
       throw authError;
     }
   })();
@@ -393,6 +441,7 @@ export async function confirmPhoneOtp(otp: string): Promise<User> {
       );
       activeConfirmation = null;
       await clearRecaptchaVerifier();
+      await resetNativePhoneAuth();
       return credential.user;
     } catch (error) {
       const authError = preserveAuthError(error);
@@ -401,6 +450,7 @@ export async function confirmPhoneOtp(otp: string): Promise<User> {
       if (isExpiredOtpError(errCode) || errCode === 'OTP_CONFIRM_TIMEOUT') {
         activeConfirmation = null;
         await clearRecaptchaVerifier();
+        await resetNativePhoneAuth();
       }
       throw authError;
     }

@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { motion } from 'motion/react';
 import { usePostLoginRedirect } from '@/hooks/usePostLoginRedirect';
 import { getRoleHomePath } from '@/lib/authRouting';
-import { isValidSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
+import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { AdminAccessDeniedError, isAuthorizedAdminPhone } from '@/lib/adminAuth';
 import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
@@ -208,7 +208,7 @@ const AdminLoginPage: React.FC = () => {
                 <input
                   type="tel"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setPhone(sanitizeSaudiPhoneInput(e.target.value))}
                   placeholder="05xxxxxxxx"
                   className="w-full pr-12 pl-4 py-4 rounded-2xl border border-stone-200 outline-none font-medium"
                 />

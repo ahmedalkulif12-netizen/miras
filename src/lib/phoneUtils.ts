@@ -4,12 +4,31 @@
 
 const SAUDI_COUNTRY = '+966';
 
+/** Convert Arabic-Indic / Eastern Arabic digits to ASCII 0-9. */
+export function toAsciiDigits(input: string): string {
+  return String(input || '')
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776));
+}
+
+/** Keep typed login fields numeric while still accepting pasted +966 / Arabic digits. */
+export function sanitizeSaudiPhoneInput(input: string): string {
+  return toAsciiDigits(input).replace(/\D/g, '');
+}
+
 /** Strip non-digits and normalize to E.164 (+9665XXXXXXXX). */
 export function normalizeSaudiPhone(input: string): string {
-  const digits = input.replace(/\D/g, '');
+  let digits = sanitizeSaudiPhoneInput(input);
 
-  if (digits.startsWith('966') && digits.length >= 12) {
-    return `+${digits}`;
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith('966')) {
+    const national = digits.slice(3).replace(/^0+/, '');
+    if (national.length === 9 && national.startsWith('5')) {
+      return `${SAUDI_COUNTRY}${national}`;
+    }
   }
 
   if (digits.startsWith('05') && digits.length === 10) {

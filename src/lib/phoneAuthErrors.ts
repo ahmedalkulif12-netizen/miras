@@ -75,7 +75,9 @@ export function getPhoneAuthErrorMessage(
     'auth/invalid-api-key':
       'Firebase API key rejected for Authentication. In Google Cloud Console → Credentials → Browser key → API restrictions, enable Identity Toolkit API and Token Service API.',
     'auth/internal-error':
-      'Phone verification failed (internal error). Confirm the number is E.164 (+9665XXXXXXXX), refresh the page, and retry. Check reCAPTCHA and App Check settings for localhost.',
+      'Phone verification failed (internal error). Confirm the number is E.164 (+9665XXXXXXXX), refresh the page, and retry. On iPhone, SMS is sent by the native Firebase plugin — not WebView reCAPTCHA.',
+    NATIVE_PHONE_AUTH_UNAVAILABLE:
+      'Native iOS phone login is not available in this build. Reinstall the TestFlight build and try again.',
     'auth/invalid-verification-code': 'Invalid verification code. Check the SMS and try again.',
     'auth/code-expired': 'This code has expired. Request a new OTP.',
     'auth/session-expired': 'Verification session expired. Request a new OTP.',
@@ -131,7 +133,9 @@ export function getPhoneAuthErrorMessage(
     'auth/invalid-api-key':
       'مفتاح Firebase مرفوض لخدمة المصادقة. في Google Cloud Console فعّل Identity Toolkit API و Token Service API لمفتاح المتصفح.',
     'auth/internal-error':
-      'فشل التحقق من الجوال (خطأ داخلي). تأكد من صيغة الرقم (+9665XXXXXXXX) وحدّث الصفحة وحاول مجدداً.',
+      'فشل التحقق من الجوال (خطأ داخلي). تأكد من صيغة الرقم (+9665XXXXXXXX) وحدّث الصفحة وحاول مجدداً. على الآيفون يُرسل الرمز عبر المكوّن الأصلي وليس reCAPTCHA في المتصفح.',
+    NATIVE_PHONE_AUTH_UNAVAILABLE:
+      'تسجيل الدخول بالجوال غير متاح في هذا الإصدار. ثبّت نسخة TestFlight مجدداً ثم أعد المحاولة.',
     'auth/invalid-verification-code': 'رمز التحقق غير صحيح. راجع الرسالة وحاول مجدداً.',
     'auth/code-expired': 'انتهت صلاحية الرمز. اطلب رمزاً جديداً.',
     'auth/session-expired': 'انتهت جلسة التحقق. اطلب رمزاً جديداً.',

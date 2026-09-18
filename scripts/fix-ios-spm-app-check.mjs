@@ -94,7 +94,10 @@ if (fs.existsSync(iosPkgPath)) {
   }
 }
 text = text.replace(/path:\s*"([^"]+)"/g, (full, value) => {
-  if (String(value).includes('@capacitor-firebase/') || /(^|\/)app-check$/.test(String(value))) {
+  if (
+    String(value).includes('@capacitor-firebase/app-check') ||
+    /(^|\/)app-check$/.test(String(value))
+  ) {
     return copiedPath;
   }
   return full;

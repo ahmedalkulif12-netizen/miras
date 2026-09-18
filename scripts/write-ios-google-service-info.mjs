@@ -77,4 +77,19 @@ ${extra.join('\n')}
 const dest = path.join(root, 'ios', 'App', 'App', 'GoogleService-Info.plist');
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, xml);
+
+if (reversedClientId) {
+  const infoPath = path.join(root, 'ios', 'App', 'App', 'Info.plist');
+  if (fs.existsSync(infoPath)) {
+    let infoXml = fs.readFileSync(infoPath, 'utf8');
+    if (!infoXml.includes(`<string>${reversedClientId}</string>`)) {
+      infoXml = infoXml.replace(
+        /(<key>CFBundleURLSchemes<\/key>\s*<array>)/,
+        `$1\n\t\t\t\t<string>${xmlEscape(reversedClientId)}</string>`,
+      );
+      fs.writeFileSync(infoPath, infoXml);
+    }
+  }
+}
+
 console.log('Wrote ios/App/App/GoogleService-Info.plist for com.ahmed.miras');

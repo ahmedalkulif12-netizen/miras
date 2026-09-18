@@ -94,6 +94,8 @@ workflows:
           test -f dist/index.html
           test -d ios/App/CapApp-SPM/packages/CapacitorFirebaseAppCheck
           grep -q 'path: "packages/CapacitorFirebaseAppCheck"' ios/App/CapApp-SPM/Package.swift
+          test -d ios/App/CapApp-SPM/packages/CapacitorFirebaseAuthentication
+          grep -q 'path: "packages/CapacitorFirebaseAuthentication"' ios/App/CapApp-SPM/Package.swift
           node scripts/verify-ios-store.mjs
       - name: Install signing certificates and profiles
         script: |
