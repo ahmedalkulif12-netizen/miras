@@ -47,6 +47,23 @@ async function main() {
   if (!infoPlist.includes('com.ahmed.miras')) {
     failures.push('Info.plist URL scheme must include com.ahmed.miras');
   }
+  if (!infoPlist.includes('<string>comgooglemaps</string>')) {
+    failures.push('Info.plist LSApplicationQueriesSchemes must include comgooglemaps for Google Maps navigation');
+  }
+  const nativeMaps = read('src/lib/nativeMaps.ts');
+  if (nativeMaps.includes('maps.apple.com') || /maps:0,0/.test(nativeMaps)) {
+    failures.push('nativeMaps.ts must not open Apple Maps — iOS navigation must use Google Maps');
+  }
+  if (!nativeMaps.includes('https://www.google.com/maps/dir/?api=1&destination=')) {
+    failures.push('nativeMaps.ts must use the Google Maps dir URL (api=1&destination=)');
+  }
+  if (!pbxproj.includes('MARKETING_VERSION = 1.0.1;')) {
+    failures.push('Xcode MARKETING_VERSION must be 1.0.1 for this App Store submission');
+  }
+  const iosBuild = Number((pbxproj.match(/CURRENT_PROJECT_VERSION = (\d+);/) || [])[1] || 0);
+  if (!Number.isFinite(iosBuild) || iosBuild < 2) {
+    failures.push('Xcode CURRENT_PROJECT_VERSION must be >= 2 (1.0 already used build 1)');
+  }
   if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>') || !infoPlist.includes('<false/>')) {
     failures.push('Info.plist must set ITSAppUsesNonExemptEncryption to false');
   }
@@ -102,13 +119,12 @@ async function main() {
   }
 
   const reviewNotes = read('fastlane/metadata/ios/review_information/notes.txt');
-  const demoUser = read('fastlane/metadata/ios/review_information/demo_user.txt').trim();
-  const demoOtp = read('fastlane/metadata/ios/review_information/demo_password.txt').trim();
-  if (demoUser !== '+966500000000' || demoOtp !== '123456') {
-    failures.push('App Review demo login must be +966500000000 / 123456');
-  }
-  if (reviewNotes.includes('REPLACE_WITH_FIREBASE_TEST_PHONE')) {
-    failures.push('App Review notes still contain Firebase test-phone placeholders');
+  if (
+    reviewNotes.includes('no SMS is sent') ||
+    reviewNotes.includes('static test account') ||
+    reviewNotes.includes('+966500000000')
+  ) {
+    failures.push('App Review notes still advertise the removed mock OTP login');
   }
 
   if (failures.length) {

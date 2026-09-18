@@ -1,1 +1,1 @@
-First App Store release of Miras. Book cargo and truck services in Saudi Arabia, pay with Moyasar, and track deliveries in real time.
+Google Maps turn-by-turn for pickup and drop-off, plus reliability and review-queue fixes for drivers and operations.

@@ -1,4 +1,5 @@
-# Codemagic CI — Capacitor iOS → TestFlight
+# Codemagic CI — Capacitor iOS → App Store Connect (TestFlight)
+# Production marketing version: 1.0.1 (Google Maps driver navigation + store fixes).
 #
 # Layout (no CocoaPods workspace):
 #   ios/App/App.xcodeproj
@@ -38,6 +39,8 @@ workflows:
         XCODE_SCHEME: App
         BUNDLE_ID: com.ahmed.miras
         DEVELOPMENT_TEAM: 4TRJXRYK8A
+        # Must match Xcode MARKETING_VERSION. Codemagic used to hardcode 1.0.
+        IOS_MARKETING_VERSION: "1.0.1"
         # Optional override. Build number lookup uses --bundle-id when this is unset.
       # Capacitor 8.5 loads capacitor.config.ts; Node 22.6+ / current 22 LTS.
       node: 22
@@ -63,19 +66,25 @@ workflows:
           fi
       - name: Verify miras_client production env
         script: |
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
+          export VITE_MIRAS_DEPLOY_ENV="${VITE_MIRAS_DEPLOY_ENV:-production}"
+          export VITE_APP_CHECK_DISABLED=false
           npx tsx scripts/verify-store-client.ts --require-ios-plist
       - name: Build web assets and sync Capacitor iOS
         script: |
           set -euo pipefail
-          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
+          export VITE_MIRAS_DEPLOY_ENV="${VITE_MIRAS_DEPLOY_ENV:-production}"
+          export VITE_APP_CHECK_DISABLED=false
           export VITE_IOS_TEAM_ID="${VITE_IOS_TEAM_ID:-$DEVELOPMENT_TEAM}"
           # cap:sync:ios = Vite SPA (not npm run build/server) + cap sync + SPM fix.
           npm run cap:sync:ios
           test -f dist/index.html
           test -d ios/App/CapApp-SPM/packages/CapacitorFirebaseAppCheck
           grep -q 'path: "packages/CapacitorFirebaseAppCheck"' ios/App/CapApp-SPM/Package.swift
+          node scripts/verify-ios-store.mjs
       - name: Install signing certificates and profiles
         script: |
           xcode-project use-profiles \
@@ -106,9 +115,14 @@ workflows:
           if [ "$NEW_BUILD" -lt "${BUILD_NUMBER:-1}" ]; then
             NEW_BUILD=$BUILD_NUMBER
           fi
+          # 1.0 used CFBundleVersion 1 — App Store requires a strictly higher build.
+          if [ "$NEW_BUILD" -lt 2 ]; then
+            NEW_BUILD=2
+          fi
+          MARKETING="${IOS_MARKETING_VERSION:-1.0.1}"
           agvtool new-version -all "$NEW_BUILD"
-          agvtool new-marketing-version "1.0"
-          echo "Using CFBundleVersion=$NEW_BUILD"
+          agvtool new-marketing-version "$MARKETING"
+          echo "Using CFBundleShortVersionString=$MARKETING CFBundleVersion=$NEW_BUILD"
       - name: Resolve packages and verify Xcode can read settings
         script: |
           set -euo pipefail
@@ -179,6 +193,8 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+        # Uploads the signed IPA to App Store Connect. Submit version 1.0.1
+        # for App Review in ASC after TestFlight processing completes.
         submit_to_app_store: false
 
   android-internal:
@@ -191,13 +207,14 @@ workflows:
       vars:
         PACKAGE_NAME: com.miras.app
       node: 22
-      java: 17
+      java: 21
     scripts:
       - name: Require Play signing fingerprints and client env
         script: |
-          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
+          export VITE_MIRAS_DEPLOY_ENV="${VITE_MIRAS_DEPLOY_ENV:-production}"
           npx tsx scripts/verify-store-client.ts --require-app-links
       - name: Install npm dependencies
         script: |
@@ -216,9 +233,10 @@ workflows:
       - name: Build web and sync Android
         script: |
           set -euo pipefail
-          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
+          export VITE_MIRAS_DEPLOY_ENV="${VITE_MIRAS_DEPLOY_ENV:-production}"
           npm run cap:sync:android
           test -f dist/index.html
       - name: Assemble release bundle

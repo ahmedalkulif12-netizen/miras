@@ -1,7 +1,9 @@
 /**
  * Open turn-by-turn navigation on web and Capacitor (iOS/Android).
- * Native shells must use geo / maps URL schemes — `window.open(https)` is a no-op
- * or a blocked popup inside WKWebView and Android WebView.
+ * Always Google Maps — never Apple Maps. Native shells must use
+ * `comgooglemaps://` / `geo:` / `google.navigation:` schemes because
+ * `window.open(https)` is often a no-op inside WKWebView / Android WebView,
+ * and `location.href` to google.com is trapped by Capacitor allowNavigation.
  */
 
 import { Capacitor } from '@capacitor/core';
@@ -51,39 +53,35 @@ function destinationQuery(target: MapsNavTarget): { latlng: string | null; addre
   };
 }
 
-function googleDirUrl(target: MapsNavTarget): string {
+function destinationParam(target: MapsNavTarget): string {
   const dest = destinationQuery(target);
-  const q = dest.latlng || encodeURIComponent(dest.address || 'Destination');
-  return `https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=driving`;
+  return dest.latlng || encodeURIComponent(dest.address || 'Destination');
+}
+
+/** Official Google Maps URLs API — opens the app when installed, otherwise the web UI. */
+export function googleMapsDirUrl(target: MapsNavTarget): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${destinationParam(target)}&travelmode=driving`;
+}
+
+function googleMapsAppUrl(target: MapsNavTarget): string {
+  return `comgooglemaps://?daddr=${destinationParam(target)}&directionsmode=driving`;
 }
 
 function androidIntentUrl(target: MapsNavTarget): string {
-  const dest = destinationQuery(target);
-  const daddr = dest.latlng || encodeURIComponent(dest.address || '');
+  const daddr = destinationParam(target);
   return (
     `intent://maps.google.com/maps?daddr=${daddr}` +
     `&directionsmode=driving#Intent;scheme=https;package=com.google.android.apps.maps;end`
   );
 }
 
-function candidateUrls(target: MapsNavTarget, platform: string): string[] {
+export function mapsNavigationUrls(target: MapsNavTarget, platform: string): string[] {
   const dest = destinationQuery(target);
-  const https = googleDirUrl(target);
+  const https = googleMapsDirUrl(target);
   const encodedAddress = dest.address ? encodeURIComponent(dest.address) : '';
 
   if (platform === 'ios') {
-    return [
-      dest.latlng
-        ? `maps://maps.apple.com/?daddr=${dest.latlng}&dirflg=d`
-        : `maps://maps.apple.com/?daddr=${encodedAddress}&dirflg=d`,
-      dest.latlng
-        ? `comgooglemaps://?daddr=${dest.latlng}&directionsmode=driving`
-        : `comgooglemaps://?daddr=${encodedAddress}&directionsmode=driving`,
-      dest.latlng
-        ? `maps:0,0?q=${dest.latlng}(${dest.label})`
-        : `maps:0,0?q=${encodedAddress}`,
-      https,
-    ];
+    return [googleMapsAppUrl(target), https];
   }
 
   if (platform === 'android') {
@@ -103,13 +101,25 @@ function candidateUrls(target: MapsNavTarget, platform: string): string[] {
 }
 
 function launchScheme(url: string): void {
-  // Capacitor WebViews intercept geo / maps / google.navigation schemes.
-  // window.open(https) is a no-op; assigning location launches the native app.
+  // Capacitor WebViews intercept comgooglemaps / geo / google.navigation schemes.
+  // Assigning location launches the native Google Maps app.
   window.location.href = url;
 }
 
+function launchExternalHttps(url: string): void {
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (opened) return;
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
 /**
- * Launch Google Maps / Apple Maps navigation to a lat/lng or address.
+ * Launch Google Maps navigation to a lat/lng or address.
  * Returns false when neither coordinates nor an address is available.
  */
 export async function openNativeMapsNavigation(
@@ -134,20 +144,29 @@ export async function openNativeMapsNavigation(
     isNative = false;
   }
 
-  const urls = candidateUrls(normalized, isNative ? platform : 'web');
+  const href = googleMapsDirUrl(normalized);
 
   if (isNative) {
+    const urls = mapsNavigationUrls(normalized, platform);
     const primary = urls[0];
     if (!primary) return false;
     try {
       launchScheme(primary);
+      if (platform === 'ios') {
+        // comgooglemaps:// is a no-op if Google Maps is not installed.
+        // Do not assign location.href to the https URL — allowNavigation
+        // would load Google Maps inside the Capacitor WebView.
+        window.setTimeout(() => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+          launchExternalHttps(href);
+        }, 700);
+      }
       return true;
     } catch {
       return false;
     }
   }
 
-  const href = googleDirUrl(normalized);
   const opened = window.open(href, '_blank', 'noopener,noreferrer');
   if (!opened) {
     window.location.href = href;
