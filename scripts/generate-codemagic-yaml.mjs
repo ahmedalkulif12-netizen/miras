@@ -1,4 +1,90 @@
-# Codemagic CI — Capacitor iOS → App Store Connect (TestFlight)
+/**
+ * Generate a self-contained Codemagic iOS workflow from local production client files.
+ * Reads gitignored `.env.production` + `GoogleService-Info.plist` and writes `codemagic.yaml`.
+ * Does not print secret values.
+ *
+ * Usage: node scripts/generate-codemagic-yaml.mjs
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function readEnvFile(rel) {
+  const filePath = path.join(root, rel);
+  if (!fs.existsSync(filePath)) return {};
+  const out = {};
+  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 0) continue;
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
+  }
+  return out;
+}
+
+function plistString(xml, key) {
+  const match = xml.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`));
+  return match?.[1]?.trim() || '';
+}
+
+function yamlQuote(value) {
+  return JSON.stringify(String(value ?? ''));
+}
+
+const prod = {
+  ...readEnvFile('.env'),
+  ...readEnvFile('.env.production'),
+  ...readEnvFile('.env.production.local'),
+};
+
+const required = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+  'VITE_GOOGLE_MAPS_PLATFORM_KEY',
+  'VITE_APP_CHECK_RECAPTCHA_SITE_KEY',
+  'VITE_APP_URL',
+];
+const missing = required.filter((key) => !prod[key]);
+if (missing.length) {
+  console.error(`Missing production client keys: ${missing.join(', ')}`);
+  process.exit(1);
+}
+if (!/:web:/i.test(prod.VITE_FIREBASE_APP_ID)) {
+  console.error('VITE_FIREBASE_APP_ID must be the Web app id (1:…:web:…).');
+  process.exit(1);
+}
+
+const plistPath = path.join(root, 'ios', 'App', 'App', 'GoogleService-Info.plist');
+if (!fs.existsSync(plistPath)) {
+  console.error('ios/App/App/GoogleService-Info.plist is required to generate the iOS workflow plist.');
+  process.exit(1);
+}
+const plistXml = fs.readFileSync(plistPath, 'utf8');
+const iosGoogleAppId = plistString(plistXml, 'GOOGLE_APP_ID');
+const iosApiKey = plistString(plistXml, 'API_KEY') || prod.VITE_FIREBASE_API_KEY;
+const iosClientId = plistString(plistXml, 'CLIENT_ID');
+const iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID');
+const iosBundleId = plistString(plistXml, 'BUNDLE_ID') || 'com.ahmed.miras';
+if (!/:ios:/i.test(iosGoogleAppId)) {
+  console.error('GoogleService-Info.plist GOOGLE_APP_ID must be an iOS app id.');
+  process.exit(1);
+}
+if (iosBundleId !== 'com.ahmed.miras') {
+  console.error('GoogleService-Info.plist BUNDLE_ID must be com.ahmed.miras.');
+  process.exit(1);
+}
+
+const mapsKey = prod.VITE_GOOGLE_MAPS_PLATFORM_KEY || prod.VITE_GOOGLE_MAPS_API_KEY;
+const measurementId = prod.VITE_FIREBASE_MEASUREMENT_ID || '';
+
+const yaml = `# Codemagic CI — Capacitor iOS → App Store Connect (TestFlight)
 # Production-ready: all client env + build scripts live in this file.
 # Do not set VITE_* in the Codemagic web UI — UI values would override these.
 #
@@ -30,23 +116,23 @@ workflows:
         MIRAS_DEPLOY_ENV: production
         MIRAS_EXPECTED_FIREBASE_PROJECT: hamula-cfc6c
         FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_API_KEY: "AIzaSyAfJ_BXR_EL3jJK1t9Ud-vVzmIQQFBD9Cs"
+        VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
         VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
         VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
         VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
         VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
-        VITE_FIREBASE_APP_ID: "1:191963635866:web:b9813435125d467d34bf23"
-        VITE_FIREBASE_MEASUREMENT_ID: "G-04GKH516ND"
-        VITE_GOOGLE_MAPS_PLATFORM_KEY: "AIzaSyAFZLw-5D58K6_eTTxohsY7hNjzh8K2Rlw"
+        VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
+        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId)}
+        VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
         VITE_APP_URL: https://hamula-cfc6c.web.app
         VITE_IOS_TEAM_ID: 4TRJXRYK8A
         VITE_SUPPORT_EMAIL: support@miras.com
-        FIREBASE_IOS_GOOGLE_APP_ID: "1:191963635866:ios:73a41da4e6ffe55734bf23"
-        FIREBASE_IOS_API_KEY: "AIzaSyChrhscAIITLzKiDAqWP2GXQbvhGjpY9q8"
-        FIREBASE_IOS_CLIENT_ID: ""
-        FIREBASE_IOS_REVERSED_CLIENT_ID: ""
+        FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
+        FIREBASE_IOS_API_KEY: ${yamlQuote(iosApiKey)}
+        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId)}
+        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId)}
       node: 22
       xcode: latest
     scripts:
@@ -89,7 +175,7 @@ workflows:
           export VITE_MIRAS_DEPLOY_ENV=production
           export MIRAS_DEPLOY_ENV=production
           export VITE_APP_CHECK_DISABLED=false
-          export VITE_IOS_TEAM_ID="${VITE_IOS_TEAM_ID:-$DEVELOPMENT_TEAM}"
+          export VITE_IOS_TEAM_ID="\${VITE_IOS_TEAM_ID:-\$DEVELOPMENT_TEAM}"
           npm run cap:sync:ios
           test -f dist/index.html
           test -d ios/App/CapApp-SPM/packages/CapacitorFirebaseAppCheck
@@ -97,16 +183,16 @@ workflows:
           node scripts/verify-ios-store.mjs
       - name: Install signing certificates and profiles
         script: |
-          xcode-project use-profiles \
-            --project "$CM_BUILD_DIR/$XCODE_PROJECT_PATH" \
+          xcode-project use-profiles \\
+            --project "$CM_BUILD_DIR/$XCODE_PROJECT_PATH" \\
             --custom-export-options='{"method":"app-store","signingStyle":"manual","teamID":"'"$DEVELOPMENT_TEAM"'","compileBitcode":false}'
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' \\
             "$CM_BUILD_DIR/ios/App/App.xcodeproj/project.pbxproj"
       - name: Increment iOS build number
         script: |
           cd "$CM_BUILD_DIR/ios/App"
           LATEST=0
-          if [ -n "${APP_STORE_APPLE_ID:-}" ]; then
+          if [ -n "\${APP_STORE_APPLE_ID:-}" ]; then
             LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || true)
             if [ -z "$LATEST" ] || [ "$LATEST" = "None" ]; then
               LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" || true)
@@ -122,13 +208,13 @@ workflows:
             ''|None|none) LATEST=0 ;;
           esac
           NEW_BUILD=$((LATEST + 1))
-          if [ "$NEW_BUILD" -lt "${BUILD_NUMBER:-1}" ]; then
+          if [ "$NEW_BUILD" -lt "\${BUILD_NUMBER:-1}" ]; then
             NEW_BUILD=$BUILD_NUMBER
           fi
           if [ "$NEW_BUILD" -lt 2 ]; then
             NEW_BUILD=2
           fi
-          MARKETING="${IOS_MARKETING_VERSION:-1.0.1}"
+          MARKETING="\${IOS_MARKETING_VERSION:-1.0.1}"
           agvtool new-version -all "$NEW_BUILD"
           agvtool new-marketing-version "$MARKETING"
           echo "Using CFBundleShortVersionString=$MARKETING CFBundleVersion=$NEW_BUILD"
@@ -139,18 +225,18 @@ workflows:
           PACKAGES_DIR="$CM_BUILD_DIR/build/ios/SourcePackages"
           mkdir -p "$PACKAGES_DIR"
           xcodebuild -list -project App.xcodeproj
-          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \
-            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
-            -skipPackagePluginValidation \
+          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \\
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \\
+            -skipPackagePluginValidation \\
             -resolvePackageDependencies
-          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
-            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_STYLE=Manual \
-            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
+          xcodebuild -project App.xcodeproj -scheme "$XCODE_SCHEME" \\
+            -configuration Release \\
+            -sdk iphoneos \\
+            -destination 'generic/platform=iOS' \\
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \\
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \\
+            CODE_SIGN_STYLE=Manual \\
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \\
             -showBuildSettings
       - name: Archive and export signed IPA
         script: |
@@ -160,31 +246,31 @@ workflows:
           IPA_DIR="$CM_BUILD_DIR/ios/App/build/ios/ipa"
           PACKAGES_DIR="$CM_BUILD_DIR/build/ios/SourcePackages"
           mkdir -p "$(dirname "$ARCHIVE_PATH")" "$IPA_DIR" "$PACKAGES_DIR"
-          xcodebuild archive \
-            -project "$PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$ARCHIVE_PATH" \
-            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
-            -skipPackagePluginValidation \
-            -skipPackageUpdates \
-            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            SWIFT_ENABLE_EXPLICIT_MODULES=NO \
-            ENABLE_MODULE_VERIFIER=NO \
-            BUILD_LIBRARY_FOR_DISTRIBUTION=NO \
-            ENABLE_APPINTENTS_METADATA_EXTRACTION=NO \
+          xcodebuild archive \\
+            -project "$PROJECT" \\
+            -scheme "$XCODE_SCHEME" \\
+            -configuration Release \\
+            -sdk iphoneos \\
+            -destination 'generic/platform=iOS' \\
+            -archivePath "$ARCHIVE_PATH" \\
+            -clonedSourcePackagesDirPath "$PACKAGES_DIR" \\
+            -skipPackagePluginValidation \\
+            -skipPackageUpdates \\
+            DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \\
+            CODE_SIGN_STYLE=Manual \\
+            CODE_SIGN_IDENTITY="Apple Distribution" \\
+            SWIFT_ENABLE_EXPLICIT_MODULES=NO \\
+            ENABLE_MODULE_VERIFIER=NO \\
+            BUILD_LIBRARY_FOR_DISTRIBUTION=NO \\
+            ENABLE_APPINTENTS_METADATA_EXTRACTION=NO \\
             COMPILER_INDEX_STORE_ENABLE=NO
           EXPORT_PLIST="/Users/builder/export_options.plist"
           if [ ! -f "$EXPORT_PLIST" ]; then
             EXPORT_PLIST="$CM_BUILD_DIR/ios/ExportOptions.codemagic.plist"
           fi
-          xcodebuild -exportArchive \
-            -archivePath "$ARCHIVE_PATH" \
-            -exportOptionsPlist "$EXPORT_PLIST" \
+          xcodebuild -exportArchive \\
+            -archivePath "$ARCHIVE_PATH" \\
+            -exportOptionsPlist "$EXPORT_PLIST" \\
             -exportPath "$IPA_DIR"
           ls -la "$IPA_DIR"
     artifacts:
@@ -209,8 +295,6 @@ workflows:
     max_build_duration: 90
     instance_type: linux_x2
     environment:
-      groups:
-        - miras_client
       vars:
         PACKAGE_NAME: com.miras.app
         NODE_ENV: production
@@ -218,14 +302,14 @@ workflows:
         VITE_MIRAS_DEPLOY_ENV: production
         MIRAS_DEPLOY_ENV: production
         FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_API_KEY: "AIzaSyAfJ_BXR_EL3jJK1t9Ud-vVzmIQQFBD9Cs"
+        VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
         VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
         VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
         VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
         VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
-        VITE_FIREBASE_APP_ID: "1:191963635866:web:b9813435125d467d34bf23"
-        VITE_FIREBASE_MEASUREMENT_ID: "G-04GKH516ND"
-        VITE_GOOGLE_MAPS_PLATFORM_KEY: "AIzaSyAFZLw-5D58K6_eTTxohsY7hNjzh8K2Rlw"
+        VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
+        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId)}
+        VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
         VITE_APP_URL: https://hamula-cfc6c.web.app
@@ -246,11 +330,11 @@ workflows:
           npx tsx scripts/verify-store-client.ts
       - name: Write google-services.json
         script: |
-          if [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
+          if [ -n "\${GOOGLE_SERVICES_JSON:-}" ]; then
             echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
           fi
           if [ ! -f android/app/google-services.json ]; then
-            echo "Add GOOGLE_SERVICES_JSON (base64) to Codemagic group miras_client for Android builds."
+            echo "android/app/google-services.json missing. iOS workflow is self-contained; Android still needs GOOGLE_SERVICES_JSON or a checked-in file."
             exit 1
           fi
       - name: Build web and sync Android
@@ -269,3 +353,7 @@ workflows:
           ./gradlew bundleRelease
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
+`;
+
+fs.writeFileSync(path.join(root, 'codemagic.yaml'), yaml);
+console.log('Wrote production-ready codemagic.yaml (iOS workflow has no miras_client group).');
