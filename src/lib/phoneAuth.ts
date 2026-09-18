@@ -37,8 +37,9 @@ export const PHONE_AUTH_RECAPTCHA_CONTAINER_ID = 'miras-recaptcha';
 
 /** Prevents hung App Check / Firebase SMS from locking the login UI forever. */
 const OTP_SEND_TIMEOUT_MS = 45_000;
-const OTP_SEND_NATIVE_TIMEOUT_MS = 40_000;
-const OTP_CONFIRM_TIMEOUT_MS = 30_000;
+/** Native iOS only waits for the plugin to *start* verifyPhoneNumber. */
+const OTP_SEND_NATIVE_TIMEOUT_MS = 10_000;
+const OTP_CONFIRM_TIMEOUT_MS = 45_000;
 
 type WindowWithRecaptcha = Window & {
   __mirasRecaptchaVerifier?: RecaptchaVerifier;
@@ -265,14 +266,13 @@ async function sendPhoneOtpOnce(
   }
 
   if (useNativeIos) {
-    // Native verifyPhoneNumber must not wait on JS App Check / reCAPTCHA / App Attest.
-    // Attestation continues in the background; APNs fallback is handled by the iOS SDK.
+    // Do not await App Check, APNs, or phoneCodeSent. Plugin start is enough to
+    // release the Send OTP loader; confirm() waits for the verificationId.
     void ensureFirebaseReady().catch((error) => {
       console.warn('[PhoneAuth] Init: Firebase bootstrap still pending — continuing native OTP', error);
     });
     try {
       activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
-      logPhoneAuth('Verification ID Received', activeConfirmation.verificationId);
     } catch (error) {
       const authError = preserveAuthError(error);
       if (isAppCheckAttestationFailure(authError)) {

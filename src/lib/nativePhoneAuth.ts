@@ -7,10 +7,9 @@
  *
  * skipNativeAuth stays true so Firestore / Auth keep using the JS SDK session.
  *
- * signInWithPhoneNumber is fire-and-forget: the iOS plugin resolves as soon as
- * PhoneAuthProvider.verifyPhoneNumber is *started*. The SMS verificationId
- * arrives later on `phoneCodeSent`. Awaiting the plugin call (or App Check)
- * must never block that event.
+ * UI must not wait for `phoneCodeSent`. signInWithPhoneNumber resolves as soon as
+ * native verifyPhoneNumber *starts*; the verificationId arrives later. Confirm()
+ * waits for that id so Send OTP can navigate immediately.
  */
 import { Capacitor } from '@capacitor/core';
 import {
@@ -24,6 +23,7 @@ import { isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { shouldUseNativeIosPhoneAuth as matchNativeIosPhoneAuth } from '@/lib/nativePhoneAuthRuntime';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 
+const NATIVE_PLUGIN_START_TIMEOUT_MS = 8_000;
 const NATIVE_VERIFY_TIMEOUT_MS = 35_000;
 
 export function logPhoneAuth(step: string, extra?: unknown): void {
@@ -78,7 +78,26 @@ type NativeAuthPlugin = {
 };
 
 let nativeVerificationId: string | null = null;
+let verificationIdPromise: Promise<string> | null = null;
 let listeners: PluginListenerHandle[] = [];
+
+function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(Object.assign(new Error(code), { code }));
+    }, ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 async function getNativeAuthPlugin(): Promise<NativeAuthPlugin> {
   const mod = await import('@capacitor-firebase/authentication');
@@ -91,15 +110,16 @@ async function getNativeAuthPlugin(): Promise<NativeAuthPlugin> {
   return plugin;
 }
 
-async function clearNativeListeners(): Promise<void> {
+function clearNativeListeners(): void {
   const current = listeners;
   listeners = [];
-  await Promise.all(current.map((handle) => handle.remove().catch(() => undefined)));
+  void Promise.all(current.map((handle) => handle.remove().catch(() => undefined)));
 }
 
 export async function resetNativePhoneAuth(): Promise<void> {
   nativeVerificationId = null;
-  await clearNativeListeners();
+  verificationIdPromise = null;
+  clearNativeListeners();
 }
 
 function nativeAuthError(error: unknown): Error & { code?: string } {
@@ -133,114 +153,124 @@ function nativeAuthError(error: unknown): Error & { code?: string } {
   });
 }
 
-function makeJsConfirmation(verificationId: string): ConfirmationResult {
+function readVerificationId(event: { verificationId?: string } | null | undefined): string {
+  const id = event && typeof event === 'object' ? String(event.verificationId || '').trim() : '';
+  return id;
+}
+
+function makeJsConfirmation(): ConfirmationResult {
   return {
-    verificationId,
+    get verificationId() {
+      return nativeVerificationId || '';
+    },
     confirm: async (verificationCode: string): Promise<UserCredential> => {
+      const verificationId = await waitForNativeVerificationId();
       const credential = PhoneAuthProvider.credential(verificationId, verificationCode);
       return signInWithCredential(auth, credential);
     },
   } as ConfirmationResult;
 }
 
-function readVerificationId(event: { verificationId?: string } | null | undefined): string {
-  const id = event && typeof event === 'object' ? String(event.verificationId || '').trim() : '';
-  return id;
+export async function waitForNativeVerificationId(): Promise<string> {
+  if (nativeVerificationId) {
+    return nativeVerificationId;
+  }
+  if (!verificationIdPromise) {
+    throw Object.assign(new Error('NO_OTP_SESSION'), { code: 'NO_OTP_SESSION' });
+  }
+  return verificationIdPromise;
 }
 
 /**
- * Sends SMS via the native iOS Firebase Auth SDK, then returns a JS
- * ConfirmationResult so the rest of the app keeps using firebase/auth.
+ * Starts native iOS verifyPhoneNumber and returns immediately after the plugin
+ * call is accepted. SMS / APNs / Safari reCAPTCHA continue in the background.
+ * Confirm() waits for the verificationId.
  */
 export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<ConfirmationResult> {
   logPhoneAuth('Init');
   const phoneE164 = toFirebasePhoneE164(phoneInput);
   logPhoneAuth('E164 Formatted', phoneE164);
 
-  const FirebaseAuthentication = await getNativeAuthPlugin();
-  await clearNativeListeners();
+  const FirebaseAuthentication = await withTimeout(
+    getNativeAuthPlugin(),
+    NATIVE_PLUGIN_START_TIMEOUT_MS,
+    'NATIVE_PHONE_AUTH_UNAVAILABLE'
+  );
+  clearNativeListeners();
   nativeVerificationId = null;
 
-  const verificationId = await new Promise<string>((resolve, reject) => {
+  let settleVerification: (ok: boolean, value: string | unknown) => void = () => undefined;
+
+  verificationIdPromise = new Promise<string>((resolve, reject) => {
     let settled = false;
     let timer = 0;
-
-    const finish = (ok: boolean, value: string | unknown) => {
+    settleVerification = (ok, value) => {
       if (settled) return;
       settled = true;
       if (timer) {
         window.clearTimeout(timer);
       }
       if (ok) {
+        nativeVerificationId = String(value);
         resolve(String(value));
       } else {
         reject(nativeAuthError(value));
       }
     };
-
     timer = window.setTimeout(() => {
-      finish(
+      settleVerification(
         false,
         Object.assign(new Error('OTP_SEND_TIMEOUT'), { code: 'OTP_SEND_TIMEOUT' })
       );
     }, NATIVE_VERIFY_TIMEOUT_MS);
-
-    void (async () => {
-      try {
-        const failed = await Promise.resolve(
-          FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
-            finish(
-              false,
-              Object.assign(new Error(event.message || 'auth/internal-error'), {
-                code: 'auth/internal-error',
-              })
-            );
-          })
-        );
-        const sent = await Promise.resolve(
-          FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
-            const id = readVerificationId(event);
-            if (id) {
-              logPhoneAuth('Verification ID Received', id);
-              finish(true, id);
-            }
-          })
-        );
-        const completed = await Promise.resolve(
-          FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
-            const id = readVerificationId(event);
-            if (id) {
-              logPhoneAuth('Verification ID Received', id);
-              finish(true, id);
-            }
-          })
-        );
-        listeners = [failed, sent, completed];
-
-        // Native plugin call.resolve() happens when verifyPhoneNumber *starts*,
-        // not when the SMS is sent. Never await it as a UI gate.
-        const started = Promise.resolve(
-          FirebaseAuthentication.signInWithPhoneNumber({
-            phoneNumber: phoneE164,
-            skipNativeAuth: true,
-          })
-        );
-        void started.then(
-          () => {
-            logPhoneAuth('Init', 'native verifyPhoneNumber started');
-          },
-          (error) => {
-            finish(false, error);
-          }
-        );
-      } catch (error) {
-        finish(false, error);
-      }
-    })();
   });
+  void verificationIdPromise.catch(() => undefined);
 
-  nativeVerificationId = verificationId;
-  return makeJsConfirmation(verificationId);
+  await withTimeout(
+    (async () => {
+      const failed = await Promise.resolve(
+        FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
+          settleVerification(
+            false,
+            Object.assign(new Error(event.message || 'auth/internal-error'), {
+              code: 'auth/internal-error',
+            })
+          );
+        })
+      );
+      const sent = await Promise.resolve(
+        FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+          const id = readVerificationId(event);
+          if (id) {
+            logPhoneAuth('Verification ID Received', id);
+            settleVerification(true, id);
+          }
+        })
+      );
+      const completed = await Promise.resolve(
+        FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
+          const id = readVerificationId(event);
+          if (id) {
+            logPhoneAuth('Verification ID Received', id);
+            settleVerification(true, id);
+          }
+        })
+      );
+      listeners = [failed, sent, completed];
+
+      await Promise.resolve(
+        FirebaseAuthentication.signInWithPhoneNumber({
+          phoneNumber: phoneE164,
+          skipNativeAuth: true,
+        })
+      );
+    })(),
+    NATIVE_PLUGIN_START_TIMEOUT_MS,
+    'OTP_SEND_TIMEOUT'
+  );
+
+  logPhoneAuth('Init', 'native verifyPhoneNumber started — UI may navigate to OTP');
+  return makeJsConfirmation();
 }
 
 export function getNativePhoneVerificationId(): string | null {

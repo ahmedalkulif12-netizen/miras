@@ -346,28 +346,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    */
   const assertCanRequestOtp = async (): Promise<void> => {
     if (shouldUseNativeIosPhoneAuth()) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const timer = window.setTimeout(() => {
-            reject(Object.assign(new Error('FIREBASE_READY_TIMEOUT'), { code: 'FIREBASE_READY_TIMEOUT' }));
-          }, 4_000);
-          void ensureFirebaseReady().then(
-            () => {
-              window.clearTimeout(timer);
-              resolve();
-            },
-            (error) => {
-              window.clearTimeout(timer);
-              reject(error);
-            }
-          );
-        });
-      } catch (error) {
+      void ensureFirebaseReady().catch((error) => {
         console.warn(
-          '[PhoneAuth] Init: Firebase ready timed out — continuing native OTP without waiting for App Check',
+          '[PhoneAuth] Init: Firebase ready still pending — continuing native OTP without App Check',
           error
         );
-      }
+      });
     } else {
       await ensureFirebaseReady();
     }
@@ -405,7 +389,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const resolved = await restorePersistedUserProfile(current);
+      const resolved = await (shouldUseNativeIosPhoneAuth()
+        ? new Promise<UserProfile | null>((resolve, reject) => {
+            const timer = window.setTimeout(() => {
+              reject(Object.assign(new Error('PROFILE_LOOKUP_TIMEOUT'), { code: 'PROFILE_LOOKUP_TIMEOUT' }));
+            }, 1_500);
+            void restorePersistedUserProfile(current).then(
+              (profile) => {
+                window.clearTimeout(timer);
+                resolve(profile);
+              },
+              (error) => {
+                window.clearTimeout(timer);
+                reject(error);
+              }
+            );
+          })
+        : restorePersistedUserProfile(current));
       if (resolved) {
         const role = normalizeAppRole(resolved.role) ?? resolved.role;
         const profileWithRole = { ...resolved, role };
@@ -425,6 +425,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       if (getAlreadyAuthCode(error) === 'ALREADY_AUTHENTICATED') {
         throw error;
+      }
+      if (getAlreadyAuthCode(error) === 'PROFILE_LOOKUP_TIMEOUT') {
+        console.warn('[PhoneAuth] Init: profile lookup timed out — continuing native OTP');
+        return;
       }
       console.warn('[auth] assertCanRequestOtp profile probe failed:', error);
     }

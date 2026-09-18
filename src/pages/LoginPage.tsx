@@ -264,12 +264,13 @@ const LoginPage: React.FC = () => {
       logPhoneAuth('Init');
       const formattedPhone = toFirebasePhoneE164(phone);
       logPhoneAuth('E164 Formatted', formattedPhone);
-      await loginWithPhone(
+      const sendPromise = loginWithPhone(
         formattedPhone,
         role,
         PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
         authMode ?? 'login'
       );
+      await sendPromise;
       logPhoneAuth('Navigating to OTP');
       setStep('otp');
       setResendCooldown(30);
