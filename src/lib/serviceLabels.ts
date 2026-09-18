@@ -4,6 +4,7 @@
 import type { TFunction } from 'i18next';
 import { isWaterTankerService } from '@/domain/waterTanker';
 import { OPTION_LABELS } from '@/constants';
+import { canonicalizeServiceType } from '@/domain/serviceCategories';
 import {
   normalizeWaterServiceType,
   type WaterServiceType,
@@ -54,10 +55,11 @@ export function formatOrderServiceLabel(
   } | null | undefined,
   t: TFunction
 ): { title: string; subtitle?: string } {
-  const title = translateServiceType(serviceType, t);
-  if (!serviceType) return { title };
+  const canonical = canonicalizeServiceType(serviceType) || serviceType || '';
+  const title = translateServiceType(canonical, t);
+  if (!canonical) return { title };
 
-  if (isWaterTankerService(serviceType)) {
+  if (isWaterTankerService(canonical)) {
     const capacity =
       details?.capacity || details?.type || details?.option || undefined;
     const parts = [

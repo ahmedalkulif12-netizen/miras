@@ -52,16 +52,7 @@ import {
   saveLocalGuestRole,
   savePendingGuestRole,
 } from '@/lib/devAuthBypass';
-import {
-  APP_REVIEW_PHONE_E164,
-  clearAppReviewSession,
-  consumePendingAppReviewRole,
-  loadAppReviewSession,
-  matchAppReviewTestPhone,
-  resolveAppReviewGuestRole,
-  saveAppReviewSession,
-  savePendingAppReviewRole,
-} from '@/lib/appReviewAuth';
+import { clearAppReviewSession } from '@/lib/appReviewAuth';
 
 export type { UserProfile };
 export { AdminAccessDeniedError };
@@ -133,8 +124,6 @@ interface AuthContextType {
    * Supports all AppRoles including admin. Only when `isDevAuthBypassEnabled()`.
    */
   loginAsDevBypass: (role: AppRole) => Promise<UserProfile>;
-  /** App Review static account (+966500000000 / 123456). Works in store builds. */
-  loginAsAppReviewTestUser: (role: AppRole) => Promise<UserProfile>;
   /** Merge profile fields locally + Firestore (drivers/clients updating their data). */
   updateProfile: (patch: Partial<UserProfile>) => Promise<UserProfile>;
   cancelPhoneOtpFlow: () => Promise<void>;
@@ -185,11 +174,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let cancelled = false;
 
     void (async () => {
-      // Restore screenshot / App Review bypass before Firebase settles (avoids login flash).
-      const reviewSession = loadAppReviewSession();
-      if (reviewSession && !cancelled) {
-        applyDevBypass(reviewSession);
-      } else if (isDevAuthBypassEnabled()) {
+      // Restore localhost screenshot bypass before Firebase settles (avoids login flash).
+      clearAppReviewSession();
+      if (isDevAuthBypassEnabled()) {
         const bypass = loadDevBypassProfile();
         if (bypass && !cancelled) {
           applyDevBypass(bypass);
@@ -210,22 +197,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
         if (firebaseUser) {
           if (firebaseUser.isAnonymous) {
-            const reviewRole = resolveAppReviewGuestRole();
-            const guestRole = reviewRole || (isDevAuthBypassEnabled() ? resolveGuestRole(firebaseUser.uid) : null);
-            consumePendingAppReviewRole();
+            const guestRole = isDevAuthBypassEnabled() ? resolveGuestRole(firebaseUser.uid) : null;
             consumePendingGuestRole();
             if (guestRole) {
               const guestProfile = {
                 ...buildDevBypassProfile(guestRole),
                 uid: firebaseUser.uid,
-                phone: reviewRole ? APP_REVIEW_PHONE_E164 : buildDevBypassProfile(guestRole).phone,
               };
-              if (reviewRole) {
-                saveAppReviewSession(guestProfile);
-              } else {
-                saveDevBypassProfile(guestProfile);
-                saveLocalGuestRole(firebaseUser.uid, guestRole);
-              }
+              saveDevBypassProfile(guestProfile);
+              saveLocalGuestRole(firebaseUser.uid, guestRole);
               saveCachedProfile(guestProfile);
               setUser(firebaseUser);
               setProfile(guestProfile);
@@ -242,7 +222,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               }
               return;
             }
-            // Leftover anonymous session without a chosen guest / review role.
+            // Leftover anonymous session without a chosen guest role.
             void signOut(auth).catch(() => undefined);
             return;
           }
@@ -340,11 +320,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else {
           // Keep localhost screenshot session if Firebase has no user
           const bypass = loadDevBypassProfile();
-          const review = loadAppReviewSession();
-          if (review) {
-            applyDevBypass(review);
-            return;
-          }
           if (bypass && isDevAuthBypassEnabled()) {
             applyDevBypass(bypass);
             return;
@@ -452,9 +427,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ) => {
     // Do not toggle global `loading` here — AuthGuestRoute unmounts login pages while
     // loading is true, which drops local step state before setStep('otp') can run.
-    if (matchAppReviewTestPhone(phone)) {
-      return;
-    }
     await assertCanRequestOtp();
     const phoneE164 = await sendPhoneOtp(phone, recaptchaContainerId);
     saveLoginIntent(role, phoneE164, mode);
@@ -695,20 +667,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const establishGuestSession = useCallback(
-    async (role: AppRole, source: 'dev' | 'review'): Promise<UserProfile> => {
-      if (source === 'dev' && !isDevAuthBypassEnabled()) {
+    async (role: AppRole): Promise<UserProfile> => {
+      if (!isDevAuthBypassEnabled()) {
         throw new Error('DEV_BYPASS_DISABLED');
       }
 
       await ensureFirebaseReady();
-      if (source === 'review') {
-        savePendingAppReviewRole(role);
-      } else {
-        savePendingGuestRole(role);
-      }
+      savePendingGuestRole(role);
 
       const baseProfile = buildDevBypassProfile(role);
-      const reviewPhone = source === 'review' ? APP_REVIEW_PHONE_E164 : baseProfile.phone;
 
       try {
         if (auth.currentUser && !auth.currentUser.isAnonymous) {
@@ -716,43 +683,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         if (!auth.currentUser) {
           const credential = await signInAnonymously(auth);
-          console.info('[auth] guest session', source, credential.user.uid);
+          console.info('[auth] guest session', credential.user.uid);
         }
       } catch (error) {
-        console.warn(
-          '[auth] Anonymous sign-in failed — using local App Review / demo session.',
-          error
-        );
-        const stubProfile = { ...baseProfile, phone: reviewPhone };
-        applyDevBypass(stubProfile);
-        if (source === 'review') {
-          saveAppReviewSession(stubProfile);
-        }
-        return stubProfile;
+        console.warn('[auth] Anonymous sign-in failed — using local demo session.', error);
+        applyDevBypass(baseProfile);
+        return baseProfile;
       }
 
       const firebaseUser = auth.currentUser;
       if (!firebaseUser) {
-        const stubProfile = { ...baseProfile, phone: reviewPhone };
-        applyDevBypass(stubProfile);
-        if (source === 'review') {
-          saveAppReviewSession(stubProfile);
-        }
-        return stubProfile;
+        applyDevBypass(baseProfile);
+        return baseProfile;
       }
 
       const guestProfile = {
         ...baseProfile,
         uid: firebaseUser.uid,
-        phone: reviewPhone,
       };
-      if (source === 'review') {
-        consumePendingAppReviewRole();
-        saveAppReviewSession(guestProfile);
-      } else {
-        saveLocalGuestRole(firebaseUser.uid, role);
-        saveDevBypassProfile(guestProfile);
-      }
+      saveLocalGuestRole(firebaseUser.uid, role);
+      saveDevBypassProfile(guestProfile);
       saveCachedProfile(guestProfile);
       setUser(firebaseUser);
       setProfile(guestProfile);
@@ -772,7 +722,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.info('[auth] guest login ready', {
         uid: firebaseUser.uid,
         role,
-        source,
         isAnonymous: firebaseUser.isAnonymous,
         authCurrentUser: Boolean(auth.currentUser),
       });
@@ -782,12 +731,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const loginAsDevBypass = useCallback(
-    (role: AppRole) => establishGuestSession(role, 'dev'),
-    [establishGuestSession]
-  );
-
-  const loginAsAppReviewTestUser = useCallback(
-    (role: AppRole) => establishGuestSession(role, 'review'),
+    (role: AppRole) => establishGuestSession(role),
     [establishGuestSession]
   );
 
@@ -810,9 +754,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (isDevBypass) {
         saveDevBypassProfile(next);
-        if (loadAppReviewSession()) {
-          saveAppReviewSession(next);
-        }
         return next;
       }
 
@@ -916,7 +857,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completeRegistration,
         resendOtp,
         loginAsDevBypass,
-        loginAsAppReviewTestUser,
         updateProfile,
         cancelPhoneOtpFlow,
         logout,

@@ -2,16 +2,16 @@ import admin from 'firebase-admin';
 import { normalizeOrderStatus, isActiveTripStatus } from './orderStatus.ts';
 import { buildAdminFinancialLedger } from './adminFinancials.ts';
 import { listAdminDirectory } from './adminDirectory.ts';
-import { listAdminDrivers } from './adminDrivers.ts';
+import { isReviewQueueDriverStatus, listAdminDrivers } from './adminDrivers.ts';
 import {
   isGhostAdminOrder,
-  isReviewQueueDriverStatus,
   listAdminOrderDocuments,
   mapDriverApplicationToFeedItem,
   mapOrderDocToFeedItem,
   mergeAdminFeed,
   type AdminFeedItem,
 } from './adminOrders.ts';
+import { aggregateServiceDistribution } from '../../src/domain/serviceCategories.ts';
 
 export interface AdminOverviewResult {
   stats: {
@@ -33,6 +33,11 @@ export interface AdminOverviewResult {
     platformCommissionSar: number;
   };
   recentOrders: AdminFeedItem[];
+  serviceDistribution: Array<{
+    serviceType: string;
+    count: number;
+    percentage: number;
+  }>;
 }
 
 /** Admin dashboard metrics — read-only via Admin SDK (P0-14 protected route). */
@@ -80,6 +85,9 @@ export async function getAdminOverview(db: admin.firestore.Firestore): Promise<A
     pendingDriverRows.map(mapDriverApplicationToFeedItem),
     40
   );
+  const serviceDistribution = aggregateServiceDistribution(
+    liveOrders.map((doc) => doc.data() as Record<string, unknown>)
+  );
 
   return {
     stats: {
@@ -103,5 +111,6 @@ export async function getAdminOverview(db: admin.firestore.Firestore): Promise<A
       platformCommissionSar: Math.round(ledger.summary.platformCommissionTotal),
     },
     recentOrders,
+    serviceDistribution,
   };
 }

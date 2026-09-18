@@ -37,6 +37,11 @@ export interface AdminOverviewResponse {
     vehicleFieldNotes?: Record<string, unknown> | null;
     createdAt?: string | null;
   }>;
+  serviceDistribution?: Array<{
+    serviceType: string;
+    count: number;
+    percentage: number;
+  }>;
 }
 
 export interface AdminDriverDocumentMeta {
@@ -172,6 +177,7 @@ function buildDevAdminOverview(): AdminOverviewResponse {
       platformCommissionSar: 0,
     },
     recentOrders: [],
+    serviceDistribution: [],
   };
 }
 
@@ -217,8 +223,11 @@ export async function fetchAdminDrivers(): Promise<AdminDriverApiRow[]> {
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load drivers'));
   }
-  const data = await readApiJson<{ drivers: AdminDriverApiRow[] }>(res);
-  return data.drivers;
+  const data = await readApiJson<AdminDriverApiRow[] | { drivers?: AdminDriverApiRow[] | null }>(
+    res
+  );
+  if (Array.isArray(data)) return data;
+  return Array.isArray(data.drivers) ? data.drivers : [];
 }
 
 export async function fetchAdminDriverDocumentUrl(

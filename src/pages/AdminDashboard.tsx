@@ -34,6 +34,11 @@ import AdminCorporateContractsPanel from '@/components/admin/AdminCorporateContr
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
+import { isReviewQueueDriverStatus } from '@/domain/driver-review';
+import {
+  CORE_SERVICE_TYPES,
+  aggregateServiceDistribution,
+} from '@/domain/serviceCategories';
 
 interface Driver {
   id: string;
@@ -77,8 +82,6 @@ function mapOrderRowStatus(
   return 'pending';
 }
 
-const DRIVER_REVIEW_STATUSES = new Set(['ready_for_review', 'pending']);
-
 interface Complaint {
   id: string;
   driverName: string;
@@ -107,6 +110,7 @@ const AdminDashboard: React.FC = () => {
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
   const [loadingOverview, setLoadingOverview] = useState(true);
   const [loadingDrivers, setLoadingDrivers] = useState(false);
+  const [driversFetched, setDriversFetched] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingFinancials, setLoadingFinancials] = useState(false);
   const [updatingDriverId, setUpdatingDriverId] = useState<string | null>(null);
@@ -134,9 +138,9 @@ const AdminDashboard: React.FC = () => {
       const rows = await fetchAdminDrivers();
       setDrivers((prev) => {
         const prevPendingIds = new Set(
-          prev.filter((d) => DRIVER_REVIEW_STATUSES.has(d.status)).map((d) => d.id)
+          prev.filter((d) => isReviewQueueDriverStatus(d.status)).map((d) => d.id)
         );
-        const nextPending = rows.filter((d) => DRIVER_REVIEW_STATUSES.has(d.status));
+        const nextPending = rows.filter((d) => isReviewQueueDriverStatus(d.status));
         const newlyPending = nextPending.filter((d) => !prevPendingIds.has(d.id));
         if (prev.length > 0 && newlyPending.length > 0) {
           const names = newlyPending.map((d) => d.name).join(', ');
@@ -163,6 +167,7 @@ const AdminDashboard: React.FC = () => {
         toast.error(isRtl ? 'تعذر تحميل قائمة السائقين' : 'Failed to load drivers');
       }
     } finally {
+      setDriversFetched(true);
       if (!opts?.quiet) setLoadingDrivers(false);
     }
   }, [isRtl]);
@@ -290,7 +295,10 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const pendingDrivers = drivers.filter((d) => DRIVER_REVIEW_STATUSES.has(d.status));
+  const pendingDrivers = drivers.filter((d) => isReviewQueueDriverStatus(d.status));
+  const pendingReviewCount = driversFetched
+    ? pendingDrivers.length
+    : overview?.stats.pendingDrivers ?? pendingDrivers.length;
   const filteredDrivers =
     driverStatusFilter === 'all'
       ? drivers
@@ -420,25 +428,30 @@ const AdminDashboard: React.FC = () => {
   }, [isRtl, overview?.recentOrders]);
 
   const serviceDistribution = useMemo(() => {
+    const palette = ['bg-blue-500', 'bg-orange-500', 'bg-cyan-500', 'bg-purple-500', 'bg-emerald-500', 'bg-gray-300'];
+    const serverRows = overview?.serviceDistribution;
+    if (Array.isArray(serverRows) && serverRows.length > 0) {
+      return serverRows.map((row, index) => ({
+        serviceType: row.serviceType,
+        label: formatOrderServiceLabel(row.serviceType, null, t).title,
+        percentage: row.percentage,
+        count: row.count,
+        color: palette[index] || 'bg-gray-300',
+      }));
+    }
     const orders = (overview?.recentOrders || []).filter(
       (order) => order.kind !== 'driver_registration'
     );
-    const counts = new Map<string, number>();
-    orders.forEach((order) => {
-      const key = order.serviceType || 'other';
-      counts.set(key, (counts.get(key) || 0) + 1);
-    });
-    const total = orders.length || 1;
-    const palette = ['bg-blue-500', 'bg-orange-500', 'bg-cyan-500', 'bg-purple-500', 'bg-gray-300'];
-    return Array.from(counts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([type, count], index) => ({
-        label: formatOrderServiceLabel(type, null, t).title,
-        percentage: Math.round((count / total) * 100),
-        color: palette[index] || 'bg-gray-300',
-      }));
-  }, [isRtl, overview?.recentOrders, t]);
+    return aggregateServiceDistribution(orders as unknown as Record<string, unknown>[]).map(
+      (row, index) => ({
+        serviceType: row.serviceType,
+        label: formatOrderServiceLabel(row.serviceType, null, t).title,
+        percentage: row.percentage,
+        count: row.count,
+        color: palette[CORE_SERVICE_TYPES.indexOf(row.serviceType)] || palette[index] || 'bg-gray-300',
+      })
+    );
+  }, [overview?.serviceDistribution, overview?.recentOrders, t]);
 
   const reportMetrics = useMemo(() => {
     const completed = overview?.stats.completedOrders ?? 0;
@@ -734,7 +747,7 @@ const AdminDashboard: React.FC = () => {
         <Routes>
           <Route index element={
             <>
-              {(overview?.stats.pendingDrivers ?? 0) > 0 && (
+              {pendingReviewCount > 0 && (
                 <div className="bg-orange-50 border-2 border-orange-200 p-6 rounded-[28px] flex flex-col sm:flex-row items-center gap-4 justify-between">
                   <div className={`flex items-center gap-4 ${isRtl ? 'text-right' : 'text-left'}`}>
                     <div className="w-12 h-12 rounded-2xl bg-orange-500 text-white flex items-center justify-center">
@@ -743,8 +756,8 @@ const AdminDashboard: React.FC = () => {
                     <div>
                       <h3 className="font-bold text-orange-900">
                         {isRtl
-                          ? `${overview?.stats.pendingDrivers} طلب قيد المراجعة`
-                          : `${overview?.stats.pendingDrivers} application(s) pending review`}
+                          ? `${pendingReviewCount} طلب قيد المراجعة`
+                          : `${pendingReviewCount} application(s) pending review`}
                       </h3>
                       <p className="text-sm text-orange-700">
                         {isRtl
@@ -781,7 +794,7 @@ const AdminDashboard: React.FC = () => {
                 <AdminStatCard
                   icon={<Users className="text-orange-500" />}
                   label={t('pending_review')}
-                  value={loadingOverview ? '…' : String(overview?.stats.pendingDrivers ?? 0)}
+                  value={loadingOverview && loadingDrivers ? '…' : String(pendingReviewCount)}
                   isRtl={isRtl}
                   to="/admin/drivers"
                 />
@@ -826,9 +839,10 @@ const AdminDashboard: React.FC = () => {
                        ) : (
                          serviceDistribution.map((row) => (
                            <ServiceQuota
-                             key={row.label}
+                             key={row.serviceType || row.label}
                              label={row.label}
                              percentage={row.percentage}
+                             count={row.count}
                              color={row.color}
                            />
                          ))
@@ -1110,7 +1124,8 @@ const AdminDashboard: React.FC = () => {
                       ) : (
                         <tr>
                           <td colSpan={5} className="px-8 py-10 text-center text-sm text-gray-400">
-                            {driverStatusFilter === 'ready_for_review' || driverStatusFilter === 'pending'
+                            {driverStatusFilter === 'ready_for_review' ||
+                            driverStatusFilter === 'pending'
                               ? isRtl
                                 ? 'لا توجد طلبات تسجيل قيد المراجعة حالياً'
                                 : 'No pending registration applications right now'
@@ -1788,14 +1803,22 @@ const AdminStatCard: React.FC<{
   return to ? <Link to={to}>{card}</Link> : card;
 };
 
-const ServiceQuota: React.FC<{ label: string, percentage: number, color: string }> = ({ label, percentage, color }) => (
+const ServiceQuota: React.FC<{
+  label: string;
+  percentage: number;
+  color: string;
+  count?: number;
+}> = ({ label, percentage, color, count }) => (
   <div className="space-y-2">
      <div className="flex justify-between text-xs font-bold">
-        <span>{label}</span>
+        <span>
+          {label}
+          {typeof count === 'number' ? ` · ${count}` : ''}
+        </span>
         <span>{percentage}%</span>
      </div>
      <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color}`} style={{ width: `${percentage}%` }}></div>
+        <div className={`h-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}></div>
      </div>
   </div>
 );

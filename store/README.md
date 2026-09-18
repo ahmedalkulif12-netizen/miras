@@ -42,7 +42,7 @@ Then on a Mac:
 2. `npx cap open ios` → Signing & Capabilities → Team `4TRJXRYK8A` → Archive → TestFlight.
 3. App Privacy (nutrition labels): location (trip tracking), contact info (phone), photos (driver docs), identifiers (Firebase Auth). Tracking = no.
 4. Content rating questionnaire; primary category Navigation, secondary Business.
-5. Review notes: Firebase **test phone + OTP** into `fastlane/metadata/ios/review_information/`.
+5. Review notes: live Saudi OTP only — see `fastlane/metadata/ios/review_information/` (no mock login).
 6. Upload 6.7" screenshots from `store/ios/iphone-6.7/` after `npm run generate:store-screenshots`.
 
 Privacy: https://ahmedalkulif12-netizen.github.io/miras-privacy/

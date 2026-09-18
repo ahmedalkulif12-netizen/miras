@@ -3,6 +3,9 @@ import { isActiveTripStatus, normalizeOrderStatus } from './orderStatus.ts';
 import { isDemoDocumentId, isTestOrGhostRecord } from './testDataPatterns.ts';
 import { timestampToIso, timestampToMs } from './timestamps.ts';
 import type { AdminDriverRow } from './adminDrivers.ts';
+import { resolveStoredOrderServiceType } from '../../src/domain/serviceCategories.ts';
+
+export { isReviewQueueDriverStatus } from '../../src/domain/driver-review.ts';
 
 /** Canonical + legacy statuses that must appear in the admin orders inbox. */
 export const ADMIN_VISIBLE_ORDER_STATUSES = [
@@ -25,8 +28,6 @@ export const ADMIN_VISIBLE_ORDER_STATUSES = [
   'completed',
   'cancelled',
 ] as const;
-
-const REVIEW_QUEUE_STATUSES = new Set(['pending', 'pending_review', 'ready_for_review']);
 
 export type AdminFeedKind = 'order' | 'driver_registration';
 
@@ -116,7 +117,7 @@ export function mapOrderDocToFeedItem(
     kind: 'order',
     userId: String(data.userId || data.clientId || data.customerId || ''),
     customerName: data.customerName != null ? String(data.customerName) : null,
-    serviceType: String(data.serviceType || 'unknown'),
+    serviceType: resolveStoredOrderServiceType(data) || String(data.serviceType || 'unknown'),
     amount: readAmount(data),
     status: String(data.status || ''),
     waterType: serviceDetails.waterType != null ? String(serviceDetails.waterType) : null,
@@ -216,8 +217,4 @@ export async function listAdminOrderDocuments(
     const dataB = b.data() as Record<string, unknown>;
     return orderSortMs(dataB) - orderSortMs(dataA);
   });
-}
-
-export function isReviewQueueDriverStatus(status: string | undefined | null): boolean {
-  return REVIEW_QUEUE_STATUSES.has(String(status || ''));
 }

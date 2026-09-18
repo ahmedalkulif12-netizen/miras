@@ -1,0 +1,51 @@
+name: Deploy Hosting
+
+# Production SPA → Firebase Hosting (hamula-cfc6c).
+# Required repo secrets: FIREBASE_TOKEN (firebase login:ci) or GOOGLE_APPLICATION_CREDENTIALS JSON
+# in FIREBASE_SERVICE_ACCOUNT. Client VITE_* values must live in GitHub Environment "production".
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: hosting-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Strip test / review client flags
+        run: |
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
+          echo "VITE_MIRAS_DEPLOY_ENV=${VITE_MIRAS_DEPLOY_ENV:-production}" >> "$GITHUB_ENV"
+          echo "NODE_ENV=production" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          export NPM_CONFIG_PRODUCTION=false
+          npm ci --include=dev
+
+      - name: Verify production client env
+        run: npx tsx scripts/verify-store-client.ts
+
+      - name: Build SPA
+        run: npm run build:web
+
+      - name: Deploy Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: hamula-cfc6c

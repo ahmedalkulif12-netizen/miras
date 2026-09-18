@@ -1,7 +1,6 @@
 /**
- * Checkout locks: live production never skips Moyasar.
- * TestFlight / Play internals are vite PROD + staging — those may use a
- * sandbox in-app checkout when Moyasar is unreachable so App Review can pass.
+ * Checkout locks: staging and production never skip Moyasar.
+ * Local `npm run dev` may still use an in-app demo checkout.
  */
 
 import { Capacitor } from '@capacitor/core';

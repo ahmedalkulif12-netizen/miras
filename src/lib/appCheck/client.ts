@@ -197,8 +197,23 @@ export async function initAppCheck(app: FirebaseApp): Promise<void> {
 
     try {
       if (Capacitor.isNativePlatform()) {
-        await initNativeAppCheck(app);
-        console.info(`[App Check] Native attestation active (${Capacitor.getPlatform()})`);
+        try {
+          await initNativeAppCheck(app);
+          console.info(`[App Check] Native attestation active (${Capacitor.getPlatform()})`);
+        } catch (nativeError) {
+          // Play Integrity / App Attest / DeviceCheck must not hard-block Phone OTP.
+          const message = formatInitFailure(nativeError);
+          initError =
+            nativeError instanceof AppCheckInitError
+              ? nativeError
+              : new AppCheckInitError('APP_CHECK_INIT_FAILED', message);
+          jsAppCheckInstance = null;
+          console.warn(
+            '[App Check] Native attestation unavailable — Phone Auth will continue without an App Check token:',
+            message,
+            nativeError
+          );
+        }
         return;
       }
 
@@ -242,6 +257,13 @@ export async function ensureAppCheckTokenForAuth(): Promise<void> {
   }
 
   await awaitAppCheckInit();
+
+  if (Capacitor.isNativePlatform() && (initError || !jsAppCheckInstance)) {
+    console.warn(
+      '[App Check] Native token unavailable — sending Phone OTP without an App Check header.'
+    );
+    return;
+  }
 
   if (initError) {
     throw new AppCheckInitError(

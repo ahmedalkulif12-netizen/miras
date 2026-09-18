@@ -1705,7 +1705,7 @@ async function startServer() {
         },
       };
 
-      // Hosted invoice works with sk_test_* (App Review) without collecting PAN in-app.
+      // Hosted invoice — live or test Moyasar keys, never collect PAN in-app.
       let moyasarId = '';
       let paymentUrl = '';
       try {

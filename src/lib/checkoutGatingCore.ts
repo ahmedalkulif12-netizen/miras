@@ -6,15 +6,16 @@ export function readClientDeployEnv(raw?: string | null): CheckoutDeployEnv {
 }
 
 /**
- * In-app sandbox checkout (no live charge). Allowed for local DEV and for
- * native staging/TestFlight binaries. Never when deploy env is production.
+ * In-app sandbox checkout (no live charge). Local `npm run dev` / screenshot
+ * demo only. Store and Hosting production builds always use Moyasar.
  */
 export function sandboxCheckoutAllowed(input: {
   demoAllowed: boolean;
   isNative: boolean;
   deployEnv: CheckoutDeployEnv;
 }): boolean {
-  if (input.demoAllowed) return true;
-  if (input.deployEnv === 'production') return false;
-  return input.isNative;
+  if (input.deployEnv === 'production' || input.deployEnv === 'staging') {
+    return false;
+  }
+  return input.demoAllowed;
 }

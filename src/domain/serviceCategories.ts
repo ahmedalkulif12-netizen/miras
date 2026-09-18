@@ -25,10 +25,23 @@ const SERVICE_ALIASES: Record<string, CoreServiceType> = {
   cold: 'refrigerated',
   cargo: 'goods_transport',
   furniture_transport: 'furniture_moving',
+  moving: 'furniture_moving',
   towing: 'flatbed',
   tow_truck: 'flatbed',
+  tow: 'flatbed',
   tanker: 'water_tanker',
   water: 'water_tanker',
+  // Arabic labels stored as serviceType on older orders
+  'نقل العفش': 'furniture_moving',
+  'نقل عفش': 'furniture_moving',
+  السطحات: 'flatbed',
+  'نقل سطحه': 'flatbed',
+  'النقل المبرد': 'refrigerated',
+  'نقل مبرد': 'refrigerated',
+  'المعدات الثقيلة': 'heavy_equipment',
+  'نقل البضائع': 'goods_transport',
+  'صهاريج المياه': 'water_tanker',
+  'صهاريج': 'water_tanker',
   // Flatbed subtypes / informal vehicle labels
   normal: 'flatbed',
   normal_truck: 'flatbed',
@@ -137,4 +150,120 @@ export function driverMatchesRequiredVehicle(
 
 export function isCoreServiceType(value: string | null | undefined): boolean {
   return canonicalizeServiceType(value) !== null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+const SERVICE_NAME_ALIASES: Record<string, CoreServiceType> = {
+  cold: 'refrigerated',
+  cargo: 'goods_transport',
+  furniture_transport: 'furniture_moving',
+  moving: 'furniture_moving',
+  towing: 'flatbed',
+  tow_truck: 'flatbed',
+  tow: 'flatbed',
+  tanker: 'water_tanker',
+  water: 'water_tanker',
+};
+
+const VEHICLE_OPTION_KEYS = new Set([
+  'normal',
+  'normal_truck',
+  'hydraulic',
+  'box',
+  'small_truck',
+  'medium_truck',
+  'large_truck',
+  'van',
+  'dyna',
+  'trailer',
+  'cement_mixer',
+  'brick_transporter',
+  'chilled',
+  'frozen',
+  'cold_normal',
+  'light_equip',
+  'medium_equip',
+  'heavy_equip',
+]);
+
+function mapServiceName(raw: unknown): CoreServiceType | null {
+  const key = String(raw || '').trim();
+  if (!key) return null;
+  const lower = key.toLowerCase();
+  if ((CORE_SERVICE_TYPES as readonly string[]).includes(lower)) {
+    return lower as CoreServiceType;
+  }
+  if (SERVICE_NAME_ALIASES[lower]) return SERVICE_NAME_ALIASES[lower];
+  if (VEHICLE_OPTION_KEYS.has(lower)) return null;
+  return canonicalizeServiceType(key);
+}
+
+/**
+ * Resolve an order's platform service. Prefers canonical serviceType /
+ * requiredVehicleType so vehicle options like `small_truck` or `normal`
+ * never collapse every trip into Moving.
+ */
+export function resolveStoredOrderServiceType(
+  data: Record<string, unknown> | null | undefined
+): CoreServiceType | null {
+  if (!data) return null;
+  const details = asRecord(data.serviceDetails);
+  const named = [
+    data.serviceType,
+    data.requiredVehicleType,
+    data.category,
+    details?.serviceType,
+    details?.requiredVehicleType,
+    details?.category,
+  ];
+  for (const raw of named) {
+    const mapped = mapServiceName(raw);
+    if (mapped) return mapped;
+  }
+
+  for (const raw of [
+    details?.type,
+    details?.option,
+    details?.vehicleType,
+    data.vehicleType,
+    data.truckType,
+  ]) {
+    const canonical = canonicalizeServiceType(String(raw || ''));
+    if (canonical) return canonical;
+  }
+  return null;
+}
+
+export interface ServiceDistributionRow {
+  serviceType: CoreServiceType;
+  count: number;
+  percentage: number;
+}
+
+/** Counts all six platform services from a full order set (not a 40-row feed). */
+export function aggregateServiceDistribution(
+  orders: Array<Record<string, unknown> | null | undefined>
+): ServiceDistributionRow[] {
+  const counts = Object.fromEntries(CORE_SERVICE_TYPES.map((key) => [key, 0])) as Record<
+    CoreServiceType,
+    number
+  >;
+  let classified = 0;
+  for (const order of orders) {
+    if (!order) continue;
+    if (String(order.kind || '') === 'driver_registration') continue;
+    const serviceType = resolveStoredOrderServiceType(order);
+    if (!serviceType) continue;
+    counts[serviceType] += 1;
+    classified += 1;
+  }
+  const total = classified > 0 ? classified : 1;
+  return CORE_SERVICE_TYPES.map((serviceType) => ({
+    serviceType,
+    count: counts[serviceType],
+    percentage: classified > 0 ? Math.round((counts[serviceType] / total) * 100) : 0,
+  })).sort((a, b) => b.count - a.count || a.serviceType.localeCompare(b.serviceType));
 }

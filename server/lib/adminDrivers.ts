@@ -2,6 +2,13 @@ import admin from 'firebase-admin';
 import { isTestOrGhostRecord } from './testDataPatterns.ts';
 import { hasCompleteKycDocuments } from './kycDocumentStorage.ts';
 import { timestampToIso } from './timestamps.ts';
+import { B2B_MODULES_ENABLED } from '../../src/lib/launchFlags.ts';
+import {
+  mapDriverAccountStatus,
+  readRawDriverAccountStatus,
+} from '../../src/domain/driver-review.ts';
+
+export { isReviewQueueDriverStatus } from '../../src/domain/driver-review.ts';
 
 export type AdminDriverStatus =
   | 'approved'
@@ -60,21 +67,31 @@ const ALLOWED_STATUSES = new Set<AdminDriverStatus>([
 ]);
 
 const DRIVER_ROLES = new Set(['driver', 'b2c_driver']);
-const REVIEW_QUEUE_STATUSES = new Set(['pending', 'pending_review', 'ready_for_review']);
+const REVIEW_ACCOUNT_STATUSES = ['pending', 'pending_review', 'ready_for_review'] as const;
 
 export function isDriverUserRole(role: unknown): boolean {
   return DRIVER_ROLES.has(String(role || ''));
 }
 
-function mapStatus(raw: unknown, docsComplete: boolean): AdminDriverStatus {
-  const value = String(raw || 'pending');
-  if (value === 'active') return 'approved';
-  if (value === 'blocked') return 'banned';
-  if (REVIEW_QUEUE_STATUSES.has(value)) {
-    return docsComplete ? 'ready_for_review' : 'pending';
+function mapStatus(
+  raw: unknown,
+  docsComplete: boolean,
+  missing: 'pending' | 'approved' = 'pending'
+): AdminDriverStatus {
+  return mapDriverAccountStatus(raw, docsComplete, { missing });
+}
+
+async function safeQuery(
+  label: string,
+  run: () => Promise<admin.firestore.QuerySnapshot>
+): Promise<admin.firestore.QueryDocumentSnapshot[]> {
+  try {
+    const snap = await run();
+    return snap.docs;
+  } catch (error) {
+    console.warn(`[admin-drivers] ${label} query skipped:`, error);
+    return [];
   }
-  if (ALLOWED_STATUSES.has(value as AdminDriverStatus)) return value as AdminDriverStatus;
-  return docsComplete ? 'ready_for_review' : 'pending';
 }
 
 function readDocMeta(
@@ -110,24 +127,68 @@ function readDocMeta(
 async function queryDriverUsers(
   db: admin.firestore.Firestore
 ): Promise<admin.firestore.QueryDocumentSnapshot[]> {
-  const [legacy, modern] = await Promise.all([
-    db.collection('users').where('role', '==', 'driver').limit(100).get(),
-    db.collection('users').where('role', '==', 'b2c_driver').limit(100).get(),
+  const [legacy, modern, pendingUsers] = await Promise.all([
+    safeQuery('users-role-driver', () =>
+      db.collection('users').where('role', '==', 'driver').limit(500).get()
+    ),
+    safeQuery('users-role-b2c-driver', () =>
+      db.collection('users').where('role', '==', 'b2c_driver').limit(500).get()
+    ),
+    safeQuery('users-review-queue', () =>
+      db
+        .collection('users')
+        .where('accountStatus', 'in', [...REVIEW_ACCOUNT_STATUSES])
+        .limit(300)
+        .get()
+    ),
   ]);
   const byId = new Map<string, admin.firestore.QueryDocumentSnapshot>();
-  legacy.docs.forEach((d) => byId.set(d.id, d));
-  modern.docs.forEach((d) => byId.set(d.id, d));
+  const add = (docs: admin.firestore.QueryDocumentSnapshot[]) => {
+    docs.forEach((d) => byId.set(d.id, d));
+  };
+  add(legacy);
+  add(modern);
+  pendingUsers.forEach((doc) => {
+    const data = doc.data() as Record<string, unknown>;
+    if (isDriverUserRole(data.role) || data.vehicleType || data.plateNumber || data.nationalId) {
+      byId.set(doc.id, doc);
+    }
+  });
   return Array.from(byId.values());
 }
 
 /** List driver operators from users/{uid} + drivers/{uid} metadata. */
 export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<AdminDriverRow[]> {
-  const [userDocs, driversSnap, pendingSnap, pendingReviewSnap, readySnap] = await Promise.all([
+  const [
+    userDocs,
+    driversSnap,
+    pendingSnap,
+    pendingReviewSnap,
+    readySnap,
+    statusPendingSnap,
+    statusReviewSnap,
+    statusReadySnap,
+  ] = await Promise.all([
     queryDriverUsers(db),
-    db.collection('drivers').limit(300).get(),
-    db.collection('drivers').where('accountStatus', '==', 'pending').limit(100).get(),
-    db.collection('drivers').where('accountStatus', '==', 'pending_review').limit(100).get(),
-    db.collection('drivers').where('accountStatus', '==', 'ready_for_review').limit(100).get(),
+    safeQuery('drivers-unscoped', () => db.collection('drivers').limit(500).get()),
+    safeQuery('drivers-pending', () =>
+      db.collection('drivers').where('accountStatus', '==', 'pending').limit(200).get()
+    ),
+    safeQuery('drivers-pending-review', () =>
+      db.collection('drivers').where('accountStatus', '==', 'pending_review').limit(200).get()
+    ),
+    safeQuery('drivers-ready', () =>
+      db.collection('drivers').where('accountStatus', '==', 'ready_for_review').limit(200).get()
+    ),
+    safeQuery('drivers-status-pending', () =>
+      db.collection('drivers').where('status', '==', 'pending').limit(200).get()
+    ),
+    safeQuery('drivers-status-pending-review', () =>
+      db.collection('drivers').where('status', '==', 'pending_review').limit(200).get()
+    ),
+    safeQuery('drivers-status-ready', () =>
+      db.collection('drivers').where('status', '==', 'ready_for_review').limit(200).get()
+    ),
   ]);
 
   const byId = new Map<string, { user?: Record<string, unknown>; driver?: Record<string, unknown> }>();
@@ -137,10 +198,13 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
   }
 
   for (const driverDoc of [
-    ...driversSnap.docs,
-    ...pendingSnap.docs,
-    ...pendingReviewSnap.docs,
-    ...readySnap.docs,
+    ...driversSnap,
+    ...pendingSnap,
+    ...pendingReviewSnap,
+    ...readySnap,
+    ...statusPendingSnap,
+    ...statusReviewSnap,
+    ...statusReadySnap,
   ]) {
     const existing = byId.get(driverDoc.id) || {};
     existing.driver = driverDoc.data() as Record<string, unknown>;
@@ -178,7 +242,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
       continue;
     }
 
-    const documents = (driver.documents || {}) as Record<string, unknown>;
+    const documents = (driver.documents || user.documents || {}) as Record<string, unknown>;
     const expiries = (driver.documentExpiries || user.documentExpiries || {}) as Record<
       string,
       unknown
@@ -189,6 +253,8 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
       : user.rejectionReason
         ? String(user.rejectionReason)
         : null;
+    const rawStatus = readRawDriverAccountStatus(driver, user);
+    const inferredApproved = Boolean(driver.approvedAt || user.approvedAt);
 
     rows.push({
       id,
@@ -207,7 +273,11 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
       registrationSerial: driver.registrationSerial
         ? String(driver.registrationSerial)
         : undefined,
-      status: mapStatus(driver.accountStatus ?? user.accountStatus ?? 'pending', docsComplete),
+      status: mapStatus(
+        rawStatus,
+        docsComplete,
+        inferredApproved ? 'approved' : 'pending'
+      ),
       docsComplete,
       rejectionReason,
       complaints: Number(driver.complaints ?? 0) || 0,
@@ -223,61 +293,64 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
     });
   }
 
-  const operatorsSnap = await db.collection('operators').limit(200).get();
-  await Promise.all(
-    operatorsSnap.docs.map(async (operatorDoc) => {
-      const operator = operatorDoc.data() as Record<string, unknown>;
-      const vehiclesSnap = await db
-        .collection('operators')
-        .doc(operatorDoc.id)
-        .collection('vehicles')
-        .limit(200)
-        .get();
-      for (const vehicleDoc of vehiclesSnap.docs) {
-        const vehicle = vehicleDoc.data() as Record<string, unknown>;
-        const driverName = String(vehicle.driverName || '').trim();
-        const plate = String(vehicle.plateNumber || '');
-        if (
-          isTestOrGhostRecord({
-            uid: vehicleDoc.id,
-            name: driverName,
-            plateNumber: plate,
-            companyName: operator.companyName || operator.contactName,
-          })
-        ) {
-          continue;
-        }
-        if (!driverName && !plate) continue;
+  if (B2B_MODULES_ENABLED) {
+    const operatorsSnap = await db.collection('operators').limit(200).get();
+    await Promise.all(
+      operatorsSnap.docs.map(async (operatorDoc) => {
+        const operator = operatorDoc.data() as Record<string, unknown>;
+        const vehiclesSnap = await db
+          .collection('operators')
+          .doc(operatorDoc.id)
+          .collection('vehicles')
+          .limit(200)
+          .get();
+        for (const vehicleDoc of vehiclesSnap.docs) {
+          const vehicle = vehicleDoc.data() as Record<string, unknown>;
+          const driverName = String(vehicle.driverName || '').trim();
+          const plate = String(vehicle.plateNumber || '');
+          if (
+            isTestOrGhostRecord({
+              uid: vehicleDoc.id,
+              name: driverName,
+              plateNumber: plate,
+              companyName: operator.companyName || operator.contactName,
+            })
+          ) {
+            continue;
+          }
+          if (!driverName && !plate) continue;
 
-        const documents = (vehicle.documents || {}) as Record<string, unknown>;
-        const docsComplete = hasCompleteKycDocuments(documents);
-        rows.push({
-          id: `fleet:${operatorDoc.id}:${vehicleDoc.id}`,
-          kind: 'fleet_driver',
-          name: driverName || plate || 'Fleet driver',
-          phone: String(vehicle.phone || operator.phone || ''),
-          truck: String(vehicle.type || vehicle.serviceType || vehicle.category || '—'),
-          serviceType: String(vehicle.serviceType || vehicle.category || ''),
-          subtype: String(vehicle.serviceOption || vehicle.subtype || ''),
-          plateNumber: plate || '—',
-          companyName: String(operator.companyName || operator.contactName || operator.name || ''),
-          operatorId: operatorDoc.id,
-          vehicleId: vehicleDoc.id,
-          status: mapStatus(vehicle.accountStatus || 'pending', docsComplete),
-          docsComplete,
-          rejectionReason: vehicle.rejectionReason ? String(vehicle.rejectionReason) : null,
-          complaints: 0,
-          createdAt: timestampToIso(vehicle.createdAt || vehicle.updatedAt || operator.createdAt),
-          documents: {
-            license: readDocMeta(documents, 'license', {}),
-            id: readDocMeta(documents, 'id', {}),
-            registration: readDocMeta(documents, 'registration', {}),
-            permit: readDocMeta(documents, 'permit', {}),
-          },
-        });
-      }
-    })
-  );
+          const documents = (vehicle.documents || {}) as Record<string, unknown>;
+          const docsComplete = hasCompleteKycDocuments(documents);
+          const rawStatus = readRawDriverAccountStatus(vehicle);
+          rows.push({
+            id: `fleet:${operatorDoc.id}:${vehicleDoc.id}`,
+            kind: 'fleet_driver',
+            name: driverName || plate || 'Fleet driver',
+            phone: String(vehicle.phone || operator.phone || ''),
+            truck: String(vehicle.type || vehicle.serviceType || vehicle.category || '—'),
+            serviceType: String(vehicle.serviceType || vehicle.category || ''),
+            subtype: String(vehicle.serviceOption || vehicle.subtype || ''),
+            plateNumber: plate || '—',
+            companyName: String(operator.companyName || operator.contactName || operator.name || ''),
+            operatorId: operatorDoc.id,
+            vehicleId: vehicleDoc.id,
+            status: mapStatus(rawStatus, docsComplete, 'approved'),
+            docsComplete,
+            rejectionReason: vehicle.rejectionReason ? String(vehicle.rejectionReason) : null,
+            complaints: 0,
+            createdAt: timestampToIso(vehicle.createdAt || vehicle.updatedAt || operator.createdAt),
+            documents: {
+              license: readDocMeta(documents, 'license', {}),
+              id: readDocMeta(documents, 'id', {}),
+              registration: readDocMeta(documents, 'registration', {}),
+              permit: readDocMeta(documents, 'permit', {}),
+            },
+          });
+        }
+      })
+    );
+  }
 
   // Ready-for-review applications first so admins see the pre-filtered inbox immediately.
   rows.sort((a, b) => {

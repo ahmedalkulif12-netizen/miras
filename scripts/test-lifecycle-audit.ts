@@ -53,7 +53,11 @@ import {
 import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
 import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
 import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
-import { isValidMapsTarget } from '../src/lib/nativeMaps.ts';
+import {
+  googleMapsDirUrl,
+  isValidMapsTarget,
+  mapsNavigationUrls,
+} from '../src/lib/nativeMaps.ts';
 import { buildDriverAcceptPatch, DRIVER_ACCEPT_PATCH_KEYS, toFlatAcceptPatch } from '../src/lib/driverAcceptPatch.ts';
 import { formatFirestoreErrorDetails } from '../src/lib/firestoreWriteError.ts';
 import { cityCenterFromName } from '../src/lib/cityCoordinates.ts';
@@ -65,6 +69,15 @@ import {
   persistIgnoredDriverOffer,
   isIgnoredDriverOffer,
 } from '../src/lib/ignoredDriverOffers.ts';
+import {
+  isReviewQueueDriverStatus,
+  mapDriverAccountStatus,
+} from '../src/domain/driver-review.ts';
+import {
+  CORE_SERVICE_TYPES,
+  aggregateServiceDistribution,
+  resolveStoredOrderServiceType,
+} from '../src/domain/serviceCategories.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -363,12 +376,12 @@ async function run(): Promise<void> {
     'VITE_API_ORIGIN wins on native'
   );
   assert(
-    sandboxCheckoutAllowed({
+    !sandboxCheckoutAllowed({
       demoAllowed: false,
       isNative: true,
       deployEnv: 'staging',
     }),
-    'TestFlight staging allows sandbox checkout'
+    'store staging never uses sandbox checkout'
   );
   assert(
     !sandboxCheckoutAllowed({
@@ -487,6 +500,21 @@ async function run(): Promise<void> {
   assert(isValidMapsTarget({ address: 'الرياض' }), 'maps target accepts an address fallback');
   assert(!isValidMapsTarget({ lat: 0, lng: 0 }), 'maps target rejects null island');
 
+  const riyadh = { lat: 24.7136, lng: 46.6753, label: 'Pickup' };
+  const dirUrl = googleMapsDirUrl(riyadh);
+  assert(
+    dirUrl.startsWith('https://www.google.com/maps/dir/?api=1&destination=24.7136,46.6753'),
+    'Google Maps dir URL uses coordinates destination'
+  );
+  assert(dirUrl.includes('travelmode=driving'), 'Google Maps dir URL requests driving');
+  const iosMapsUrls = mapsNavigationUrls(riyadh, 'ios');
+  assert(iosMapsUrls[0] === 'comgooglemaps://?daddr=24.7136,46.6753&directionsmode=driving', 'iOS prefers Google Maps app scheme');
+  assert(iosMapsUrls.includes(dirUrl), 'iOS includes Google Maps https dir URL');
+  assert(
+    iosMapsUrls.every((url) => !url.includes('maps.apple.com') && !url.startsWith('maps:')),
+    'iOS must not open Apple Maps'
+  );
+
   const acceptPatch = buildDriverAcceptPatch({
     driverId: 'drv-1',
     name: 'Ahmed',
@@ -587,6 +615,65 @@ async function run(): Promise<void> {
   const makkahGeo = await geocodeSaudiQuery('مكة');
   assert(ahsaGeo != null && ahsaGeo.location.lat > 25, 'Al-Ahsa geocode returns coordinates without Google');
   assert(makkahGeo != null && makkahGeo.location.lng > 39, 'مكة geocode returns coordinates without Google');
+
+  assert(isReviewQueueDriverStatus('pending'), 'pending is in the review queue');
+  assert(isReviewQueueDriverStatus('pending_review'), 'pending_review is in the review queue');
+  assert(isReviewQueueDriverStatus('ready_for_review'), 'ready_for_review is in the review queue');
+  assert(!isReviewQueueDriverStatus('approved'), 'approved is not in the review queue');
+  assert(
+    mapDriverAccountStatus('pending_review', true) === 'ready_for_review',
+    'complete KYC pending_review maps to ready_for_review'
+  );
+  assert(
+    mapDriverAccountStatus('pending', false) === 'pending',
+    'incomplete KYC stays pending in the inbox'
+  );
+  assert(
+    mapDriverAccountStatus('', false, { missing: 'approved' }) === 'approved',
+    'fleet vehicles without a review status are not pending applications'
+  );
+  assert(
+    mapDriverAccountStatus('available', false) === 'approved',
+    'available fleet status is operational, not a registration'
+  );
+
+  assert(
+    resolveStoredOrderServiceType({
+      serviceType: 'flatbed',
+      serviceDetails: { type: 'small_truck' },
+    }) === 'flatbed',
+    'vehicle option small_truck must not override a flatbed order'
+  );
+  assert(
+    resolveStoredOrderServiceType({ serviceType: 'water_tanker' }) === 'water_tanker',
+    'water tanker orders keep their service type'
+  );
+  assert(
+    resolveStoredOrderServiceType({ serviceType: 'نقل البضائع' }) === 'goods_transport',
+    'Arabic cargo label maps to goods_transport'
+  );
+
+  const dist = aggregateServiceDistribution([
+    { serviceType: 'furniture_moving' },
+    { serviceType: 'flatbed' },
+    { serviceType: 'water_tanker' },
+    { serviceType: 'refrigerated' },
+    { kind: 'driver_registration', serviceType: 'driver_registration' },
+    { serviceType: 'cargo' },
+    { serviceType: 'heavy_equipment' },
+  ]);
+  assert(dist.length === CORE_SERVICE_TYPES.length, 'distribution includes all 6 platform services');
+  const byType = Object.fromEntries(dist.map((row) => [row.serviceType, row.count]));
+  assert(byType.furniture_moving === 1, 'moving is counted once');
+  assert(byType.flatbed === 1, 'flatbed is counted');
+  assert(byType.water_tanker === 1, 'water tanker is counted');
+  assert(byType.refrigerated === 1, 'refrigerated is counted');
+  assert(byType.goods_transport === 1, 'cargo alias counts as goods_transport');
+  assert(byType.heavy_equipment === 1, 'heavy equipment is counted');
+  assert(
+    dist.every((row) => row.percentage > 0),
+    'mixed catalog does not collapse to 100% moving'
+  );
 
   console.log('lifecycle-audit: all checks passed');
 }

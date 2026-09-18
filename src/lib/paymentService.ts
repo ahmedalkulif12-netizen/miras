@@ -15,7 +15,7 @@ export interface PaymentIntent {
   draftId: string;
   amount: number;
   paymentMethod?: CheckoutPaymentMethod;
-  /** In-app review/sandbox checkout — stay in the SPA, do not open Moyasar. */
+  /** Local-dev in-app checkout only — production always opens Moyasar. */
   sandbox?: boolean;
   testMode?: boolean;
 }
@@ -40,8 +40,7 @@ function sandboxIntent(
 
 /**
  * Creates Moyasar payment from a checkout draft (no `orders` document yet).
- * Local DEV and TestFlight/staging native builds may use an in-app sandbox
- * checkout when Moyasar is unavailable so App Review can complete the step.
+ * Production and store builds never fall back to a fake in-app checkout.
  */
 export const createPaymentIntent = async (
   draftId: string,
@@ -69,13 +68,13 @@ export const createPaymentIntent = async (
     if (!allowsSandboxCheckout()) {
       throw new Error(message);
     }
-    console.warn('[payments] Moyasar init failed — using App Review sandbox checkout:', message);
+    console.warn('[payments] Moyasar init failed — using local demo checkout:', message);
     return sandboxIntent(draftId, paymentMethod);
   } catch (error) {
     if (!allowsSandboxCheckout()) {
       throw error;
     }
-    console.warn('[payments] Moyasar unreachable — using App Review sandbox checkout:', error);
+    console.warn('[payments] Moyasar unreachable — using local demo checkout:', error);
     return sandboxIntent(draftId, paymentMethod);
   }
 };

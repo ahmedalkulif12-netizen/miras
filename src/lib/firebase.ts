@@ -177,6 +177,11 @@ function startFirebaseBootstrap(): Promise<void> {
             'Phone Auth will hard-fail until the debug token is registered, or set VITE_APP_CHECK_DISABLED=true with Auth App Check Unenforced:',
           err
         );
+      } else if (Capacitor.isNativePlatform()) {
+        console.warn(
+          '[Firebase] Native App Check unavailable — Phone OTP will still be sent:',
+          err
+        );
       } else {
         throw err;
       }

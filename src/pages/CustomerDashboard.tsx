@@ -1141,7 +1141,7 @@ const CustomerDashboard: React.FC = () => {
         id: 'payment-toast',
       });
 
-      // Stay in the SPA for App Review / sandbox checkout (Capacitor cannot load
+      // Stay in the SPA for local demo checkout (Capacitor cannot load
       // /payment-checkout as a file path via window.location).
       if (intent.sandbox) {
         setIsProcessing(false);

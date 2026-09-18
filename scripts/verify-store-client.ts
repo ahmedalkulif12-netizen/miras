@@ -50,6 +50,19 @@ function main(): number {
     return 1;
   }
 
+  const forbidden = [
+    'VITE_ENABLE_DEV_AUTH_BYPASS',
+    'VITE_PHONE_AUTH_TESTING',
+    'APPLE_REVIEW_PHONE',
+    'APPLE_REVIEW_OTP',
+  ] as const;
+  for (const name of forbidden) {
+    if (has(name) && process.env[name]?.trim() && process.env[name]?.trim() !== 'false') {
+      console.error(`${name} must be unset for store / production client builds.`);
+      return 1;
+    }
+  }
+
   if (requirePlist && !process.env.GOOGLE_SERVICE_INFO_PLIST?.trim()) {
     console.error('GOOGLE_SERVICE_INFO_PLIST (base64) is required in miras_client for iOS archives.');
     return 1;
