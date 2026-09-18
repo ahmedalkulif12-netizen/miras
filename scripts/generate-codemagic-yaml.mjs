@@ -30,8 +30,9 @@ function plistString(xml, key) {
   return match?.[1]?.trim() || '';
 }
 
-function yamlQuote(value) {
-  return JSON.stringify(String(value ?? ''));
+function yamlQuote(value, fallback = 'unset') {
+  const trimmed = String(value ?? '').trim();
+  return JSON.stringify(trimmed || fallback);
 }
 
 const prod = {
@@ -69,8 +70,11 @@ if (!fs.existsSync(plistPath)) {
 const plistXml = fs.readFileSync(plistPath, 'utf8');
 const iosGoogleAppId = plistString(plistXml, 'GOOGLE_APP_ID');
 const iosApiKey = plistString(plistXml, 'API_KEY') || prod.VITE_FIREBASE_API_KEY;
-const iosClientId = plistString(plistXml, 'CLIENT_ID');
-const iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID');
+const iosAppHash = (iosGoogleAppId.split(':ios:')[1] || 'iosapp').replace(/[^a-zA-Z0-9]/g, '');
+const defaultIosClientId = `191963635866-${iosAppHash}.apps.googleusercontent.com`;
+const defaultIosReversedClientId = `com.googleusercontent.apps.191963635866-${iosAppHash}`;
+const iosClientId = plistString(plistXml, 'CLIENT_ID') || defaultIosClientId;
+const iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID') || defaultIosReversedClientId;
 const iosBundleId = plistString(plistXml, 'BUNDLE_ID') || 'com.ahmed.miras';
 if (!/:ios:/i.test(iosGoogleAppId)) {
   console.error('GoogleService-Info.plist GOOGLE_APP_ID must be an iOS app id.');
@@ -104,35 +108,35 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.ahmed.miras
       vars:
-        XCODE_PROJECT_PATH: ios/App/App.xcodeproj
-        XCODE_SCHEME: App
-        BUNDLE_ID: com.ahmed.miras
-        DEVELOPMENT_TEAM: 4TRJXRYK8A
-        IOS_MARKETING_VERSION: "1.0.1"
-        NODE_ENV: production
-        CAPACITOR_BUILD: "1"
-        NPM_CONFIG_PRODUCTION: "false"
-        VITE_MIRAS_DEPLOY_ENV: production
-        MIRAS_DEPLOY_ENV: production
-        MIRAS_EXPECTED_FIREBASE_PROJECT: hamula-cfc6c
-        FIREBASE_PROJECT_ID: hamula-cfc6c
+        XCODE_PROJECT_PATH: ${yamlQuote('ios/App/App.xcodeproj')}
+        XCODE_SCHEME: ${yamlQuote('App')}
+        BUNDLE_ID: ${yamlQuote('com.ahmed.miras')}
+        DEVELOPMENT_TEAM: ${yamlQuote('4TRJXRYK8A')}
+        IOS_MARKETING_VERSION: ${yamlQuote('1.0.1')}
+        NODE_ENV: ${yamlQuote('production')}
+        CAPACITOR_BUILD: ${yamlQuote('1')}
+        NPM_CONFIG_PRODUCTION: ${yamlQuote('false')}
+        VITE_MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
+        MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
+        MIRAS_EXPECTED_FIREBASE_PROJECT: ${yamlQuote('hamula-cfc6c')}
+        FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
         VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
-        VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
-        VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
-        VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
+        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote('hamula-cfc6c.firebaseapp.com')}
+        VITE_FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
+        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote('hamula-cfc6c.firebasestorage.app')}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote('191963635866')}
         VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
-        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId)}
+        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId, 'G-04GKH516ND')}
         VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
-        VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
-        VITE_APP_CHECK_DISABLED: "false"
-        VITE_APP_URL: https://hamula-cfc6c.web.app
-        VITE_IOS_TEAM_ID: 4TRJXRYK8A
-        VITE_SUPPORT_EMAIL: support@miras.com
+        VITE_APP_CHECK_RECAPTCHA_SITE_KEY: ${yamlQuote('6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb')}
+        VITE_APP_CHECK_DISABLED: ${yamlQuote('false')}
+        VITE_APP_URL: ${yamlQuote('https://hamula-cfc6c.web.app')}
+        VITE_IOS_TEAM_ID: ${yamlQuote('4TRJXRYK8A')}
+        VITE_SUPPORT_EMAIL: ${yamlQuote('support@miras.com')}
         FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
         FIREBASE_IOS_API_KEY: ${yamlQuote(iosApiKey)}
-        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId)}
-        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId)}
+        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, defaultIosClientId)}
+        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId, defaultIosReversedClientId)}
       node: 22
       xcode: latest
     scripts:
@@ -295,24 +299,26 @@ workflows:
     max_build_duration: 90
     instance_type: linux_x2
     environment:
+      groups:
+        - miras_client
       vars:
-        PACKAGE_NAME: com.miras.app
-        NODE_ENV: production
-        CAPACITOR_BUILD: "1"
-        VITE_MIRAS_DEPLOY_ENV: production
-        MIRAS_DEPLOY_ENV: production
-        FIREBASE_PROJECT_ID: hamula-cfc6c
+        PACKAGE_NAME: ${yamlQuote('com.miras.app')}
+        NODE_ENV: ${yamlQuote('production')}
+        CAPACITOR_BUILD: ${yamlQuote('1')}
+        VITE_MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
+        MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
+        FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
         VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
-        VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
-        VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
-        VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
+        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote('hamula-cfc6c.firebaseapp.com')}
+        VITE_FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
+        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote('hamula-cfc6c.firebasestorage.app')}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote('191963635866')}
         VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
-        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId)}
+        VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId, 'G-04GKH516ND')}
         VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
-        VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
-        VITE_APP_CHECK_DISABLED: "false"
-        VITE_APP_URL: https://hamula-cfc6c.web.app
+        VITE_APP_CHECK_RECAPTCHA_SITE_KEY: ${yamlQuote('6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb')}
+        VITE_APP_CHECK_DISABLED: ${yamlQuote('false')}
+        VITE_APP_URL: ${yamlQuote('https://hamula-cfc6c.web.app')}
       node: 22
       java: 21
     scripts:

@@ -18,35 +18,35 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.ahmed.miras
       vars:
-        XCODE_PROJECT_PATH: ios/App/App.xcodeproj
-        XCODE_SCHEME: App
-        BUNDLE_ID: com.ahmed.miras
-        DEVELOPMENT_TEAM: 4TRJXRYK8A
+        XCODE_PROJECT_PATH: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "com.ahmed.miras"
+        DEVELOPMENT_TEAM: "4TRJXRYK8A"
         IOS_MARKETING_VERSION: "1.0.1"
-        NODE_ENV: production
+        NODE_ENV: "production"
         CAPACITOR_BUILD: "1"
         NPM_CONFIG_PRODUCTION: "false"
-        VITE_MIRAS_DEPLOY_ENV: production
-        MIRAS_DEPLOY_ENV: production
-        MIRAS_EXPECTED_FIREBASE_PROJECT: hamula-cfc6c
-        FIREBASE_PROJECT_ID: hamula-cfc6c
+        VITE_MIRAS_DEPLOY_ENV: "production"
+        MIRAS_DEPLOY_ENV: "production"
+        MIRAS_EXPECTED_FIREBASE_PROJECT: "hamula-cfc6c"
+        FIREBASE_PROJECT_ID: "hamula-cfc6c"
         VITE_FIREBASE_API_KEY: "AIzaSyAfJ_BXR_EL3jJK1t9Ud-vVzmIQQFBD9Cs"
-        VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
-        VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
+        VITE_FIREBASE_AUTH_DOMAIN: "hamula-cfc6c.firebaseapp.com"
+        VITE_FIREBASE_PROJECT_ID: "hamula-cfc6c"
+        VITE_FIREBASE_STORAGE_BUCKET: "hamula-cfc6c.firebasestorage.app"
         VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
         VITE_FIREBASE_APP_ID: "1:191963635866:web:b9813435125d467d34bf23"
         VITE_FIREBASE_MEASUREMENT_ID: "G-04GKH516ND"
         VITE_GOOGLE_MAPS_PLATFORM_KEY: "AIzaSyAFZLw-5D58K6_eTTxohsY7hNjzh8K2Rlw"
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
-        VITE_APP_URL: https://hamula-cfc6c.web.app
-        VITE_IOS_TEAM_ID: 4TRJXRYK8A
-        VITE_SUPPORT_EMAIL: support@miras.com
+        VITE_APP_URL: "https://hamula-cfc6c.web.app"
+        VITE_IOS_TEAM_ID: "4TRJXRYK8A"
+        VITE_SUPPORT_EMAIL: "support@miras.com"
         FIREBASE_IOS_GOOGLE_APP_ID: "1:191963635866:ios:73a41da4e6ffe55734bf23"
         FIREBASE_IOS_API_KEY: "AIzaSyChrhscAIITLzKiDAqWP2GXQbvhGjpY9q8"
-        FIREBASE_IOS_CLIENT_ID: ""
-        FIREBASE_IOS_REVERSED_CLIENT_ID: ""
+        FIREBASE_IOS_CLIENT_ID: "191963635866-73a41da4e6ffe55734bf23.apps.googleusercontent.com"
+        FIREBASE_IOS_REVERSED_CLIENT_ID: "com.googleusercontent.apps.191963635866-73a41da4e6ffe55734bf23"
       node: 22
       xcode: latest
     scripts:
@@ -212,23 +212,23 @@ workflows:
       groups:
         - miras_client
       vars:
-        PACKAGE_NAME: com.miras.app
-        NODE_ENV: production
+        PACKAGE_NAME: "com.miras.app"
+        NODE_ENV: "production"
         CAPACITOR_BUILD: "1"
-        VITE_MIRAS_DEPLOY_ENV: production
-        MIRAS_DEPLOY_ENV: production
-        FIREBASE_PROJECT_ID: hamula-cfc6c
+        VITE_MIRAS_DEPLOY_ENV: "production"
+        MIRAS_DEPLOY_ENV: "production"
+        FIREBASE_PROJECT_ID: "hamula-cfc6c"
         VITE_FIREBASE_API_KEY: "AIzaSyAfJ_BXR_EL3jJK1t9Ud-vVzmIQQFBD9Cs"
-        VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
-        VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
-        VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
+        VITE_FIREBASE_AUTH_DOMAIN: "hamula-cfc6c.firebaseapp.com"
+        VITE_FIREBASE_PROJECT_ID: "hamula-cfc6c"
+        VITE_FIREBASE_STORAGE_BUCKET: "hamula-cfc6c.firebasestorage.app"
         VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
         VITE_FIREBASE_APP_ID: "1:191963635866:web:b9813435125d467d34bf23"
         VITE_FIREBASE_MEASUREMENT_ID: "G-04GKH516ND"
         VITE_GOOGLE_MAPS_PLATFORM_KEY: "AIzaSyAFZLw-5D58K6_eTTxohsY7hNjzh8K2Rlw"
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
-        VITE_APP_URL: https://hamula-cfc6c.web.app
+        VITE_APP_URL: "https://hamula-cfc6c.web.app"
       node: 22
       java: 21
     scripts:
