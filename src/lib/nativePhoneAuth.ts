@@ -11,7 +11,8 @@
  * native verifyPhoneNumber *starts*; the verificationId arrives later. Confirm()
  * waits for that id so Send OTP can navigate immediately.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import {
   PhoneAuthProvider,
   signInWithCredential,
@@ -99,15 +100,52 @@ function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<
   });
 }
 
-async function getNativeAuthPlugin(): Promise<NativeAuthPlugin> {
-  const mod = await import('@capacitor-firebase/authentication');
-  const plugin = (mod as { FirebaseAuthentication?: NativeAuthPlugin }).FirebaseAuthentication;
-  if (!plugin?.signInWithPhoneNumber) {
-    throw Object.assign(new Error('NATIVE_PHONE_AUTH_UNAVAILABLE'), {
-      code: 'NATIVE_PHONE_AUTH_UNAVAILABLE',
-    });
+function pluginLooksUsable(plugin: unknown): plugin is NativeAuthPlugin {
+  return (
+    !!plugin &&
+    typeof plugin === 'object' &&
+    typeof (plugin as NativeAuthPlugin).signInWithPhoneNumber === 'function' &&
+    typeof (plugin as NativeAuthPlugin).addListener === 'function'
+  );
+}
+
+export function isNativePhoneAuthUnavailable(error: unknown): boolean {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : '';
+  const message = error instanceof Error ? error.message : String(error || '');
+  return (
+    code === 'NATIVE_PHONE_AUTH_UNAVAILABLE' ||
+    code === 'UNIMPLEMENTED' ||
+    /UNIMPLEMENTED/i.test(code) ||
+    /not implemented/i.test(message) ||
+    /plugin is not implemented/i.test(message) ||
+    /NATIVE_PHONE_AUTH_UNAVAILABLE/i.test(message)
+  );
+}
+
+/**
+ * Static import so Vite always ships the plugin JS with the Capacitor bundle.
+ * Dynamic import() was split into a separate chunk that 404s inside capacitor://.
+ */
+function getNativeAuthPlugin(): NativeAuthPlugin | null {
+  try {
+    if (pluginLooksUsable(FirebaseAuthentication)) {
+      return FirebaseAuthentication as unknown as NativeAuthPlugin;
+    }
+  } catch (error) {
+    console.warn('[PhoneAuth] Init: package FirebaseAuthentication unavailable', error);
   }
-  return plugin;
+  try {
+    const registered = registerPlugin<NativeAuthPlugin>('FirebaseAuthentication');
+    if (pluginLooksUsable(registered)) {
+      return registered;
+    }
+  } catch (error) {
+    console.warn('[PhoneAuth] Init: registerPlugin(FirebaseAuthentication) failed', error);
+  }
+  return null;
 }
 
 function clearNativeListeners(): void {
@@ -191,11 +229,14 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
   const phoneE164 = toFirebasePhoneE164(phoneInput);
   logPhoneAuth('E164 Formatted', phoneE164);
 
-  const FirebaseAuthentication = await withTimeout(
-    getNativeAuthPlugin(),
-    NATIVE_PLUGIN_START_TIMEOUT_MS,
-    'NATIVE_PHONE_AUTH_UNAVAILABLE'
-  );
+  const plugin = getNativeAuthPlugin();
+  if (!plugin) {
+    throw Object.assign(new Error('NATIVE_PHONE_AUTH_UNAVAILABLE'), {
+      code: 'NATIVE_PHONE_AUTH_UNAVAILABLE',
+    });
+  }
+  const FirebaseAuthentication = plugin;
+
   clearNativeListeners();
   nativeVerificationId = null;
 
@@ -226,48 +267,57 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
   });
   void verificationIdPromise.catch(() => undefined);
 
-  await withTimeout(
-    (async () => {
-      const failed = await Promise.resolve(
-        FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
-          settleVerification(
-            false,
-            Object.assign(new Error(event.message || 'auth/internal-error'), {
-              code: 'auth/internal-error',
-            })
-          );
-        })
-      );
-      const sent = await Promise.resolve(
-        FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
-          const id = readVerificationId(event);
-          if (id) {
-            logPhoneAuth('Verification ID Received', id);
-            settleVerification(true, id);
-          }
-        })
-      );
-      const completed = await Promise.resolve(
-        FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
-          const id = readVerificationId(event);
-          if (id) {
-            logPhoneAuth('Verification ID Received', id);
-            settleVerification(true, id);
-          }
-        })
-      );
-      listeners = [failed, sent, completed];
+  try {
+    await withTimeout(
+      (async () => {
+        const failed = await Promise.resolve(
+          FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
+            settleVerification(
+              false,
+              Object.assign(new Error(event.message || 'auth/internal-error'), {
+                code: 'auth/internal-error',
+              })
+            );
+          })
+        );
+        const sent = await Promise.resolve(
+          FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
+            const id = readVerificationId(event);
+            if (id) {
+              logPhoneAuth('Verification ID Received', id);
+              settleVerification(true, id);
+            }
+          })
+        );
+        const completed = await Promise.resolve(
+          FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
+            const id = readVerificationId(event);
+            if (id) {
+              logPhoneAuth('Verification ID Received', id);
+              settleVerification(true, id);
+            }
+          })
+        );
+        listeners = [failed, sent, completed];
 
-      await Promise.resolve(
-        FirebaseAuthentication.signInWithPhoneNumber({
-          phoneNumber: phoneE164,
-          skipNativeAuth: true,
-        })
-      );
-    })(),
-    NATIVE_PLUGIN_START_TIMEOUT_MS,
-    'OTP_SEND_TIMEOUT'
-  );
+        await Promise.resolve(
+          FirebaseAuthentication.signInWithPhoneNumber({
+            phoneNumber: phoneE164,
+            skipNativeAuth: true,
+          })
+        );
+      })(),
+      NATIVE_PLUGIN_START_TIMEOUT_MS,
+      'OTP_SEND_TIMEOUT'
+    );
+  } catch (error) {
+    if (isNativePhoneAuthUnavailable(error)) {
+      throw Object.assign(new Error('NATIVE_PHONE_AUTH_UNAVAILABLE'), {
+        code: 'NATIVE_PHONE_AUTH_UNAVAILABLE',
+      });
+    }
+    throw error;
+  }
 
   logPhoneAuth('Init', 'native verifyPhoneNumber started — UI may navigate to OTP');
   return makeJsConfirmation();

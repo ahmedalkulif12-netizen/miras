@@ -77,7 +77,7 @@ export function getPhoneAuthErrorMessage(
     'auth/internal-error':
       'Phone verification failed (internal error). Confirm the number is E.164 (+9665XXXXXXXX), refresh the page, and retry. On iPhone, SMS is sent by the native Firebase plugin — not WebView reCAPTCHA.',
     NATIVE_PHONE_AUTH_UNAVAILABLE:
-      'Native iOS phone login is not available in this build. Reinstall the TestFlight build and try again.',
+      'Could not start native phone verification. A backup sign-in method will be tried automatically.',
     'auth/invalid-verification-code': 'Invalid verification code. Check the SMS and try again.',
     'auth/code-expired': 'This code has expired. Request a new OTP.',
     'auth/session-expired': 'Verification session expired. Request a new OTP.',
@@ -135,7 +135,7 @@ export function getPhoneAuthErrorMessage(
     'auth/internal-error':
       'فشل التحقق من الجوال (خطأ داخلي). تأكد من صيغة الرقم (+9665XXXXXXXX) وحدّث الصفحة وحاول مجدداً. على الآيفون يُرسل الرمز عبر المكوّن الأصلي وليس reCAPTCHA في المتصفح.',
     NATIVE_PHONE_AUTH_UNAVAILABLE:
-      'تسجيل الدخول بالجوال غير متاح في هذا الإصدار. ثبّت نسخة TestFlight مجدداً ثم أعد المحاولة.',
+      'تعذر بدء التحقق الأصلي من الجوال. سيتم استخدام طريقة احتياطية تلقائياً.',
     'auth/invalid-verification-code': 'رمز التحقق غير صحيح. راجع الرسالة وحاول مجدداً.',
     'auth/code-expired': 'انتهت صلاحية الرمز. اطلب رمزاً جديداً.',
     'auth/session-expired': 'انتهت جلسة التحقق. اطلب رمزاً جديداً.',

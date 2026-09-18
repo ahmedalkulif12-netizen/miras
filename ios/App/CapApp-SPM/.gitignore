@@ -1,6 +1,7 @@
 .DS_Store
 /.build
-/Packages
+# Do not ignore ./packages — CapacitorFirebaseAuthentication / AppCheck copies live there.
+# `/Packages` was matching that folder on Windows (case-insensitive git) and dropped the native plugins.
 /*.xcodeproj
 xcuserdata/
 DerivedData/

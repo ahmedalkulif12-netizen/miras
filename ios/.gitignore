@@ -14,4 +14,5 @@ App/App/config.xml
 
 # Generated unique SPM identity for @capacitor-firebase/app-check (must be a real copy, not a symlink)
 App/CapApp-SPM/symlinks
-App/CapApp-SPM/packages
+# Commit packages/ so CapacitorFirebaseAuthentication is embedded in every Xcode/TestFlight build.
+

@@ -179,6 +179,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
+      include: ['@capacitor-firebase/authentication', '@capacitor-firebase/app-check'],
       exclude: ['@langchain/langgraph', '@langchain/core'],
     },
   };

@@ -110,6 +110,20 @@ async function main() {
       'CapApp-SPM/Package.swift still ends in /app-check — that identity collides with firebase-ios-sdk AppCheckCore'
     );
   }
+  if (
+    !exists('ios/App/CapApp-SPM/packages/CapacitorFirebaseAuthentication/ios/Plugin/FirebaseAuthenticationPlugin.swift')
+  ) {
+    failures.push(
+      'CapApp-SPM/packages/CapacitorFirebaseAuthentication native plugin sources are missing — run npm run cap:sync:ios'
+    );
+  }
+  if (
+    !exists(
+      'ios/App/CapApp-SPM/packages/CapacitorFirebaseAuthentication/ios/Plugin/Handlers/PhoneAuthProviderHandler.swift'
+    )
+  ) {
+    failures.push('PhoneAuthProviderHandler.swift is missing from the iOS SPM authentication package');
+  }
   const copiedPlugin = path.join(root, 'ios', 'App', 'CapApp-SPM', 'packages', 'CapacitorFirebaseAppCheck');
   if (fs.existsSync(copiedPlugin) && fs.lstatSync(copiedPlugin).isSymbolicLink()) {
     failures.push(

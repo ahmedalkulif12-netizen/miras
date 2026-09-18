@@ -31,6 +31,7 @@ import {
   resetNativePhoneAuth,
   sendNativeIosPhoneOtp,
   shouldUseNativeIosPhoneAuth,
+  isNativePhoneAuthUnavailable,
 } from '@/lib/nativePhoneAuth';
 
 export const PHONE_AUTH_RECAPTCHA_CONTAINER_ID = 'miras-recaptcha';
@@ -116,16 +117,6 @@ function placeContainerOffscreen(container: HTMLElement): void {
 export function ensurePersistentRecaptchaContainer(
   containerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID
 ): HTMLElement {
-  if (shouldUseNativeIosPhoneAuth()) {
-    let container = document.getElementById(containerId);
-    if (!container) {
-      container = document.createElement('div');
-      container.id = containerId;
-      container.setAttribute('data-native-ios-phone-auth', 'true');
-      document.body.appendChild(container);
-    }
-    return container;
-  }
   let container = document.getElementById(containerId);
   if (!container) {
     container = document.createElement('div');
@@ -165,11 +156,6 @@ async function clearRecaptchaVerifier(): Promise<void> {
 async function createInvisibleVerifier(
   containerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID
 ): Promise<RecaptchaVerifier> {
-  if (shouldUseNativeIosPhoneAuth()) {
-    throw Object.assign(new Error('NATIVE_PHONE_AUTH_REQUIRED'), {
-      code: 'NATIVE_PHONE_AUTH_REQUIRED',
-    });
-  }
   await clearRecaptchaVerifier();
   ensurePersistentRecaptchaContainer(containerId);
 
@@ -220,11 +206,6 @@ export async function preparePhoneAuthRecaptcha(
   recaptchaContainerId = PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
   _options?: { forceNew?: boolean }
 ): Promise<RecaptchaVerifier> {
-  if (shouldUseNativeIosPhoneAuth()) {
-    throw Object.assign(new Error('NATIVE_PHONE_AUTH_REQUIRED'), {
-      code: 'NATIVE_PHONE_AUTH_REQUIRED',
-    });
-  }
   return createInvisibleVerifier(recaptchaContainerId);
 }
 
@@ -273,9 +254,15 @@ async function sendPhoneOtpOnce(
     });
     try {
       activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
+      return phoneE164;
     } catch (error) {
       const authError = preserveAuthError(error);
-      if (isAppCheckAttestationFailure(authError)) {
+      if (isNativePhoneAuthUnavailable(authError)) {
+        console.warn(
+          '[PhoneAuth] Init: native CapacitorFirebaseAuthentication missing — falling back to JS Phone Auth'
+        );
+        // Fall through to RecaptchaVerifier so login is not blocked by a red guard.
+      } else if (isAppCheckAttestationFailure(authError)) {
         throw Object.assign(
           new Error(
             'Phone verification was blocked by App Check on this device. ' +
@@ -284,10 +271,10 @@ async function sendPhoneOtpOnce(
           ),
           { code: 'auth/failed-precondition' }
         );
+      } else {
+        throw authError;
       }
-      throw authError;
     }
-    return phoneE164;
   }
 
   if (!shouldRelaxAuthAppCheck()) {
