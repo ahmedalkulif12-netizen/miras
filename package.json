@@ -26,7 +26,7 @@
     "deploy:hosting": "tsx scripts/verify-store-client.ts && npm run build && npx --yes firebase-tools deploy --only hosting --project hamula-cfc6c",
     "deploy:hosting:store": "tsx scripts/verify-store-client.ts --require-app-links && npm run build && npx --yes firebase-tools deploy --only hosting --project hamula-cfc6c",
     "cap:sync:android:store": "tsx scripts/verify-store-client.ts --require-app-links && node scripts/vite-capacitor.mjs && npx cap sync android",
-    "cap:sync:ios:store": "npm run ios:prepare-store && npm run verify:ios-store && npm run cap:sync:ios",
+    "cap:sync:ios:store": "npm run ios:prepare-store && npx tsx scripts/verify-store-client.ts && npm run cap:sync:ios",
     "deploy:hosting:preview": "npm run build && npx --yes firebase-tools hosting:channel:deploy preview --project hamula-cfc6c",
     "deploy:hosting:api": "npm run build && npx --yes firebase-tools deploy --only hosting --project hamula-cfc6c --config firebase.hosting.api.json",
     "deploy:live": "npm run verify:staging && npm run build && npx --yes firebase-tools deploy --only hosting,firestore --project hamula-cfc6c",

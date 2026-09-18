@@ -35,6 +35,8 @@ const config: CapacitorConfig = {
       'https://*.moyasar.com',
       'https://*.google.com',
       'https://*.gstatic.com',
+      'https://*.recaptcha.net',
+      'https://www.recaptcha.net',
     ],
   },
   plugins: {

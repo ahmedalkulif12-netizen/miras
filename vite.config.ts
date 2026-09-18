@@ -89,6 +89,13 @@ function requireClientEnvPlugin(mode: string, env: Record<string, string>): Plug
             'Set them in Codemagic group miras_client or in .env / .env.production.'
         );
       }
+      const appId = String(merged.VITE_FIREBASE_APP_ID || '').trim();
+      if (/:(ios|android):/i.test(appId)) {
+        throw new Error(
+          '[vite] VITE_FIREBASE_APP_ID must be the Web app id (1:…:web:…), not an iOS/Android id. ' +
+            'Native ids belong in GoogleService-Info.plist / google-services.json only.'
+        );
+      }
       const deploy = String(merged.VITE_MIRAS_DEPLOY_ENV || merged.VITE_HAMOULA_DEPLOY_ENV || '').trim();
       if (deploy === 'production' && String(merged.VITE_APP_CHECK_DISABLED || '') === 'true') {
         throw new Error('[vite] VITE_APP_CHECK_DISABLED=true is forbidden when VITE_MIRAS_DEPLOY_ENV=production.');

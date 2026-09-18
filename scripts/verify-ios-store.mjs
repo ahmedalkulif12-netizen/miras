@@ -107,6 +107,20 @@ async function main() {
   if (!exists('ios/App/App/PrivacyInfo.xcprivacy')) {
     failures.push('PrivacyInfo.xcprivacy is missing');
   }
+  const plistRel = 'ios/App/App/GoogleService-Info.plist';
+  if (exists(plistRel)) {
+    const plist = read(plistRel);
+    if (!plist.includes('<string>com.ahmed.miras</string>')) {
+      failures.push('GoogleService-Info.plist BUNDLE_ID must be com.ahmed.miras');
+    }
+    if (!/GOOGLE_APP_ID[\s\S]*:ios:/.test(plist)) {
+      failures.push('GoogleService-Info.plist GOOGLE_APP_ID must be the Firebase iOS app (1:…:ios:…)');
+    }
+  } else {
+    console.warn(
+      'GoogleService-Info.plist is not in the working tree (gitignored). Codemagic writes it from GOOGLE_SERVICE_INFO_PLIST before archive.'
+    );
+  }
   if (!fs.existsSync(iconPath)) {
     failures.push('AppIcon-512@2x.png is missing — run npm run generate:assets');
   } else {
