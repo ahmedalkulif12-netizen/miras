@@ -14,7 +14,7 @@ import {
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import { Capacitor } from '@capacitor/core';
 import { getFirebaseClientConfig } from '@/lib/publicEnv';
-import { initAppCheck } from '@/lib/appCheck';
+import { initAppCheck, isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { validateFirebaseApiKeyForAuth } from '@/lib/firebaseEnvValidation';
 import {
   defaultPricingForService,
@@ -177,7 +177,7 @@ function startFirebaseBootstrap(): Promise<void> {
             'Phone Auth will hard-fail until the debug token is registered, or set VITE_APP_CHECK_DISABLED=true with Auth App Check Unenforced:',
           err
         );
-      } else if (Capacitor.isNativePlatform()) {
+      } else if (isNativeCapacitorRuntime()) {
         console.warn(
           '[Firebase] Native App Check unavailable — Phone OTP will still be sent:',
           err

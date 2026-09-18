@@ -3,6 +3,17 @@
  * Admin login previously swallowed these as generic "Failed to send OTP".
  */
 export function getPhoneAuthErrorCode(error: unknown): string {
+  const text =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message || '')
+        : '';
+
+  if (/FAILED_PRECONDITION/i.test(text) || /App not registered/i.test(text)) {
+    return 'auth/failed-precondition';
+  }
+
   if (error && typeof error === 'object' && 'code' in error) {
     const code = String((error as { code?: string }).code || '').trim();
     if (code) return code;
@@ -44,6 +55,10 @@ export function getPhoneAuthErrorMessage(
       'This page hostname is not authorized for Phone Auth reCAPTCHA. Add it under Authentication → Settings → Authorized domains and on the App Check reCAPTCHA key Domains list.',
     'auth/app-check-token-is-invalid': 'App Check failed. Add VITE_APP_CHECK_DEBUG_TOKEN for localhost (see docs/FIREBASE_AUTH_SETUP.md).',
     'auth/app-check-token-is-missing': 'App Check token missing. Register a debug token for local dev or disable Auth App Check enforcement in Console.',
+    'auth/firebase-app-check-token-is-invalid':
+      'App Check rejected this session. On TestFlight, register the iOS app in Firebase Console → App Check (App Attest / DeviceCheck) and keep Authentication App Check on Monitor until tokens succeed.',
+    'auth/failed-precondition':
+      'Phone verification was blocked by App Check (FAILED_PRECONDITION). On iOS, do not use reCAPTCHA v3 — register App Attest / DeviceCheck for the iOS app, or leave Auth App Check unenforced until TestFlight attestation works.',
     APP_CHECK_NOT_INITIALIZED:
       'App Check did not start. Set VITE_APP_CHECK_DEBUG_TOKEN + VITE_APP_CHECK_RECAPTCHA_SITE_KEY in .env, or VITE_APP_CHECK_DISABLED=true with Auth App Check unenforced in Console.',
     APP_CHECK_TOKEN_EXCHANGE_FAILED:
@@ -99,6 +114,10 @@ export function getPhoneAuthErrorMessage(
       'نطاق الصفحة غير مصرّح به لـ Phone Auth. أضفه في Authorized domains وفي نطاقات مفتاح reCAPTCHA.',
     'auth/app-check-token-is-invalid': 'فشل App Check. أضف VITE_APP_CHECK_DEBUG_TOKEN للتطوير المحلي.',
     'auth/app-check-token-is-missing': 'رمز App Check مفقود. سجّل debug token أو عطّل فرض App Check على Auth مؤقتاً.',
+    'auth/firebase-app-check-token-is-invalid':
+      'رفض App Check هذه الجلسة. على TestFlight سجّل تطبيق iOS في Firebase App Check (App Attest / DeviceCheck).',
+    'auth/failed-precondition':
+      'حُظر التحقق بسبب App Check. على iOS لا يُستخدم reCAPTCHA v3 — فعّل App Attest أو أوقف فرض App Check على Auth حتى يعمل TestFlight.',
     APP_CHECK_NOT_INITIALIZED:
       'App Check لم يبدأ. أضف VITE_APP_CHECK_DEBUG_TOKEN + VITE_APP_CHECK_RECAPTCHA_SITE_KEY في .env.',
     APP_CHECK_TOKEN_EXCHANGE_FAILED:

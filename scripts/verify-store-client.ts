@@ -76,6 +76,22 @@ function main(): number {
     return 1;
   }
 
+  const firebaseAppId = process.env.VITE_FIREBASE_APP_ID?.trim() || '';
+  if (/:(ios|android):/i.test(firebaseAppId)) {
+    console.error(
+      `VITE_FIREBASE_APP_ID must be the Web app id (1:…:web:…), not ${firebaseAppId}. ` +
+        'Native iOS/Android ids belong only in GoogleService-Info.plist / google-services.json. ' +
+        'Using an iOS id with reCAPTCHA v3 causes "App not registered".'
+    );
+    return 1;
+  }
+  if (firebaseAppId && !/:web:/i.test(firebaseAppId)) {
+    console.error(
+      `VITE_FIREBASE_APP_ID must include :web: (got ${firebaseAppId}). Copy the Web app config from Firebase Console.`
+    );
+    return 1;
+  }
+
   console.log('Store client env: OK');
   console.log(`  VITE_FIREBASE_PROJECT_ID=${process.env.VITE_FIREBASE_PROJECT_ID}`);
   console.log(`  VITE_APP_URL set (${appUrl.length} chars)`);

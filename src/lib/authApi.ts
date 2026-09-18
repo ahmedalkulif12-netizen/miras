@@ -1,5 +1,5 @@
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
-import { ensureAppCheckTokenForApi, isAppCheckDisabled } from '@/lib/appCheck';
+import { ensureAppCheckTokenForApi, isAppCheckDisabled, isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { resolveApiUrl } from '@/lib/apiUrl';
 import { isDevAuthBypassEnabled, loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
@@ -58,7 +58,19 @@ export async function authFetch(
   // Localhost: never block API calls on App Check exchangeDebugToken 403.
   let appCheckToken: string | null = null;
   if (!isAppCheckDisabled() && !import.meta.env.DEV) {
-    appCheckToken = await ensureAppCheckTokenForApi(false);
+    try {
+      appCheckToken = await ensureAppCheckTokenForApi(false);
+    } catch (err) {
+      if (isNativeCapacitorRuntime()) {
+        console.warn(
+          '[authApi] Native App Check token unavailable — continuing without X-Firebase-AppCheck:',
+          err
+        );
+        appCheckToken = null;
+      } else {
+        throw err;
+      }
+    }
   } else if (!isAppCheckDisabled() && import.meta.env.DEV) {
     try {
       appCheckToken = await ensureAppCheckTokenForApi(false);

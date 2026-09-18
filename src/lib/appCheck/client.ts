@@ -16,6 +16,11 @@ import {
   isAppCheckDebugModeAllowed,
   isProductionClient,
 } from '@/lib/appCheck/guard';
+import {
+  formatNativeAppCheckFailure,
+  isNativeFirebaseAppId,
+  looksLikeNativeCapacitorRuntime,
+} from '@/lib/appCheck/runtime';
 
 let initPromise: Promise<void> | null = null;
 let jsAppCheckInstance: AppCheck | null = null;
@@ -28,6 +33,24 @@ export class AppCheckInitError extends Error {
     super(message);
     this.name = 'AppCheckInitError';
     this.code = code;
+  }
+}
+
+/**
+ * Capacitor iOS/Android WebView — never use web reCAPTCHA v3 here.
+ * Also treats capacitor:// origins as native if the bridge reports late.
+ */
+export function isNativeCapacitorRuntime(): boolean {
+  try {
+    return looksLikeNativeCapacitorRuntime({
+      isNativePlatform: Capacitor.isNativePlatform(),
+      platform: Capacitor.getPlatform(),
+      protocol: typeof window !== 'undefined' ? window.location.protocol : undefined,
+    });
+  } catch {
+    return looksLikeNativeCapacitorRuntime({
+      protocol: typeof window !== 'undefined' ? window.location.protocol : undefined,
+    });
   }
 }
 
@@ -60,8 +83,8 @@ export function isAppCheckDisabled(): boolean {
 }
 
 /**
- * Phone Auth may skip App Check when explicitly disabled for local/staging testing
- * (Console Auth App Check must be unenforced, otherwise OTP still fails).
+ * Phone Auth may skip App Check when explicitly disabled for local/staging testing,
+ * or when native attestation is unavailable (TestFlight / Play Integrity gaps).
  */
 export function shouldRelaxAuthAppCheck(): boolean {
   return isAppCheckDisabled();
@@ -81,18 +104,44 @@ async function awaitAppCheckInit(): Promise<void> {
   }
 }
 
+function nativePlatformLabel(): string {
+  try {
+    return Capacitor.getPlatform();
+  } catch {
+    return 'native';
+  }
+}
+
+/**
+ * Native App Check uses App Attest / DeviceCheck (iOS) or Play Integrity (Android)
+ * via the Capacitor plugin. Probe a real token BEFORE initializeAppCheck — otherwise
+ * Firebase Auth auto-attaches a failing provider and Phone OTP returns FAILED_PRECONDITION.
+ */
 async function initNativeAppCheck(app: FirebaseApp): Promise<void> {
   const { FirebaseAppCheck } = await import('@capacitor-firebase/app-check');
 
-  let nativeDebugToken: string | undefined;
+  const initOptions: {
+    isTokenAutoRefreshEnabled: boolean;
+    debugToken?: string;
+  } = {
+    isTokenAutoRefreshEnabled: true,
+  };
   if (isAppCheckDebugModeAllowed()) {
-    nativeDebugToken = getClientPublicEnv().appCheck.debugToken;
+    const nativeDebugToken = getClientPublicEnv().appCheck.debugToken;
+    if (nativeDebugToken) {
+      initOptions.debugToken = nativeDebugToken;
+    }
   }
 
-  await FirebaseAppCheck.initialize({
-    isTokenAutoRefreshEnabled: true,
-    debugToken: nativeDebugToken,
-  });
+  await FirebaseAppCheck.initialize(initOptions);
+
+  const first = await FirebaseAppCheck.getToken({ forceRefresh: true });
+  if (!first.token) {
+    throw new AppCheckInitError(
+      'APP_CHECK_NATIVE_TOKEN_MISSING',
+      `Native App Check (${nativePlatformLabel()}) did not return a token.`
+    );
+  }
 
   jsAppCheckInstance = initializeAppCheck(app, {
     provider: new CustomProvider({
@@ -100,6 +149,9 @@ async function initNativeAppCheck(app: FirebaseApp): Promise<void> {
         const { token, expireTimeMillis } = await FirebaseAppCheck.getToken({
           forceRefresh: false,
         });
+        if (!token) {
+          throw new Error('Native App Check token empty');
+        }
         return {
           token,
           expireTimeMillis: expireTimeMillis ?? Date.now() + 55 * 60 * 1000,
@@ -118,6 +170,16 @@ async function initWebRecaptchaV3(app: FirebaseApp): Promise<void> {
     installDevAppCheckDebugToken();
   } else {
     clearAppCheckDebugToken();
+  }
+
+  const jsAppId = getClientPublicEnv().firebase.appId;
+  if (isNativeFirebaseAppId(jsAppId)) {
+    throw new AppCheckInitError(
+      'APP_CHECK_WEB_APP_ID_REQUIRED',
+      `VITE_FIREBASE_APP_ID is a native app id (${jsAppId}). ` +
+        'The JS SDK must use the Web app id (1:…:web:…) from Firebase Console. ' +
+        'reCAPTCHA v3 cannot attest an iOS/Android app registration.'
+    );
   }
 
   const siteKeyRaw = getClientPublicEnv().appCheck.recaptchaSiteKey;
@@ -154,6 +216,10 @@ async function initWebRecaptchaV3(app: FirebaseApp): Promise<void> {
 function formatInitFailure(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
 
+  if (isNativeCapacitorRuntime()) {
+    return formatNativeAppCheckFailure(nativePlatformLabel(), error);
+  }
+
   if (isProductionClient()) {
     return (
       'App Check reCAPTCHA v3 failed on production. Verify VITE_APP_CHECK_RECAPTCHA_SITE_KEY, ' +
@@ -173,11 +239,25 @@ function formatInitFailure(error: unknown): string {
   return `App Check initialization failed: ${raw}`;
 }
 
+function softFailNativeAppCheck(nativeError: unknown): void {
+  const message = formatInitFailure(nativeError);
+  initError =
+    nativeError instanceof AppCheckInitError
+      ? nativeError
+      : new AppCheckInitError('APP_CHECK_INIT_FAILED', message);
+  jsAppCheckInstance = null;
+  console.warn(
+    '[App Check] Native attestation unavailable — Phone Auth will continue without an App Check token:',
+    message,
+    nativeError
+  );
+}
+
 /**
  * Initializes App Check once per app lifetime.
  * Web production: ReCaptchaV3Provider ONLY.
  * Web development: optional debug token + ReCaptchaV3Provider.
- * Native: Capacitor attestation bridge.
+ * Native: Capacitor App Attest / DeviceCheck / Play Integrity — never reCAPTCHA v3.
  */
 export async function initAppCheck(app: FirebaseApp): Promise<void> {
   if (initPromise) {
@@ -196,23 +276,13 @@ export async function initAppCheck(app: FirebaseApp): Promise<void> {
     }
 
     try {
-      if (Capacitor.isNativePlatform()) {
+      if (isNativeCapacitorRuntime()) {
         try {
           await initNativeAppCheck(app);
-          console.info(`[App Check] Native attestation active (${Capacitor.getPlatform()})`);
+          console.info(`[App Check] Native attestation active (${nativePlatformLabel()})`);
         } catch (nativeError) {
-          // Play Integrity / App Attest / DeviceCheck must not hard-block Phone OTP.
-          const message = formatInitFailure(nativeError);
-          initError =
-            nativeError instanceof AppCheckInitError
-              ? nativeError
-              : new AppCheckInitError('APP_CHECK_INIT_FAILED', message);
-          jsAppCheckInstance = null;
-          console.warn(
-            '[App Check] Native attestation unavailable — Phone Auth will continue without an App Check token:',
-            message,
-            nativeError
-          );
+          // Unregistered iOS app / missing App Attest must not hard-block Phone OTP.
+          softFailNativeAppCheck(nativeError);
         }
         return;
       }
@@ -228,9 +298,9 @@ export async function initAppCheck(app: FirebaseApp): Promise<void> {
       console.error('[App Check] Initialization failed:', message, error);
 
       // Local demos: do not throw — Maps Routes / UI must keep working without a valid debug token.
-      if (import.meta.env.DEV || !isProductionClient()) {
+      if (import.meta.env.DEV || !isProductionClient() || isNativeCapacitorRuntime()) {
         console.warn(
-          '[App Check] Soft-failing in development. Maps will load with API key only (no App Check).'
+          '[App Check] Soft-failing. Maps/Auth will continue without an App Check token.'
         );
         return;
       }
@@ -258,10 +328,23 @@ export async function ensureAppCheckTokenForAuth(): Promise<void> {
 
   await awaitAppCheckInit();
 
-  if (Capacitor.isNativePlatform() && (initError || !jsAppCheckInstance)) {
-    console.warn(
-      '[App Check] Native token unavailable — sending Phone OTP without an App Check header.'
-    );
+  if (isNativeCapacitorRuntime()) {
+    if (initError || !jsAppCheckInstance) {
+      console.warn(
+        '[App Check] Native token unavailable — sending Phone OTP without an App Check header.'
+      );
+      return;
+    }
+    try {
+      await getToken(jsAppCheckInstance, true);
+    } catch (error) {
+      // Do not throw: attaching a failed provider already happened only after a successful probe.
+      // A later refresh failure must not block TestFlight phone login.
+      console.warn(
+        '[App Check] Native token refresh failed — Phone OTP will still be sent:',
+        error
+      );
+    }
     return;
   }
 
@@ -352,6 +435,11 @@ export async function ensureAppCheckTokenForApi(forceRefresh = false): Promise<s
     }
   }
 
+  if (isNativeCapacitorRuntime() && (initError || !jsAppCheckInstance)) {
+    console.warn('[App Check] Native API token unavailable — continuing without X-Firebase-AppCheck.');
+    return null;
+  }
+
   if (initError) {
     throw initError;
   }
@@ -368,6 +456,10 @@ export async function ensureAppCheckTokenForApi(forceRefresh = false): Promise<s
     const result = await getToken(jsAppCheckInstance, forceRefresh);
     return result.token;
   } catch (error) {
+    if (isNativeCapacitorRuntime()) {
+      console.warn('[App Check] Native API token exchange failed — continuing without header:', error);
+      return null;
+    }
     throw new AppCheckInitError('APP_CHECK_TOKEN_EXCHANGE_FAILED', formatInitFailure(error));
   }
 }

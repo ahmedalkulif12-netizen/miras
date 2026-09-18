@@ -14,7 +14,13 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
-import { ensureAppCheckTokenForAuth, isAppCheckDisabled, shouldRelaxAuthAppCheck } from '@/lib/appCheck';
+import {
+  ensureAppCheckTokenForAuth,
+  isAppCheckAttestationFailure,
+  isAppCheckDisabled,
+  isNativeCapacitorRuntime,
+  shouldRelaxAuthAppCheck,
+} from '@/lib/appCheck';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { getPhoneAuthErrorCode } from '@/lib/phoneAuthErrors';
 import { buildCaptchaHostnameHint, getBrowserHostname } from '@/lib/phoneAuthDomains';
@@ -225,7 +231,19 @@ async function sendPhoneOtpOnce(
 
   if (!shouldRelaxAuthAppCheck()) {
     await ensureFirebaseReady();
-    await ensureAppCheckTokenForAuth();
+    try {
+      await ensureAppCheckTokenForAuth();
+    } catch (error) {
+      // TestFlight / Play Integrity gaps must not block real SMS OTP.
+      if (isNativeCapacitorRuntime()) {
+        console.warn(
+          '[phoneAuth] App Check token unavailable — continuing Phone OTP without attestation:',
+          error
+        );
+      } else {
+        throw error;
+      }
+    }
   } else {
     await ensureFirebaseReady();
   }
@@ -244,6 +262,20 @@ async function sendPhoneOtpOnce(
       throw Object.assign(
         new Error(buildCaptchaHostnameHint(getBrowserHostname(), projectId)),
         { code: 'auth/captcha-check-failed' }
+      );
+    }
+    if (isNativeCapacitorRuntime() && isAppCheckAttestationFailure(error)) {
+      console.warn(
+        '[phoneAuth] Firebase Auth rejected App Check on native:',
+        error
+      );
+      throw Object.assign(
+        new Error(
+          'Phone verification was blocked by App Check on this device. ' +
+            'Register the iOS app in Firebase Console → App Check (App Attest / DeviceCheck) ' +
+            'or set Authentication App Check to Monitor until TestFlight attestation works.'
+        ),
+        { code: 'auth/failed-precondition' }
       );
     }
     throw preserveAuthError(error);

@@ -13,6 +13,7 @@
     "clean:build": "node scripts/clean-build.mjs && npm run build",
     "lint": "tsc --noEmit",
     "test:auth-routing": "tsx scripts/test-auth-routing.ts",
+    "test:app-check-runtime": "tsx scripts/test-app-check-runtime.ts",
     "verify:staging": "tsx scripts/verify-production-env.ts staging",
     "verify:production": "tsx scripts/verify-production-env.ts production",
     "verify:firebase-client": "tsx scripts/verify-firebase-client-env.ts",

@@ -4,6 +4,7 @@ import {
   normalizeRecaptchaSiteKey,
   validateRecaptchaSiteKey,
 } from '@/lib/appCheck/config';
+import { isNativeFirebaseAppId } from '@/lib/appCheck/runtime';
 
 /**
  * P0-15: Client-safe configuration — ONLY `import.meta.env.VITE_*` values.
@@ -78,6 +79,13 @@ export function getFirebaseClientConfig(): FirebaseOptions {
   }
 
   assertFirebaseConfigCoherence(firebase);
+
+  if (isNativeFirebaseAppId(firebase.appId)) {
+    console.warn(
+      `[publicEnv] VITE_FIREBASE_APP_ID is a native app id (${firebase.appId}). ` +
+        'The JS SDK must use the Web app id (1:…:web:…). Native App Check will not use reCAPTCHA v3.'
+    );
+  }
 
   return firebase;
 }
