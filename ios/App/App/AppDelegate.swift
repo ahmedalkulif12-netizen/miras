@@ -39,7 +39,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        print("[PhoneAuth] APNs registration failed (SMS still attempted in-process, no Safari):", error.localizedDescription)
+        print("[PhoneAuth] APNs not available (profile has no Push entitlement):", error.localizedDescription)
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) -> Bool {

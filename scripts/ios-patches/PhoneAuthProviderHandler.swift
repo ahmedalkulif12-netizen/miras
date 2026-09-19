@@ -10,7 +10,6 @@ class PhoneAuthProviderHandler: NSObject {
     private var skipNativeAuthOnConfirm = false
     /// Retained so Firebase can call it; this delegate never presents Safari.
     private var silentUIDelegate: PhoneAuthNoSafariUIDelegate?
-    private var apnsWaitWorkItem: DispatchWorkItem?
 
     init(_ pluginImplementation: FirebaseAuthentication) {
         self.pluginImplementation = pluginImplementation
@@ -44,43 +43,7 @@ class PhoneAuthProviderHandler: NSObject {
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
         let phoneNumber = options.getPhoneNumber()
         silentUIDelegate = PhoneAuthNoSafariUIDelegate()
-        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \(phoneNumber) (APNs-only, no Safari)")
-        waitForSilentAPNsThenVerify(phoneNumber)
-    }
-
-    private func waitForSilentAPNsThenVerify(_ phoneNumber: String) {
-        var started = false
-        var observer: NSObjectProtocol?
-        let startVerify: () -> Void = { [weak self] in
-            guard let self = self, !started else { return }
-            started = true
-            self.apnsWaitWorkItem?.cancel()
-            self.apnsWaitWorkItem = nil
-            if let observer {
-                NotificationCenter.default.removeObserver(observer)
-            }
-            self.startNativeVerify(phoneNumber)
-        }
-
-        observer = NotificationCenter.default.addObserver(
-            forName: Notification.Name("MirasPhoneAuthAPNSReady"),
-            object: nil,
-            queue: .main
-        ) { _ in
-            CAPLog.print("[PhoneAuth] APNs token ready — starting verifyPhoneNumber")
-            startVerify()
-        }
-
-        let work = DispatchWorkItem {
-            CAPLog.print("[PhoneAuth] APNs wait finished — starting verifyPhoneNumber")
-            startVerify()
-        }
-        apnsWaitWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
-        NotificationCenter.default.post(name: Notification.Name("MirasPhoneAuthAPNSRequest"), object: nil)
-    }
-
-    private func startNativeVerify(_ phoneNumber: String) {
+        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \(phoneNumber) (in-app, no Safari, no Push entitlement)")
         DispatchQueue.main.async {
             PhoneAuthProvider.provider()
                 .verifyPhoneNumber(phoneNumber, uiDelegate: self.silentUIDelegate) { verificationID, error in
@@ -111,11 +74,10 @@ class PhoneAuthProviderHandler: NSObject {
     }
 }
 
-/// Blocks SFSafariViewController / ASWebAuthenticationSession. Firebase Phone Auth
-/// must complete via silent APNs handled in AppDelegate.
+/// Blocks SFSafariViewController / ASWebAuthenticationSession so login stays in-app.
 final class PhoneAuthNoSafariUIDelegate: NSObject, AuthUIDelegate {
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        CAPLog.print("[PhoneAuth] blocked Safari/reCAPTCHA redirect — staying in-app (APNs-only)")
+        CAPLog.print("[PhoneAuth] blocked Safari/reCAPTCHA redirect — staying in-app")
         completion?()
     }
 
