@@ -182,10 +182,13 @@ function applyNativePhoneAuthPatches(pluginRoot) {
     }`,
     `    @objc func handlePhoneVerificationFailed(_ error: Error) {
         let nsError = error as NSError
-        CAPLog.print("[PhoneAuth] phoneVerificationFailed \\(nsError.domain) \\(nsError.code) \\(error.localizedDescription)")
+        let authCode = FirebaseAuthenticationHelper.createErrorCode(error: error) ?? "auth/internal-error"
+        CAPLog.print("[PhoneAuth] phoneVerificationFailed \\(authCode) domain=\\(nsError.domain) nativeCode=\\(nsError.code) \\(error.localizedDescription)")
         var result = JSObject()
         result["message"] = error.localizedDescription
-        result["code"] = "\\(nsError.domain).\\(nsError.code)"
+        result["code"] = authCode
+        result["nativeDomain"] = nsError.domain
+        result["nativeCode"] = String(nsError.code)
         notifyListeners(phoneVerificationFailedEvent, data: result, retainUntilConsumed: true)
     }
 

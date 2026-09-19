@@ -90,7 +90,9 @@ const AdminLoginPage: React.FC = () => {
         return;
       }
       console.error('[AdminLogin] OTP send failed:', getPhoneAuthErrorCode(error), error);
-      toast.error(getPhoneAuthErrorMessage(error, 'en'));
+      toast.error(
+        `${getPhoneAuthErrorCode(error)}: ${getPhoneAuthErrorMessage(error, 'en')}`
+      );
       if (getPhoneAuthErrorCode(error) === 'ALREADY_AUTHENTICATED') {
         return;
       }
@@ -121,7 +123,7 @@ const AdminLoginPage: React.FC = () => {
         toast.error('This account is not authorized for admin access');
       } else {
         const errCode = getPhoneAuthErrorCode(error);
-        toast.error(getPhoneAuthErrorMessage(error, 'en'));
+        toast.error(`${errCode}: ${getPhoneAuthErrorMessage(error, 'en')}`);
         if (
           errCode === 'auth/code-expired' ||
           errCode === 'auth/session-expired' ||

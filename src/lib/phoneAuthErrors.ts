@@ -71,6 +71,14 @@ export function getPhoneAuthErrorMessage(
       'App Check must be enabled in production. Remove VITE_APP_CHECK_DISABLED and configure VITE_APP_CHECK_RECAPTCHA_SITE_KEY.',
     APP_CHECK_NOT_CONFIGURED:
       'App Check env vars missing. See .env.example (VITE_APP_CHECK_DEBUG_TOKEN + VITE_APP_CHECK_RECAPTCHA_SITE_KEY).',
+    'auth/app-not-authorized':
+      'This iOS app is not authorized for Firebase Phone Auth (auth/app-not-authorized). Confirm GoogleService-Info.plist GOOGLE_APP_ID / BUNDLE_ID match the Apple app in Firebase Console.',
+    'auth/missing-apns-token':
+      'Firebase could not verify the iOS app (missing APNs token). SMS was not sent.',
+    'auth/app-not-verified':
+      'Firebase could not verify this iOS app, so SMS was not dispatched.',
+    'auth/notification-not-forwarded':
+      'Firebase silent APNs challenge was not delivered to Auth. SMS was not sent.',
     'auth/network-request-failed': 'Network error reaching Firebase. Check connection and authorized domains.',
     'auth/invalid-api-key':
       'Firebase API key rejected for Authentication. In Google Cloud Console → Credentials → Browser key → API restrictions, enable Identity Toolkit API and Token Service API.',
@@ -129,6 +137,11 @@ export function getPhoneAuthErrorMessage(
     APP_CHECK_REQUIRED_IN_PRODUCTION:
       'يجب تفعيل App Check في الإنتاج. أزل VITE_APP_CHECK_DISABLED واضبط VITE_APP_CHECK_RECAPTCHA_SITE_KEY.',
     APP_CHECK_NOT_CONFIGURED: 'متغيرات App Check مفقودة. راجع .env.example.',
+    'auth/app-not-authorized':
+      'هذا التطبيق غير مصرّح له بمصادقة الجوال في Firebase (auth/app-not-authorized). تأكد أن GoogleService-Info.plist يطابق تطبيق iOS في Console.',
+    'auth/missing-apns-token': 'تعذر التحقق من التطبيق (رمز APNs مفقود). لم يُرسل SMS.',
+    'auth/app-not-verified': 'تعذر التحقق من تطبيق iOS، لذلك لم يُرسل SMS.',
+    'auth/notification-not-forwarded': 'لم يصل تحدي APNs إلى Firebase Auth. لم يُرسل SMS.',
     'auth/network-request-failed': 'خطأ شبكة. تحقق من الاتصال والنطاقات المصرّح بها.',
     'auth/invalid-api-key':
       'مفتاح Firebase مرفوض لخدمة المصادقة. في Google Cloud Console فعّل Identity Toolkit API و Token Service API لمفتاح المتصفح.',
@@ -166,4 +179,37 @@ export function getPhoneAuthErrorMessage(
     return table[code];
   }
   return locale === 'ar' ? 'تعذر إكمال التحقق' : 'Phone verification failed';
+}
+
+/** Visible `code: message` so TestFlight can show the exact Firebase Auth response. */
+export function formatPhoneAuthErrorAlert(error: unknown): string {
+  const code = getPhoneAuthErrorCode(error);
+  const message =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === 'object' && 'message' in error
+        ? String((error as { message?: unknown }).message || '')
+        : String(error || 'Phone verification failed');
+  if (code && message && message !== code) {
+    return `${code}: ${message}`;
+  }
+  return code || message || 'auth/internal-error';
+}
+
+export function alertPhoneAuthError(error: unknown): void {
+  const code = getPhoneAuthErrorCode(error);
+  if (
+    code === 'ALREADY_AUTHENTICATED' ||
+    code === 'NEEDS_ONBOARDING' ||
+    code === 'NATIVE_PHONE_AUTH_UNAVAILABLE'
+  ) {
+    return;
+  }
+  const line = formatPhoneAuthErrorAlert(error);
+  console.error('[PhoneAuth] Firebase Auth error', line, error);
+  try {
+    window.alert(line);
+  } catch {
+    /* WKWebView / Node tests without window.alert */
+  }
 }

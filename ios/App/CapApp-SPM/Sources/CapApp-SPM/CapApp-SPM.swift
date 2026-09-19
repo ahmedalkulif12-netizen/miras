@@ -8,15 +8,47 @@ import FirebaseAuth
 
 public let isCapacitorApp = true
 
-/// Native Phone Auth without Push / App Attest entitlements (App Store profile has neither).
-/// Never opens Safari or an external reCAPTCHA sheet.
+/// Native Phone Auth without Push / App Attest entitlements.
+/// Configures Firebase from the bundled GoogleService-Info.plist.
 public enum PhoneAuthNativeBootstrap {
     public static func configureIfNeeded() {
         #if canImport(FirebaseCore)
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
+        let plistName = "GoogleService-Info"
+        guard let path = Bundle.main.path(forResource: plistName, ofType: "plist") else {
+            print("[PhoneAuth] ERROR: \(plistName).plist missing from app bundle — Auth cannot send SMS")
+            if FirebaseApp.app() == nil {
+                FirebaseApp.configure()
+            }
+            configureAuthLanguage()
+            return
         }
-        print("[PhoneAuth] Firebase configured (no Push/App Attest entitlements)")
+        guard let options = FirebaseOptions(contentsOfFile: path) else {
+            print("[PhoneAuth] ERROR: failed to parse \(plistName).plist at \(path)")
+            if FirebaseApp.app() == nil {
+                FirebaseApp.configure()
+            }
+            configureAuthLanguage()
+            return
+        }
+        if FirebaseApp.app() == nil {
+            FirebaseApp.configure(options: options)
+        }
+        let app = FirebaseApp.app()
+        print("[PhoneAuth] Firebase Auth from GoogleService-Info.plist")
+        print("[PhoneAuth] projectID=\(app?.options.projectID ?? options.projectID ?? "nil")")
+        print("[PhoneAuth] googleAppID=\(app?.options.googleAppID ?? options.googleAppID)")
+        print("[PhoneAuth] bundleID=\(app?.options.bundleID ?? options.bundleID ?? "nil")")
+        print("[PhoneAuth] gcmSenderID=\(app?.options.gcmSenderID ?? options.gcmSenderID)")
+        print("[PhoneAuth] apiKeyPrefix=\(String((app?.options.apiKey ?? options.apiKey ?? "").prefix(8)))")
+        print("[PhoneAuth] Saudi E.164 format required: +9665XXXXXXXX")
+        #endif
+        configureAuthLanguage()
+    }
+
+    private static func configureAuthLanguage() {
+        #if canImport(FirebaseAuth)
+        Auth.auth().languageCode = "ar"
+        print("[PhoneAuth] Auth.languageCode=ar (Saudi +966 SMS)")
         #endif
     }
 

@@ -41,35 +41,72 @@ class PhoneAuthProviderHandler: NSObject {
     }
 
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
-        let phoneNumber = options.getPhoneNumber()
+        let phoneNumber = options.getPhoneNumber().trimmingCharacters(in: .whitespacesAndNewlines)
         silentUIDelegate = PhoneAuthNoSafariUIDelegate()
-        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \(phoneNumber) (in-app, no Safari, no Push entitlement)")
+        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber phone=\(phoneNumber)")
+        guard isSaudiMobileE164(phoneNumber) else {
+            CAPLog.print("[PhoneAuth] rejected phone — expected Saudi E.164 +9665XXXXXXXX got \(phoneNumber)")
+            let error = NSError(
+                domain: "FIRAuthErrorDomain",
+                code: AuthErrorCode.invalidPhoneNumber.rawValue,
+                userInfo: [NSLocalizedDescriptionKey: "auth/invalid-phone-number: \(phoneNumber) is not +9665XXXXXXXX"]
+            )
+            logFirebaseAuthFailure(error)
+            pluginImplementation.handlePhoneVerificationFailed(error)
+            return
+        }
         DispatchQueue.main.async {
             PhoneAuthProvider.provider()
                 .verifyPhoneNumber(phoneNumber, uiDelegate: self.silentUIDelegate) { verificationID, error in
                     if let error = error {
-                        let nsError = error as NSError
-                        CAPLog.print(
-                            "[PhoneAuth] verifyPhoneNumber failed domain=\(nsError.domain) code=\(nsError.code) \(error.localizedDescription)"
-                        )
+                        self.logFirebaseAuthFailure(error)
                         self.pluginImplementation.handlePhoneVerificationFailed(error)
                         return
                     }
                     let id = verificationID ?? ""
                     if id.isEmpty {
                         CAPLog.print("[PhoneAuth] empty verificationId — SMS was not dispatched")
-                        self.pluginImplementation.handlePhoneVerificationFailed(
-                            NSError(
-                                domain: "PhoneAuth",
-                                code: -1,
-                                userInfo: [NSLocalizedDescriptionKey: "Empty verificationId"]
-                            )
+                        let empty = NSError(
+                            domain: "PhoneAuth",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: "Empty verificationId"]
                         )
+                        self.logFirebaseAuthFailure(empty)
+                        self.pluginImplementation.handlePhoneVerificationFailed(empty)
                         return
                     }
                     CAPLog.print("[PhoneAuth] SMS dispatched verificationId=\(id.prefix(8))…")
                     self.pluginImplementation.handlePhoneCodeSent(id)
                 }
+        }
+    }
+
+    private func isSaudiMobileE164(_ phone: String) -> Bool {
+        let pattern = #"^\+9665[0-9]{8}$"#
+        return phone.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    private func logFirebaseAuthFailure(_ error: Error) {
+        let nsError = error as NSError
+        let authCode = FirebaseAuthenticationHelper.createErrorCode(error: error) ?? "unknown"
+        CAPLog.print("[PhoneAuth] verifyPhoneNumber FAILED auth=\(authCode)")
+        CAPLog.print("[PhoneAuth] domain=\(nsError.domain) nativeCode=\(nsError.code)")
+        CAPLog.print("[PhoneAuth] localized=\(nsError.localizedDescription)")
+        if let reason = nsError.localizedFailureReason {
+            CAPLog.print("[PhoneAuth] reason=\(reason)")
+        }
+        if authCode == "auth/too-many-requests" || authCode == "auth/quota-exceeded" {
+            CAPLog.print("[PhoneAuth] RATE LIMITED / QUOTA — Firebase rejected SMS for this project")
+        }
+        if authCode == "auth/app-not-authorized" || authCode == "auth/invalid-api-key" {
+            CAPLog.print("[PhoneAuth] APP NOT AUTHORIZED — check GoogleService-Info.plist GOOGLE_APP_ID / BUNDLE_ID")
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            CAPLog.print("[PhoneAuth] underlying domain=\(underlying.domain) code=\(underlying.code) \(underlying.localizedDescription)")
+        }
+        for (key, value) in nsError.userInfo {
+            if String(describing: key) == NSUnderlyingErrorKey { continue }
+            CAPLog.print("[PhoneAuth] userInfo[\(key)]=\(value)")
         }
     }
 }

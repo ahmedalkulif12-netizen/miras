@@ -23,7 +23,7 @@ import {
   shouldRelaxAuthAppCheck,
 } from '@/lib/appCheck';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
-import { getPhoneAuthErrorCode } from '@/lib/phoneAuthErrors';
+import { getPhoneAuthErrorCode, alertPhoneAuthError } from '@/lib/phoneAuthErrors';
 import { buildCaptchaHostnameHint, getBrowserHostname } from '@/lib/phoneAuthDomains';
 import { getClientPublicEnv } from '@/lib/publicEnv';
 import {
@@ -388,6 +388,7 @@ export async function sendPhoneOtp(
       activeConfirmation = null;
       const authError = preserveAuthError(error);
       console.error('[phoneAuth] sendPhoneOtp failed:', getPhoneAuthErrorCode(authError), authError);
+      alertPhoneAuthError(authError);
       if (shouldUseNativeIosPhoneAuth()) {
         await resetNativePhoneAuth();
       } else {
@@ -454,6 +455,8 @@ export async function confirmPhoneOtp(otp: string): Promise<User> {
     } catch (error) {
       const authError = preserveAuthError(error);
       const errCode = getPhoneAuthErrorCode(authError);
+      console.error('[phoneAuth] confirmPhoneOtp failed:', errCode, authError);
+      alertPhoneAuthError(authError);
       // Expired / invalid session — clear so UI must request a fresh SMS (no hanging retries).
       if (isExpiredOtpError(errCode) || errCode === 'OTP_CONFIRM_TIMEOUT') {
         activeConfirmation = null;

@@ -22,6 +22,7 @@ import { auth } from '@/lib/firebase';
 import { isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { shouldUseNativeIosPhoneAuth as matchNativeIosPhoneAuth } from '@/lib/nativePhoneAuthRuntime';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
+import { alertPhoneAuthError } from '@/lib/phoneAuthErrors';
 
 const NATIVE_PLUGIN_START_TIMEOUT_MS = 8_000;
 /** Background APNs SMS dispatch; confirm() waits on this, Send OTP does not. */
@@ -167,28 +168,30 @@ function nativeAuthError(error: unknown): Error & { code?: string } {
       : error && typeof error === 'object' && 'message' in error
         ? String((error as { message?: unknown }).message || '')
         : 'auth/internal-error';
-  const code =
+  const rawCode =
     error && typeof error === 'object' && 'code' in error
       ? String((error as { code?: unknown }).code || '')
       : '';
-  if (/invalid.?phone/i.test(message) || code.includes('invalid-phone')) {
-    return Object.assign(new Error('auth/invalid-phone-number'), {
-      code: 'auth/invalid-phone-number',
-    });
+  const mapped = mapNativeAuthCode(rawCode, message);
+  return Object.assign(new Error(message || mapped), { code: mapped });
+}
+
+function mapNativeAuthCode(code: string, message: string): string {
+  const lower = `${code} ${message}`.toLowerCase();
+  if (code.startsWith('auth/')) return code;
+  if (/invalid.?phone/i.test(lower) || code.endsWith('17042')) return 'auth/invalid-phone-number';
+  if (/too.?many/i.test(lower) || code.endsWith('17010')) return 'auth/too-many-requests';
+  if (/quota/i.test(lower) || code.endsWith('17052')) return 'auth/quota-exceeded';
+  if (/app-not-authorized|not authorized/i.test(lower) || code.endsWith('17028')) {
+    return 'auth/app-not-authorized';
   }
-  if (/too many/i.test(message) || code.includes('too-many-requests')) {
-    return Object.assign(new Error('auth/too-many-requests'), {
-      code: 'auth/too-many-requests',
-    });
+  if (/missing-apns|missing.?app.?token/i.test(lower) || code.endsWith('17048')) {
+    return 'auth/missing-apns-token';
   }
-  if (/quota/i.test(message) || code.includes('quota')) {
-    return Object.assign(new Error('auth/quota-exceeded'), {
-      code: 'auth/quota-exceeded',
-    });
-  }
-  return Object.assign(new Error(message || 'auth/internal-error'), {
-    code: code || 'auth/internal-error',
-  });
+  if (/app-not-verified/i.test(lower) || code.endsWith('17050')) return 'auth/app-not-verified';
+  if (/operation-not-allowed/i.test(lower)) return 'auth/operation-not-allowed';
+  if (/invalid.?api.?key/i.test(lower)) return 'auth/invalid-api-key';
+  return code || 'auth/internal-error';
 }
 
 function readVerificationId(event: { verificationId?: string } | null | undefined): string {
@@ -341,7 +344,10 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
   logPhoneAuth('native verifyPhoneNumber started — opening in-app OTP screen');
   void verificationIdPromise.then(
     (id) => logPhoneAuth('SMS dispatched in background', id),
-    (error) => logPhoneAuth('background SMS verify failed', error)
+    (error) => {
+      logPhoneAuth('background SMS verify failed', error);
+      alertPhoneAuthError(error);
+    }
   );
   return makeJsConfirmation();
 }

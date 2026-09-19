@@ -305,7 +305,7 @@ const LoginPage: React.FC = () => {
         );
         return;
       }
-      toast.error(getPhoneAuthErrorMessage(error, locale));
+      toast.error(`${code}: ${getPhoneAuthErrorMessage(error, locale)}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -374,7 +374,7 @@ const LoginPage: React.FC = () => {
       }
     } catch (error: unknown) {
       const errCode = getPhoneAuthErrorCode(error);
-      toast.error(getPhoneAuthErrorMessage(error, locale));
+      toast.error(`${errCode}: ${getPhoneAuthErrorMessage(error, locale)}`);
       if (
         errCode === 'auth/code-expired' ||
         errCode === 'auth/session-expired' ||
@@ -543,7 +543,9 @@ const LoginPage: React.FC = () => {
       toast.success(t('otp_resent'));
     } catch (error: unknown) {
       console.error('[Login] OTP resend failed:', getPhoneAuthErrorCode(error), error);
-      toast.error(getPhoneAuthErrorMessage(error, locale));
+      toast.error(
+        `${getPhoneAuthErrorCode(error)}: ${getPhoneAuthErrorMessage(error, locale)}`
+      );
     } finally {
       setIsSubmitting(false);
     }
