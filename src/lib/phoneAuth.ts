@@ -23,7 +23,7 @@ import {
   shouldRelaxAuthAppCheck,
 } from '@/lib/appCheck';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
-import { getPhoneAuthErrorCode, alertPhoneAuthError } from '@/lib/phoneAuthErrors';
+import { getPhoneAuthErrorCode } from '@/lib/phoneAuthErrors';
 import { buildCaptchaHostnameHint, getBrowserHostname } from '@/lib/phoneAuthDomains';
 import { getClientPublicEnv } from '@/lib/publicEnv';
 import {
@@ -38,8 +38,8 @@ export const PHONE_AUTH_RECAPTCHA_CONTAINER_ID = 'miras-recaptcha';
 
 /** Prevents hung App Check / Firebase SMS from locking the login UI forever. */
 const OTP_SEND_TIMEOUT_MS = 45_000;
-/** Native iOS only waits for the plugin to start verifyPhoneNumber (APNs SMS is background). */
-const OTP_SEND_NATIVE_TIMEOUT_MS = 10_000;
+/** Native iOS waits for Firebase verificationId (real SMS request). */
+const OTP_SEND_NATIVE_TIMEOUT_MS = 95_000;
 const OTP_CONFIRM_TIMEOUT_MS = 45_000;
 const OTP_CONFIRM_NATIVE_TIMEOUT_MS = 90_000;
 
@@ -248,14 +248,12 @@ async function sendPhoneOtpOnce(
   }
 
   if (useNativeIos) {
-    // Do not wait for App Check or phoneCodeSent. Plugin start is enough to
-    // open the in-app OTP screen; confirm() waits for the APNs verificationId.
     void ensureFirebaseReady().catch((error) => {
       console.warn('[PhoneAuth] Init: Firebase bootstrap still pending — continuing native OTP', error);
     });
     try {
       activeConfirmation = await sendNativeIosPhoneOtp(phoneE164);
-      logPhoneAuth('native verify started — opening in-app OTP screen');
+      logPhoneAuth('Verification ID Received');
       return phoneE164;
     } catch (error) {
       const authError = preserveAuthError(error);
@@ -388,7 +386,6 @@ export async function sendPhoneOtp(
       activeConfirmation = null;
       const authError = preserveAuthError(error);
       console.error('[phoneAuth] sendPhoneOtp failed:', getPhoneAuthErrorCode(authError), authError);
-      alertPhoneAuthError(authError);
       if (shouldUseNativeIosPhoneAuth()) {
         await resetNativePhoneAuth();
       } else {
@@ -456,7 +453,6 @@ export async function confirmPhoneOtp(otp: string): Promise<User> {
       const authError = preserveAuthError(error);
       const errCode = getPhoneAuthErrorCode(authError);
       console.error('[phoneAuth] confirmPhoneOtp failed:', errCode, authError);
-      alertPhoneAuthError(authError);
       // Expired / invalid session — clear so UI must request a fresh SMS (no hanging retries).
       if (isExpiredOtpError(errCode) || errCode === 'OTP_CONFIRM_TIMEOUT') {
         activeConfirmation = null;

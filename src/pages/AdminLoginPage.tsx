@@ -12,6 +12,7 @@ import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } 
 import { AdminAccessDeniedError, isAuthorizedAdminPhone } from '@/lib/adminAuth';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
 import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
+import { PhoneAuthErrorAlert, presentPhoneAuthErrorAlert } from '@/components/PhoneAuthErrorAlert';
 import { logPhoneAuth } from '@/lib/nativePhoneAuth';
 import { DevBypassPanel } from '@/components/DevBypassPanel';
 import { APP_ROLES } from '@/domain/user-schema';
@@ -27,10 +28,23 @@ const AdminLoginPage: React.FC = () => {
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [phoneAuthAlert, setPhoneAuthAlert] = useState<{ code: string; message: string } | null>(
+    null
+  );
   const { loginAdminWithPhone, verifyAdminOtp, resendOtp, hasPendingOtp, cancelPhoneOtpFlow } = useAuth();
   const navigate = useNavigate();
   const { i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
+
+  const showFirebaseAuthError = (error: unknown) => {
+    const code = getPhoneAuthErrorCode(error);
+    const raw = error instanceof Error ? error.message : '';
+    const message = raw || getPhoneAuthErrorMessage(error, 'en');
+    logPhoneAuth(`Error: ${code} ${message}`);
+    presentPhoneAuthErrorAlert(code, message);
+    setPhoneAuthAlert({ code, message });
+    toast.error(`${code}: ${message}`);
+  };
 
   usePostLoginRedirect();
 
@@ -90,9 +104,7 @@ const AdminLoginPage: React.FC = () => {
         return;
       }
       console.error('[AdminLogin] OTP send failed:', getPhoneAuthErrorCode(error), error);
-      toast.error(
-        `${getPhoneAuthErrorCode(error)}: ${getPhoneAuthErrorMessage(error, 'en')}`
-      );
+      showFirebaseAuthError(error);
       if (getPhoneAuthErrorCode(error) === 'ALREADY_AUTHENTICATED') {
         return;
       }
@@ -123,7 +135,7 @@ const AdminLoginPage: React.FC = () => {
         toast.error('This account is not authorized for admin access');
       } else {
         const errCode = getPhoneAuthErrorCode(error);
-        toast.error(`${errCode}: ${getPhoneAuthErrorMessage(error, 'en')}`);
+        showFirebaseAuthError(error);
         if (
           errCode === 'auth/code-expired' ||
           errCode === 'auth/session-expired' ||
@@ -153,7 +165,7 @@ const AdminLoginPage: React.FC = () => {
       toast.success('A new verification code was sent');
     } catch (error) {
       console.error('[AdminLogin] OTP resend failed:', getPhoneAuthErrorCode(error), error);
-      toast.error(getPhoneAuthErrorMessage(error, 'en'));
+      showFirebaseAuthError(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -292,6 +304,13 @@ const AdminLoginPage: React.FC = () => {
           </motion.form>
         )}
       </div>
+      {phoneAuthAlert ? (
+        <PhoneAuthErrorAlert
+          code={phoneAuthAlert.code}
+          message={phoneAuthAlert.message}
+          onDismiss={() => setPhoneAuthAlert(null)}
+        />
+      ) : null}
     </div>
   );
 };

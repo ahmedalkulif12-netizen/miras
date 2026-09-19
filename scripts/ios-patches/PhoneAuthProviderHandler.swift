@@ -8,8 +8,9 @@ class PhoneAuthProviderHandler: NSObject {
     private var pluginImplementation: FirebaseAuthentication
     private var signInOnConfirm = true
     private var skipNativeAuthOnConfirm = false
-    /// Retained so Firebase can call it; this delegate never presents Safari.
-    private var silentUIDelegate: PhoneAuthNoSafariUIDelegate?
+    /// Retained for verifyPhoneNumber. Presents Firebase's in-app verification sheet
+    /// from the Capacitor WebView (not Safari.app).
+    private var recaptchaUIDelegate: PhoneAuthInAppUIDelegate?
 
     init(_ pluginImplementation: FirebaseAuthentication) {
         self.pluginImplementation = pluginImplementation
@@ -40,12 +41,27 @@ class PhoneAuthProviderHandler: NSObject {
         }
     }
 
+    private func ensureFirebaseConfigured() {
+        if FirebaseApp.app() != nil {
+            return
+        }
+        if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+           let options = FirebaseOptions(contentsOfFile: path) {
+            FirebaseApp.configure(options: options)
+            CAPLog.print("[PhoneAuth] FirebaseApp.configure() from GoogleService-Info.plist googleAppID=\(options.googleAppID)")
+        } else {
+            CAPLog.print("[PhoneAuth] Error: GoogleService-Info.plist missing — calling FirebaseApp.configure()")
+            FirebaseApp.configure()
+        }
+        Auth.auth().languageCode = "ar"
+    }
+
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
-        let phoneNumber = options.getPhoneNumber().trimmingCharacters(in: .whitespacesAndNewlines)
-        silentUIDelegate = PhoneAuthNoSafariUIDelegate()
-        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber phone=\(phoneNumber)")
+        ensureFirebaseConfigured()
+        let phoneNumber = sanitizeSaudiE164(options.getPhoneNumber())
+        recaptchaUIDelegate = PhoneAuthInAppUIDelegate(host: pluginImplementation.getPlugin().bridge?.viewController)
+        CAPLog.print("[PhoneAuth] Verification Request Sent \(phoneNumber)")
         guard isSaudiMobileE164(phoneNumber) else {
-            CAPLog.print("[PhoneAuth] rejected phone — expected Saudi E.164 +9665XXXXXXXX got \(phoneNumber)")
             let error = NSError(
                 domain: "FIRAuthErrorDomain",
                 code: AuthErrorCode.invalidPhoneNumber.rawValue,
@@ -57,7 +73,7 @@ class PhoneAuthProviderHandler: NSObject {
         }
         DispatchQueue.main.async {
             PhoneAuthProvider.provider()
-                .verifyPhoneNumber(phoneNumber, uiDelegate: self.silentUIDelegate) { verificationID, error in
+                .verifyPhoneNumber(phoneNumber, uiDelegate: self.recaptchaUIDelegate) { verificationID, error in
                     if let error = error {
                         self.logFirebaseAuthFailure(error)
                         self.pluginImplementation.handlePhoneVerificationFailed(error)
@@ -65,20 +81,31 @@ class PhoneAuthProviderHandler: NSObject {
                     }
                     let id = verificationID ?? ""
                     if id.isEmpty {
-                        CAPLog.print("[PhoneAuth] empty verificationId — SMS was not dispatched")
                         let empty = NSError(
                             domain: "PhoneAuth",
                             code: -1,
-                            userInfo: [NSLocalizedDescriptionKey: "Empty verificationId"]
+                            userInfo: [NSLocalizedDescriptionKey: "Empty verificationId — SMS was not dispatched"]
                         )
                         self.logFirebaseAuthFailure(empty)
                         self.pluginImplementation.handlePhoneVerificationFailed(empty)
                         return
                     }
-                    CAPLog.print("[PhoneAuth] SMS dispatched verificationId=\(id.prefix(8))…")
+                    CAPLog.print("[PhoneAuth] Verification ID Received")
                     self.pluginImplementation.handlePhoneCodeSent(id)
                 }
         }
+    }
+
+    private func sanitizeSaudiE164(_ raw: String) -> String {
+        let compact = raw.replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "(", with: "")
+            .replacingOccurrences(of: ")", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if compact.hasPrefix("+9660") {
+            return "+966" + compact.dropFirst(5)
+        }
+        return compact
     }
 
     private func isSaudiMobileE164(_ phone: String) -> Bool {
@@ -88,37 +115,61 @@ class PhoneAuthProviderHandler: NSObject {
 
     private func logFirebaseAuthFailure(_ error: Error) {
         let nsError = error as NSError
-        let authCode = FirebaseAuthenticationHelper.createErrorCode(error: error) ?? "unknown"
-        CAPLog.print("[PhoneAuth] verifyPhoneNumber FAILED auth=\(authCode)")
+        let authCode = FirebaseAuthenticationHelper.createErrorCode(error: error) ?? "auth/internal-error"
+        CAPLog.print("[PhoneAuth] Error: \(authCode) \(nsError.localizedDescription)")
         CAPLog.print("[PhoneAuth] domain=\(nsError.domain) nativeCode=\(nsError.code)")
-        CAPLog.print("[PhoneAuth] localized=\(nsError.localizedDescription)")
-        if let reason = nsError.localizedFailureReason {
-            CAPLog.print("[PhoneAuth] reason=\(reason)")
-        }
         if authCode == "auth/too-many-requests" || authCode == "auth/quota-exceeded" {
-            CAPLog.print("[PhoneAuth] RATE LIMITED / QUOTA — Firebase rejected SMS for this project")
-        }
-        if authCode == "auth/app-not-authorized" || authCode == "auth/invalid-api-key" {
-            CAPLog.print("[PhoneAuth] APP NOT AUTHORIZED — check GoogleService-Info.plist GOOGLE_APP_ID / BUNDLE_ID")
+            CAPLog.print("[PhoneAuth] Error: RATE LIMITED / QUOTA — Firebase rejected SMS")
         }
         if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
-            CAPLog.print("[PhoneAuth] underlying domain=\(underlying.domain) code=\(underlying.code) \(underlying.localizedDescription)")
+            CAPLog.print("[PhoneAuth] Error: underlying \(underlying.domain) \(underlying.code) \(underlying.localizedDescription)")
         }
         for (key, value) in nsError.userInfo {
-            if String(describing: key) == NSUnderlyingErrorKey { continue }
-            CAPLog.print("[PhoneAuth] userInfo[\(key)]=\(value)")
+            CAPLog.print("[PhoneAuth] Error: userInfo[\(key)]=\(value)")
         }
     }
 }
 
-/// Blocks SFSafariViewController / ASWebAuthenticationSession so login stays in-app.
-final class PhoneAuthNoSafariUIDelegate: NSObject, AuthUIDelegate {
+/// Presents Firebase Phone Auth verification in-app from the Capacitor controller.
+final class PhoneAuthInAppUIDelegate: NSObject, AuthUIDelegate {
+    weak var host: UIViewController?
+
+    init(host: UIViewController?) {
+        self.host = host
+        super.init()
+    }
+
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        CAPLog.print("[PhoneAuth] blocked Safari/reCAPTCHA redirect — staying in-app")
-        completion?()
+        DispatchQueue.main.async {
+            var presenter = self.host
+            while let shown = presenter?.presentedViewController {
+                presenter = shown
+            }
+            if presenter == nil {
+                let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                let window = scenes.flatMap { $0.windows }.first(where: { $0.isKeyWindow }) ?? scenes.first?.windows.first
+                presenter = window?.rootViewController
+                while let shown = presenter?.presentedViewController {
+                    presenter = shown
+                }
+            }
+            CAPLog.print("[PhoneAuth] presenting in-app verification sheet presenter=\(presenter != nil)")
+            guard let presenter = presenter else {
+                CAPLog.print("[PhoneAuth] Error: no UIViewController to present Firebase verification")
+                completion?()
+                return
+            }
+            presenter.present(viewControllerToPresent, animated: flag, completion: completion)
+        }
     }
 
     func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
-        completion?()
+        DispatchQueue.main.async {
+            var presenter = self.host
+            while let shown = presenter?.presentedViewController {
+                presenter = shown
+            }
+            presenter?.dismiss(animated: flag, completion: completion)
+        }
     }
 }

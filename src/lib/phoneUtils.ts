@@ -1,6 +1,7 @@
 /**
  * Saudi (+966) phone normalization for Firebase Phone Auth (E.164).
- * Converts +966 / 054 / 54 / Arabic digits to +9665XXXXXXXX synchronously.
+ * Converts +966 / 054 / 54 / Arabic digits to +9665XXXXXXXX with no spaces
+ * or extra trunk zeros.
  */
 
 const SAUDI_COUNTRY = '+966';
@@ -60,10 +61,11 @@ export function normalizeSaudiPhone(input: string): string {
   invalidSaudiPhone();
 }
 
-/** Strict E.164 for Firebase Phone Auth (+9665XXXXXXXX). Synchronous. */
+/** Strict E.164 for Firebase Phone Auth: +9665XXXXXXXX, no spaces or leading zeros. */
 export function toFirebasePhoneE164(input: string): string {
-  const e164 = normalizeSaudiPhone(input);
-  if (!E164_SAUDI_MOBILE.test(e164)) {
+  const compact = toAsciiDigits(String(input || '')).replace(/[\s\-\(\)\.]/g, '');
+  const e164 = normalizeSaudiPhone(compact);
+  if (/\s/.test(e164) || e164.startsWith('+9660') || !E164_SAUDI_MOBILE.test(e164)) {
     invalidSaudiPhone();
   }
   return e164;

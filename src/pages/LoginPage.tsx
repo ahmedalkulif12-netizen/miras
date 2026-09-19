@@ -20,6 +20,7 @@ import {
 import { logPhoneAuth } from '@/lib/nativePhoneAuth';
 import { isValidSaudiPhoneInput, sanitizeSaudiPhoneInput, toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { getPhoneAuthErrorCode, getPhoneAuthErrorMessage } from '@/lib/phoneAuthErrors';
+import { PhoneAuthErrorAlert, presentPhoneAuthErrorAlert } from '@/components/PhoneAuthErrorAlert';
 import { PhoneAuthRecaptcha } from '@/components/PhoneAuthRecaptcha';
 import {
   EMPTY_DRIVER_DOCUMENTS,
@@ -123,6 +124,9 @@ const LoginPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [phoneAuthAlert, setPhoneAuthAlert] = useState<{ code: string; message: string } | null>(
+    null
+  );
   const [documentUploadStatuses, setDocumentUploadStatuses] =
     useState<DriverDocumentUploadStatuses>(EMPTY_DRIVER_DOCUMENTS);
   const [documentFiles, setDocumentFiles] = useState<
@@ -219,6 +223,21 @@ const LoginPage: React.FC = () => {
 
   const locale = isRtl ? 'ar' : 'en';
 
+  const showFirebaseAuthError = (error: unknown) => {
+    const code = getPhoneAuthErrorCode(error);
+    const raw =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: unknown }).message || '')
+          : '';
+    const message = raw || getPhoneAuthErrorMessage(error, locale);
+    logPhoneAuth(`Error: ${code} ${message}`);
+    presentPhoneAuthErrorAlert(code, message);
+    setPhoneAuthAlert({ code, message });
+    toast.error(`${code}: ${message}`);
+  };
+
   const handlePhoneSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidSaudiPhoneInput(phone)) {
@@ -305,7 +324,7 @@ const LoginPage: React.FC = () => {
         );
         return;
       }
-      toast.error(`${code}: ${getPhoneAuthErrorMessage(error, locale)}`);
+      showFirebaseAuthError(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -374,7 +393,7 @@ const LoginPage: React.FC = () => {
       }
     } catch (error: unknown) {
       const errCode = getPhoneAuthErrorCode(error);
-      toast.error(`${errCode}: ${getPhoneAuthErrorMessage(error, locale)}`);
+      showFirebaseAuthError(error);
       if (
         errCode === 'auth/code-expired' ||
         errCode === 'auth/session-expired' ||
@@ -543,9 +562,7 @@ const LoginPage: React.FC = () => {
       toast.success(t('otp_resent'));
     } catch (error: unknown) {
       console.error('[Login] OTP resend failed:', getPhoneAuthErrorCode(error), error);
-      toast.error(
-        `${getPhoneAuthErrorCode(error)}: ${getPhoneAuthErrorMessage(error, locale)}`
-      );
+      showFirebaseAuthError(error);
     } finally {
       setIsSubmitting(false);
     }
@@ -1174,6 +1191,13 @@ const LoginPage: React.FC = () => {
           <p className="text-neutral-400 font-medium text-lg leading-relaxed">{t('logistics_desc')}</p>
         </div>
       </div>
+      {phoneAuthAlert ? (
+        <PhoneAuthErrorAlert
+          code={phoneAuthAlert.code}
+          message={phoneAuthAlert.message}
+          onDismiss={() => setPhoneAuthAlert(null)}
+        />
+      ) : null}
     </div>
   );
 };

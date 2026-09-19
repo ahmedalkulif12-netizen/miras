@@ -1,14 +1,9 @@
 /**
  * Native iOS Phone Auth via CapacitorFirebaseAuthentication.
  *
- * The Firebase JS RecaptchaVerifier cannot run inside capacitor:// WebViews.
- * Native verifyPhoneNumber uses silent APNs + App Attest in-process — never
- * Safari / external reCAPTCHA.
- *
  * skipNativeAuth stays true so Firestore / Auth keep using the JS SDK session.
- *
- * UI navigates to the in-app OTP screen as soon as native verifyPhoneNumber
- * starts. Confirm() waits for verificationId from the background APNs flow.
+ * Send OTP waits for phoneCodeSent (verificationId) so the OTP screen only
+ * opens after Firebase actually accepts the request.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
@@ -22,10 +17,9 @@ import { auth } from '@/lib/firebase';
 import { isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { shouldUseNativeIosPhoneAuth as matchNativeIosPhoneAuth } from '@/lib/nativePhoneAuthRuntime';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
-import { alertPhoneAuthError } from '@/lib/phoneAuthErrors';
 
 const NATIVE_PLUGIN_START_TIMEOUT_MS = 8_000;
-/** Background APNs SMS dispatch; confirm() waits on this, Send OTP does not. */
+/** Wait for Firebase to accept verifyPhoneNumber and return verificationId. */
 const NATIVE_VERIFY_TIMEOUT_MS = 90_000;
 
 export function logPhoneAuth(step: string, extra?: unknown): void {
@@ -223,9 +217,7 @@ export async function waitForNativeVerificationId(): Promise<string> {
 }
 
 /**
- * Starts native iOS verifyPhoneNumber and returns immediately so the in-app
- * OTP screen can open. SMS is dispatched in the background via silent APNs.
- * Confirm() waits for the verificationId.
+ * Triggers native Firebase Phone Auth and waits for verificationId (SMS request accepted).
  */
 export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<ConfirmationResult> {
   logPhoneAuth('Init');
@@ -265,7 +257,7 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
       settleVerification(
         false,
         Object.assign(
-          new Error('OTP_SEND_TIMEOUT: Firebase did not dispatch SMS via silent APNs'),
+          new Error('OTP_SEND_TIMEOUT: Firebase did not dispatch SMS'),
           { code: 'OTP_SEND_TIMEOUT' }
         )
       );
@@ -277,23 +269,18 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
       (async () => {
         const failed = await Promise.resolve(
           FirebaseAuthentication.addListener('phoneVerificationFailed', (event) => {
-            logPhoneAuth('native phoneVerificationFailed', {
-              message: event.message,
-              code: event.code,
+            const err = Object.assign(new Error(event.message || 'auth/internal-error'), {
+              code: event.code || 'auth/internal-error',
             });
-            settleVerification(
-              false,
-              Object.assign(new Error(event.message || 'auth/internal-error'), {
-                code: event.code || 'auth/internal-error',
-              })
-            );
+            logPhoneAuth(`Error: ${err.code} ${err.message}`);
+            settleVerification(false, err);
           })
         );
         const sent = await Promise.resolve(
           FirebaseAuthentication.addListener('phoneCodeSent', (event) => {
             const id = readVerificationId(event);
             if (!id) {
-              logPhoneAuth('phoneCodeSent with empty verificationId — SMS was not dispatched');
+              logPhoneAuth('Error: EMPTY_VERIFICATION_ID SMS was not dispatched');
               settleVerification(
                 false,
                 Object.assign(new Error('EMPTY_VERIFICATION_ID'), {
@@ -302,7 +289,6 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
               );
               return;
             }
-            logPhoneAuth('SMS dispatched', id);
             logPhoneAuth('Verification ID Received', id);
             settleVerification(true, id);
           })
@@ -311,7 +297,6 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
           FirebaseAuthentication.addListener('phoneVerificationCompleted', (event) => {
             const id = readVerificationId(event);
             if (id) {
-              logPhoneAuth('SMS dispatched (instant verification)', id);
               logPhoneAuth('Verification ID Received', id);
               settleVerification(true, id);
             }
@@ -319,7 +304,7 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
         );
         listeners = [failed, sent, completed];
 
-        logPhoneAuth('SMS requested', phoneE164);
+        logPhoneAuth('Verification Request Sent', phoneE164);
         await Promise.resolve(
           FirebaseAuthentication.signInWithPhoneNumber({
             phoneNumber: phoneE164,
@@ -330,9 +315,21 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
       NATIVE_PLUGIN_START_TIMEOUT_MS,
       'OTP_SEND_TIMEOUT'
     );
+
+    const verificationId = await verificationIdPromise;
+    if (!verificationId) {
+      throw Object.assign(new Error('EMPTY_VERIFICATION_ID'), {
+        code: 'EMPTY_VERIFICATION_ID',
+      });
+    }
   } catch (error) {
     settleVerification(false, error);
     void verificationIdPromise.catch(() => undefined);
+    logPhoneAuth(
+      `Error: ${error && typeof error === 'object' && 'code' in error ? String((error as { code?: unknown }).code) : ''} ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
     if (isNativePhoneAuthUnavailable(error)) {
       throw Object.assign(new Error('NATIVE_PHONE_AUTH_UNAVAILABLE'), {
         code: 'NATIVE_PHONE_AUTH_UNAVAILABLE',
@@ -341,14 +338,6 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
     throw error;
   }
 
-  logPhoneAuth('native verifyPhoneNumber started — opening in-app OTP screen');
-  void verificationIdPromise.then(
-    (id) => logPhoneAuth('SMS dispatched in background', id),
-    (error) => {
-      logPhoneAuth('background SMS verify failed', error);
-      alertPhoneAuthError(error);
-    }
-  );
   return makeJsConfirmation();
 }
 
