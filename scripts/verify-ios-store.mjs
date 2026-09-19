@@ -86,8 +86,10 @@ async function main() {
   if (!infoPlist.includes('<key>NSLocationWhenInUseUsageDescription</key>')) {
     failures.push('Info.plist must include NSLocationWhenInUseUsageDescription');
   }
-  if (!infoPlist.includes('<string>remote-notification</string>')) {
-    failures.push('Info.plist UIBackgroundModes must include remote-notification for silent Firebase Phone Auth APNs');
+  if (infoPlist.includes('<string>remote-notification</string>')) {
+    failures.push(
+      'Info.plist must not declare UIBackgroundModes remote-notification — Codemagic profile "miras app store profile" has no Push Notifications capability'
+    );
   }
   if (infoPlist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>')) {
     failures.push(
@@ -95,14 +97,18 @@ async function main() {
     );
   }
   const entitlements = read('ios/App/App/App.entitlements');
-  if (!entitlements.includes('aps-environment')) {
+  // Codemagic profile "miras app store profile" does not include Push or Associated
+  // Domains. Keep those entitlements out until the App ID + profile include them.
+  if (entitlements.includes('aps-environment')) {
     failures.push(
-      'App.entitlements must include aps-environment so Firebase Phone Auth can use silent APNs (no Safari/reCAPTCHA)'
+      'App.entitlements must not declare aps-environment — profile "miras app store profile" does not include Push Notifications'
     );
   }
-  // Codemagic profile "miras app store profile" does not include Associated
-  // Domains. Keep entitlements empty of applinks until the App ID + profile
-  // are regenerated with that capability.
+  if (entitlements.includes('com.apple.developer.devicecheck.appattest-environment')) {
+    failures.push(
+      'App.entitlements must not declare App Attest — profile "miras app store profile" does not include that capability'
+    );
+  }
   if (
     entitlements.includes('com.apple.developer.associated-domains') ||
     entitlements.includes('applinks:')

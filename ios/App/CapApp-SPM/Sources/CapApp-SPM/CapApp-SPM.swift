@@ -1,4 +1,5 @@
 import UIKit
+import Security
 #if canImport(FirebaseCore)
 import FirebaseCore
 #endif
@@ -8,8 +9,9 @@ import FirebaseAuth
 
 public let isCapacitorApp = true
 
-/// Native Phone Auth via silent APNs (no Safari / reCAPTCHA webview).
-/// Configures Firebase from the bundled GoogleService-Info.plist.
+/// Native Phone Auth. Silent APNs is used only when the signed profile includes Push.
+/// Otherwise Firebase falls back to in-app AuthUIDelegate (not Safari.app).
+/// Never embed aps-environment — Codemagic profile "miras app store profile" lacks Push.
 public enum PhoneAuthNativeBootstrap {
     public static func configureIfNeeded() {
         #if canImport(FirebaseCore)
@@ -46,6 +48,24 @@ public enum PhoneAuthNativeBootstrap {
         print("[PhoneAuth] Saudi E.164 format required: +9665XXXXXXXX")
         #endif
         configureAuthLanguage()
+    }
+
+    /// Register for silent APNs only when the provisioning profile actually includes Push.
+    public static func registerForSilentPushIfEntitled(_ application: UIApplication) {
+        if hasApsEnvironmentEntitlement() {
+            application.registerForRemoteNotifications()
+            print("[PhoneAuth] Push entitlement present — registering silent APNs")
+        } else {
+            print("[PhoneAuth] no aps-environment entitlement — native Phone Auth uses in-app verification fallback")
+        }
+    }
+
+    private static func hasApsEnvironmentEntitlement() -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else { return false }
+        var error: Unmanaged<CFError>?
+        let value = SecTaskCopyValueForEntitlement(task, "aps-environment" as CFString, &error)
+        error?.release()
+        return value != nil
     }
 
     #if canImport(FirebaseCore)
