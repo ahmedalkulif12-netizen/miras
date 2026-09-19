@@ -18,8 +18,8 @@ function run(): void {
     'capacitor:// WebView uses native iOS phone auth'
   );
   assert(
-    !shouldUseNativeIosPhoneAuth({ isNative: true, platform: 'android' }),
-    'Android keeps the JS Phone Auth path'
+    shouldUseNativeIosPhoneAuth({ isNative: true, platform: 'android' }),
+    'Android Capacitor uses native phone auth'
   );
   assert(
     !shouldUseNativeIosPhoneAuth({ isNative: false, platform: 'web' }),

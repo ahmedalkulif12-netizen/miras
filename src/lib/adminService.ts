@@ -3,6 +3,17 @@ import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { ensureAdminApiReady } from '@/lib/adminAuth';
 import type { DriverAccountStatus } from '@/types';
 
+async function adminAuthedFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  await ensureAdminApiReady();
+  let res = await authFetch(path, init);
+  if (res.status === 401 || res.status === 403) {
+    console.warn('[admin] unauthorized — re-establishing session and retrying', path, res.status);
+    await ensureAdminApiReady();
+    res = await authFetch(path, init);
+  }
+  return res;
+}
+
 export type CustomerAccountStatus = 'active' | 'blocked' | 'banned' | 'pending' | 'suspended';
 
 export interface AdminOverviewResponse {
@@ -209,13 +220,7 @@ export async function fetchAdminOverview(): Promise<AdminOverviewResponse> {
   if (isDevBypassAuthSession()) {
     return buildDevAdminOverview();
   }
-  await ensureAdminApiReady();
-  let res = await authFetch('/api/admin/overview');
-  if (res.status === 401 || res.status === 403) {
-    console.warn('[admin] overview unauthorized — re-establishing session and retrying', res.status);
-    await ensureAdminApiReady();
-    res = await authFetch('/api/admin/overview');
-  }
+  const res = await adminAuthedFetch('/api/admin/overview');
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load admin overview'));
   }
@@ -226,7 +231,7 @@ export async function fetchAdminDrivers(): Promise<AdminDriverApiRow[]> {
   if (isDevBypassAuthSession()) {
     return buildDevAdminDrivers();
   }
-  const res = await authFetch('/api/admin/drivers');
+  const res = await adminAuthedFetch('/api/admin/drivers');
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load drivers'));
   }
@@ -253,7 +258,7 @@ export async function fetchAdminDriverDocumentUrl(
     driver.kind === 'fleet_driver' && driver.operatorId && driver.vehicleId
       ? `/api/admin/operators/${encodeURIComponent(driver.operatorId)}/vehicles/${encodeURIComponent(driver.vehicleId)}/documents/${docKey}/url`
       : `/api/admin/drivers/${encodeURIComponent(driver.id)}/documents/${docKey}/url`;
-  const res = await authFetch(path);
+  const res = await adminAuthedFetch(path);
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to open document'));
   }
@@ -278,7 +283,7 @@ export async function updateAdminDriverStatusApi(
     driver.kind === 'fleet_driver' && driver.operatorId && driver.vehicleId
       ? `/api/admin/operators/${encodeURIComponent(driver.operatorId)}/vehicles/${encodeURIComponent(driver.vehicleId)}/status`
       : `/api/admin/drivers/${encodeURIComponent(driver.id)}/status`;
-  const res = await authFetch(path, {
+  const res = await adminAuthedFetch(path, {
     method: 'PATCH',
     body: JSON.stringify({ status, reason }),
   });
@@ -295,7 +300,7 @@ export async function updateAdminDriverDocumentExpiriesApi(
     console.info('[admin] Dev bypass — mock document expiries', driverId, documentExpiries);
     return;
   }
-  const res = await authFetch(`/api/admin/drivers/${driverId}/document-expiries`, {
+  const res = await adminAuthedFetch(`/api/admin/drivers/${driverId}/document-expiries`, {
     method: 'PATCH',
     body: JSON.stringify({ documentExpiries }),
   });
@@ -308,7 +313,7 @@ export async function fetchAdminCustomers(): Promise<AdminCustomerApiRow[]> {
   if (isDevBypassAuthSession()) {
     return buildDevAdminCustomers();
   }
-  const res = await authFetch('/api/admin/customers');
+  const res = await adminAuthedFetch('/api/admin/customers');
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load customers'));
   }
@@ -324,7 +329,7 @@ export async function updateAdminCustomerStatusApi(
     console.info('[admin] Dev bypass — mock customer status', customerId, status);
     return;
   }
-  const res = await authFetch(`/api/admin/customers/${customerId}/status`, {
+  const res = await adminAuthedFetch(`/api/admin/customers/${customerId}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
@@ -351,7 +356,7 @@ export async function fetchAdminDirectory(
     };
   }
   const params = kind && kind !== 'all' ? `?kind=${encodeURIComponent(kind)}` : '';
-  const res = await authFetch(`/api/admin/directory${params}`);
+  const res = await adminAuthedFetch(`/api/admin/directory${params}`);
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load user directory'));
   }
@@ -362,7 +367,7 @@ export async function fetchAdminFinancials(): Promise<AdminFinancialLedgerRespon
   if (isDevBypassAuthSession()) {
     return buildDevAdminFinancials();
   }
-  const res = await authFetch('/api/admin/financials');
+  const res = await adminAuthedFetch('/api/admin/financials');
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load financial ledger'));
   }

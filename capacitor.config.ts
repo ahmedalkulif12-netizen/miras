@@ -61,7 +61,7 @@ const config: CapacitorConfig = {
     },
     FirebaseAuthentication: {
       // JS Firebase Auth remains the session source (Firestore, ID tokens).
-      // Native iOS only verifies the phone number so SMS is not blocked by WebView reCAPTCHA.
+      // Native Capacitor only verifies the phone number so SMS is not blocked by WebView reCAPTCHA.
       skipNativeAuth: true,
       providers: ['phone'],
     },

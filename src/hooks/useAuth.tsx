@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { onAuthStateChanged, signInAnonymously, signOut, type User } from 'firebase/auth';
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
+import { persistCurrentIdToken } from '@/lib/firebaseAuthSession';
+import { App } from '@capacitor/app';
 import { sendPhoneOtp, confirmPhoneOtp, resetPhoneAuthFlow } from '@/lib/phoneAuth';
 import { logPhoneAuth, shouldUseNativeIosPhoneAuth } from '@/lib/nativePhoneAuth';
 import {
@@ -340,6 +342,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [applyDevBypass, beginOnboarding]);
 
+  useEffect(() => {
+    const refreshSessionToken = () => {
+      if (!auth.currentUser) return;
+      void persistCurrentIdToken(false).catch(() => persistCurrentIdToken(true).catch(() => undefined));
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshSessionToken();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    let removeAppListener: (() => void) | undefined;
+    void App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) refreshSessionToken();
+    })
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => undefined);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      removeAppListener?.();
+    };
+  }, []);
+
   /**
    * Active Firebase sessions must not request a new OTP.
    * User must explicitly logout before logging in again.
@@ -510,6 +539,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (isRegistrableRole(profileWithRole.role)) {
       try {
         await establishUserSession(profileWithRole.role);
+        await persistCurrentIdToken(true);
       } catch (error) {
         console.warn('[auth] establishUserSession failed after OTP — continuing with local profile:', error);
       }

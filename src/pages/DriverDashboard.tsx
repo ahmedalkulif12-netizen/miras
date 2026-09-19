@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { collection, query, limit, onSnapshot, doc, getDoc, updateDoc, increment, setDoc, where, orderBy } from 'firebase/firestore';
 import { useAuth } from '@/hooks/useAuth';
+import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 import { capturePayment } from '@/lib/paymentService';
 import { acceptOrder, completeDriverOrder, driverOrderWriteErrorMessage, transitionOrderStatus } from '@/lib/orderService';
 import { logFirestoreWriteError, formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
@@ -629,7 +630,7 @@ const DriverDashboard: React.FC = () => {
 
   useEffect(() => {
     if (!isOnline) return;
-    const timer = window.setInterval(() => setDispatchTick((n) => n + 1), 5000);
+    const timer = window.setInterval(() => setDispatchTick((n) => n + 1), DASHBOARD_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [isOnline]);
 

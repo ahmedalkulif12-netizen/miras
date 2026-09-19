@@ -2,7 +2,7 @@ import { auth, ensureFirebaseReady } from '@/lib/firebase';
 import { ensureAppCheckTokenForApi, isAppCheckDisabled, isNativeCapacitorRuntime } from '@/lib/appCheck';
 import { resolveApiUrl } from '@/lib/apiUrl';
 import { isDevAuthBypassEnabled, loadDevBypassProfile } from '@/lib/devAuthBypass';
-import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
+import { ensureSignedInFirebaseUid, persistCurrentIdToken } from '@/lib/firebaseAuthSession';
 
 /** True when the screenshot/dev bypass session is active (no real Firebase Auth user). */
 export function isDevBypassAuthSession(): boolean {
@@ -28,11 +28,11 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string> 
     throw new Error('NOT_AUTHENTICATED');
   }
   try {
-    return await user.getIdToken(forceRefresh);
+    return await persistCurrentIdToken(forceRefresh);
   } catch (error) {
     if (!forceRefresh) {
       console.warn('[authApi] ID token unavailable — retrying with force refresh:', error);
-      return user.getIdToken(true);
+      return persistCurrentIdToken(true);
     }
     throw error;
   }
@@ -40,6 +40,12 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string> 
 
 function isUnauthorizedStatus(status: number): boolean {
   return status === 401;
+}
+
+function isNotAuthenticatedError(error: unknown): boolean {
+  if (!error) return false;
+  const message = error instanceof Error ? error.message : String(error);
+  return message === 'NOT_AUTHENTICATED' || /not.?authenticated/i.test(message);
 }
 
 export async function authFetch(
@@ -106,13 +112,22 @@ export async function authFetch(
     return fetch(resolveApiUrl(url), { ...init, headers });
   };
 
-  let res = await send(false);
-  if (isUnauthorizedStatus(res.status) && !isDevBypassAuthSession()) {
-    console.warn('[authApi] unauthorized — refreshing session token and retrying once', {
-      url,
-      status: res.status,
-    });
-    res = await send(true);
+  try {
+    let res = await send(false);
+    if (isUnauthorizedStatus(res.status) && !isDevBypassAuthSession()) {
+      console.warn('[authApi] unauthorized — refreshing session token and retrying once', {
+        url,
+        status: res.status,
+      });
+      res = await send(true);
+    }
+    return res;
+  } catch (error) {
+    if (isNotAuthenticatedError(error) && !isDevBypassAuthSession()) {
+      console.warn('[authApi] session missing — waiting for Auth then retrying', url);
+      await ensureSignedInFirebaseUid(12_000);
+      return send(true);
+    }
+    throw error;
   }
-  return res;
 }

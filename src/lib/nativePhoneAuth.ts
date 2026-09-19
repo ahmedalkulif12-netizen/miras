@@ -1,5 +1,5 @@
 /**
- * Native iOS Phone Auth via CapacitorFirebaseAuthentication.
+ * Native Capacitor Phone Auth via CapacitorFirebaseAuthentication (iOS + Android).
  *
  * skipNativeAuth stays true so Firestore / Auth keep using the JS SDK session.
  * Send OTP waits for phoneCodeSent (verificationId) so the OTP screen only
@@ -15,7 +15,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 import { isNativeCapacitorRuntime } from '@/lib/appCheck';
-import { shouldUseNativeIosPhoneAuth as matchNativeIosPhoneAuth } from '@/lib/nativePhoneAuthRuntime';
+import { shouldUseNativePhoneAuth as matchNativePhoneAuth } from '@/lib/nativePhoneAuthRuntime';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 
 const NATIVE_PLUGIN_START_TIMEOUT_MS = 8_000;
@@ -56,8 +56,10 @@ export function shouldUseNativeIosPhoneAuth(runtime?: {
   const protocol =
     runtime?.protocol ??
     (typeof window !== 'undefined' ? window.location.protocol : undefined);
-  return matchNativeIosPhoneAuth({ isNative, platform, protocol });
+  return matchNativePhoneAuth({ isNative, platform, protocol });
 }
+
+export const shouldUseNativePhoneAuth = shouldUseNativeIosPhoneAuth;
 
 type PluginListenerHandle = { remove: () => Promise<void> };
 

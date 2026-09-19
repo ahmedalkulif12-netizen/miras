@@ -40,6 +40,7 @@ import {
   CORE_SERVICE_TYPES,
   aggregateServiceDistribution,
 } from '@/domain/serviceCategories';
+import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 
 interface Driver {
   id: string;
@@ -176,39 +177,45 @@ const AdminDashboard: React.FC = () => {
     }
   }, [isRtl]);
 
-  const loadCustomers = useCallback(async () => {
-    setLoadingCustomers(true);
+  const loadCustomers = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoadingCustomers(true);
     try {
       setCustomers(await fetchAdminCustomers());
     } catch (error) {
       console.error('Admin customers load failed:', error);
-      toast.error(isRtl ? 'تعذر تحميل قائمة العملاء' : 'Failed to load clients');
+      if (!opts?.quiet) {
+        toast.error(isRtl ? 'تعذر تحميل قائمة العملاء' : 'Failed to load clients');
+      }
     } finally {
-      setLoadingCustomers(false);
+      if (!opts?.quiet) setLoadingCustomers(false);
     }
   }, [isRtl]);
 
-  const loadFinancials = useCallback(async () => {
-    setLoadingFinancials(true);
+  const loadFinancials = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoadingFinancials(true);
     try {
       setFinancials(await fetchAdminFinancials());
     } catch (error) {
       console.error('Admin financials load failed:', error);
-      toast.error(isRtl ? 'تعذر تحميل السجل المالي' : 'Failed to load financial ledger');
+      if (!opts?.quiet) {
+        toast.error(isRtl ? 'تعذر تحميل السجل المالي' : 'Failed to load financial ledger');
+      }
     } finally {
-      setLoadingFinancials(false);
+      if (!opts?.quiet) setLoadingFinancials(false);
     }
   }, [isRtl]);
 
-  const loadWithdrawals = useCallback(async () => {
-    setLoadingWithdrawals(true);
+  const loadWithdrawals = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoadingWithdrawals(true);
     try {
       setWithdrawals(await fetchAdminWithdrawals(withdrawalFilter));
     } catch (error) {
       console.error('Admin withdrawals load failed:', error);
-      toast.error(isRtl ? 'تعذر تحميل طلبات السحب' : 'Failed to load payout requests');
+      if (!opts?.quiet) {
+        toast.error(isRtl ? 'تعذر تحميل طلبات السحب' : 'Failed to load payout requests');
+      }
     } finally {
-      setLoadingWithdrawals(false);
+      if (!opts?.quiet) setLoadingWithdrawals(false);
     }
   }, [isRtl, withdrawalFilter]);
 
@@ -218,35 +225,46 @@ const AdminDashboard: React.FC = () => {
   }, [authLoading, user, loadOverview]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     if (location.pathname.startsWith('/admin/drivers')) {
-      loadDrivers();
+      void loadDrivers();
     }
     if (location.pathname.startsWith('/admin/clients')) {
-      loadCustomers();
+      void loadCustomers();
     }
     if (location.pathname.startsWith('/admin/finance')) {
-      loadFinancials();
+      void loadFinancials();
     }
     if (location.pathname.startsWith('/admin/withdrawals')) {
-      loadWithdrawals();
+      void loadWithdrawals();
     }
-  }, [location.pathname, loadDrivers, loadCustomers, loadFinancials, loadWithdrawals]);
+  }, [authLoading, user, location.pathname, loadDrivers, loadCustomers, loadFinancials, loadWithdrawals]);
 
   /** Keep pending-driver queue live while admin is in the console. */
   const pendingDriversBaselineRef = useRef<number | null>(null);
   useEffect(() => {
     if (authLoading || !user) return;
-    // Always hydrate drivers once so overview + drivers page share actionable data.
     void loadDrivers({ quiet: true });
 
-    const intervalMs = 5_000;
     const interval = window.setInterval(() => {
       void loadOverview({ quiet: true });
       void loadDrivers({ quiet: true });
-    }, intervalMs);
+      if (location.pathname.startsWith('/admin/clients')) void loadCustomers({ quiet: true });
+      if (location.pathname.startsWith('/admin/finance')) void loadFinancials({ quiet: true });
+      if (location.pathname.startsWith('/admin/withdrawals')) void loadWithdrawals({ quiet: true });
+    }, DASHBOARD_POLL_INTERVAL_MS);
 
     return () => window.clearInterval(interval);
-  }, [authLoading, user, loadOverview, loadDrivers, location.pathname]);
+  }, [
+    authLoading,
+    user,
+    location.pathname,
+    loadOverview,
+    loadDrivers,
+    loadCustomers,
+    loadFinancials,
+    loadWithdrawals,
+  ]);
 
   useEffect(() => {
     const count = overview?.stats.pendingDrivers;

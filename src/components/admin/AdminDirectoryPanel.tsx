@@ -9,6 +9,8 @@ import {
   type AdminDirectoryResponse,
 } from '@/lib/adminService';
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
+import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
+import { useDashboardAutoRefresh } from '@/hooks/useDashboardAutoRefresh';
 
 const KIND_FILTERS: Array<{ id: 'all' | 'drivers' | AdminDirectoryKind; en: string; ar: string }> = [
   { id: 'all', en: 'All registrations', ar: 'كل التسجيلات' },
@@ -74,17 +76,22 @@ export const AdminDirectoryPanel: React.FC<{ isRtl: boolean }> = ({ isRtl }) => 
   const [data, setData] = useState<AdminDirectoryResponse | null>(null);
   const [selected, setSelected] = useState<AdminDirectoryEntry | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoading(true);
     try {
       setData(await fetchAdminDirectory('all'));
     } catch (error) {
       console.error('[admin directory]', error);
-      toast.error(isRtl ? 'تعذر تحميل دليل المستخدمين' : 'Failed to load user directory');
+      if (!opts?.quiet) {
+        toast.error(isRtl ? 'تعذر تحميل دليل المستخدمين' : 'Failed to load user directory');
+      }
     } finally {
-      setLoading(false);
+      if (!opts?.quiet) setLoading(false);
     }
   }, [isRtl]);
+
+  const quietRefresh = useCallback(() => load({ quiet: true }), [load]);
+  useDashboardAutoRefresh(true, quietRefresh, DASHBOARD_POLL_INTERVAL_MS);
 
   useEffect(() => {
     void load();

@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { doc, onSnapshot, collection, query, where, limit, getDoc } from 'firebase/firestore';
+import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 import { prepareCheckoutDraft, clearCheckoutDraft, loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
 import {
   loadLocalBroadcastOrders,
@@ -687,7 +688,7 @@ const CustomerDashboard: React.FC = () => {
 
   useEffect(() => {
     if (step !== 'tracking' || trackingStatus !== 'searching_driver') return;
-    const timer = window.setInterval(() => setDispatchTick((n) => n + 1), 5000);
+    const timer = window.setInterval(() => setDispatchTick((n) => n + 1), DASHBOARD_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [step, trackingStatus]);
 
