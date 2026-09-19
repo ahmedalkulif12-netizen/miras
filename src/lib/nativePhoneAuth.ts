@@ -1,14 +1,14 @@
 /**
  * Native iOS Phone Auth via CapacitorFirebaseAuthentication.
  *
- * The Firebase JS RecaptchaVerifier cannot run inside capacitor:// WebViews and
- * returns auth/internal-error. Native verifyPhoneNumber uses APNs, then an
- * SFSafariViewController reCAPTCHA fallback when silent push is unavailable.
+ * The Firebase JS RecaptchaVerifier cannot run inside capacitor:// WebViews.
+ * Native verifyPhoneNumber uses silent APNs + App Attest in-process — never
+ * Safari / external reCAPTCHA.
  *
  * skipNativeAuth stays true so Firestore / Auth keep using the JS SDK session.
  *
- * Send OTP must wait for `phoneCodeSent` (a real verificationId). Navigating
- * after plugin start alone shows the OTP screen before Firebase dispatches SMS.
+ * UI navigates to the in-app OTP screen as soon as native verifyPhoneNumber
+ * starts. Confirm() waits for verificationId from the background APNs flow.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
@@ -24,7 +24,7 @@ import { shouldUseNativeIosPhoneAuth as matchNativeIosPhoneAuth } from '@/lib/na
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 
 const NATIVE_PLUGIN_START_TIMEOUT_MS = 8_000;
-/** Safari/reCAPTCHA fallback can take a while on physical devices without APNs. */
+/** Background APNs SMS dispatch; confirm() waits on this, Send OTP does not. */
 const NATIVE_VERIFY_TIMEOUT_MS = 90_000;
 
 export function logPhoneAuth(step: string, extra?: unknown): void {
@@ -220,8 +220,9 @@ export async function waitForNativeVerificationId(): Promise<string> {
 }
 
 /**
- * Triggers native Firebase Phone Auth and waits until Firebase confirms SMS
- * dispatch (`phoneCodeSent` with a non-empty verificationId).
+ * Starts native iOS verifyPhoneNumber and returns immediately so the in-app
+ * OTP screen can open. SMS is dispatched in the background via silent APNs.
+ * Confirm() waits for the verificationId.
  */
 export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<ConfirmationResult> {
   logPhoneAuth('Init');
@@ -261,9 +262,7 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
       settleVerification(
         false,
         Object.assign(
-          new Error(
-            'OTP_SEND_TIMEOUT: Firebase did not dispatch SMS (APNs/reCAPTCHA did not complete)'
-          ),
+          new Error('OTP_SEND_TIMEOUT: Firebase did not dispatch SMS via silent APNs'),
           { code: 'OTP_SEND_TIMEOUT' }
         )
       );
@@ -324,18 +323,10 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
             skipNativeAuth: true,
           })
         );
-        logPhoneAuth('native verifyPhoneNumber started — waiting for Firebase SMS dispatch');
       })(),
       NATIVE_PLUGIN_START_TIMEOUT_MS,
       'OTP_SEND_TIMEOUT'
     );
-
-    const verificationId = await verificationIdPromise;
-    if (!verificationId) {
-      throw Object.assign(new Error('EMPTY_VERIFICATION_ID'), {
-        code: 'EMPTY_VERIFICATION_ID',
-      });
-    }
   } catch (error) {
     settleVerification(false, error);
     void verificationIdPromise.catch(() => undefined);
@@ -347,6 +338,11 @@ export async function sendNativeIosPhoneOtp(phoneInput: string): Promise<Confirm
     throw error;
   }
 
+  logPhoneAuth('native verifyPhoneNumber started — opening in-app OTP screen');
+  void verificationIdPromise.then(
+    (id) => logPhoneAuth('SMS dispatched in background', id),
+    (error) => logPhoneAuth('background SMS verify failed', error)
+  );
   return makeJsConfirmation();
 }
 

@@ -132,10 +132,17 @@ function injectFirebaseAuthForPhoneAuth(source) {
   }
   const authProduct = '.product(name: "FirebaseAuth", package: "firebase-ios-sdk"),';
   const coreProduct = '.product(name: "FirebaseCore", package: "firebase-ios-sdk"),';
+  const appCheckProduct = '.product(name: "FirebaseAppCheck", package: "firebase-ios-sdk"),';
   if (!next.includes(authProduct)) {
     next = next.replace(
       '.product(name: "CapacitorFirebaseAuthentication", package: "CapacitorFirebaseAuthentication"),',
       `.product(name: "CapacitorFirebaseAuthentication", package: "CapacitorFirebaseAuthentication"),\n                ${authProduct}\n                ${coreProduct}`,
+    );
+  }
+  if (!next.includes(appCheckProduct)) {
+    next = next.replace(
+      '.product(name: "FirebaseCore", package: "firebase-ios-sdk"),',
+      `.product(name: "FirebaseCore", package: "firebase-ios-sdk"),\n                ${appCheckProduct}`,
     );
   }
   return next;
@@ -197,5 +204,5 @@ function applyNativePhoneAuthPatches(pluginRoot) {
     }`,
   );
   fs.writeFileSync(pluginPath, plugin);
-  console.log('Applied native Phone Auth UIDelegate + SMS dispatch patches.');
+  console.log('Applied native Phone Auth APNs-only (no Safari) patches.');
 }

@@ -8,8 +8,9 @@ class PhoneAuthProviderHandler: NSObject {
     private var pluginImplementation: FirebaseAuthentication
     private var signInOnConfirm = true
     private var skipNativeAuthOnConfirm = false
-    /// Must be retained for the lifetime of verifyPhoneNumber — Firebase does not keep a strong ref.
-    private var recaptchaUIDelegate: PhoneAuthCaptchaUIDelegate?
+    /// Retained so Firebase can call it; this delegate never presents Safari.
+    private var silentUIDelegate: PhoneAuthNoSafariUIDelegate?
+    private var apnsWaitWorkItem: DispatchWorkItem?
 
     init(_ pluginImplementation: FirebaseAuthentication) {
         self.pluginImplementation = pluginImplementation
@@ -42,14 +43,47 @@ class PhoneAuthProviderHandler: NSObject {
 
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
         let phoneNumber = options.getPhoneNumber()
-        let host = pluginImplementation.getPlugin().bridge?.viewController
-        recaptchaUIDelegate = PhoneAuthCaptchaUIDelegate(host: host)
-        let clientId = FirebaseApp.app()?.options.clientID ?? "nil"
-        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \(phoneNumber)")
-        CAPLog.print("[PhoneAuth] clientID=\(clientId) hostVC=\(host != nil)")
+        silentUIDelegate = PhoneAuthNoSafariUIDelegate()
+        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \(phoneNumber) (APNs-only, no Safari)")
+        waitForSilentAPNsThenVerify(phoneNumber)
+    }
+
+    private func waitForSilentAPNsThenVerify(_ phoneNumber: String) {
+        var started = false
+        var observer: NSObjectProtocol?
+        let startVerify: () -> Void = { [weak self] in
+            guard let self = self, !started else { return }
+            started = true
+            self.apnsWaitWorkItem?.cancel()
+            self.apnsWaitWorkItem = nil
+            if let observer {
+                NotificationCenter.default.removeObserver(observer)
+            }
+            self.startNativeVerify(phoneNumber)
+        }
+
+        observer = NotificationCenter.default.addObserver(
+            forName: Notification.Name("MirasPhoneAuthAPNSReady"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            CAPLog.print("[PhoneAuth] APNs token ready — starting verifyPhoneNumber")
+            startVerify()
+        }
+
+        let work = DispatchWorkItem {
+            CAPLog.print("[PhoneAuth] APNs wait finished — starting verifyPhoneNumber")
+            startVerify()
+        }
+        apnsWaitWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4, execute: work)
+        NotificationCenter.default.post(name: Notification.Name("MirasPhoneAuthAPNSRequest"), object: nil)
+    }
+
+    private func startNativeVerify(_ phoneNumber: String) {
         DispatchQueue.main.async {
             PhoneAuthProvider.provider()
-                .verifyPhoneNumber(phoneNumber, uiDelegate: self.recaptchaUIDelegate) { verificationID, error in
+                .verifyPhoneNumber(phoneNumber, uiDelegate: self.silentUIDelegate) { verificationID, error in
                     if let error = error {
                         let nsError = error as NSError
                         CAPLog.print(
@@ -60,7 +94,7 @@ class PhoneAuthProviderHandler: NSObject {
                     }
                     let id = verificationID ?? ""
                     if id.isEmpty {
-                        CAPLog.print("[PhoneAuth] verifyPhoneNumber returned empty verificationId — SMS was not dispatched")
+                        CAPLog.print("[PhoneAuth] empty verificationId — SMS was not dispatched")
                         self.pluginImplementation.handlePhoneVerificationFailed(
                             NSError(
                                 domain: "PhoneAuth",
@@ -77,49 +111,15 @@ class PhoneAuthProviderHandler: NSObject {
     }
 }
 
-/// Presents Firebase's Safari/reCAPTCHA sheet from the Capacitor WebView controller.
-/// `uiDelegate: nil` silently fails on iOS 13+ / WKWebView when APNs is unavailable.
-final class PhoneAuthCaptchaUIDelegate: NSObject, AuthUIDelegate {
-    weak var host: UIViewController?
-
-    init(host: UIViewController?) {
-        self.host = host
-        super.init()
-    }
-
+/// Blocks SFSafariViewController / ASWebAuthenticationSession. Firebase Phone Auth
+/// must complete via silent APNs handled in AppDelegate.
+final class PhoneAuthNoSafariUIDelegate: NSObject, AuthUIDelegate {
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            let presenter = PhoneAuthCaptchaUIDelegate.topViewController(from: self.host)
-            CAPLog.print("[PhoneAuth] presenting Safari/reCAPTCHA fallback presenter=\(presenter != nil)")
-            guard let presenter = presenter else {
-                CAPLog.print("[PhoneAuth] ERROR: no UIViewController to present reCAPTCHA — SMS will not send")
-                completion?()
-                return
-            }
-            presenter.present(viewControllerToPresent, animated: flag, completion: completion)
-        }
+        CAPLog.print("[PhoneAuth] blocked Safari/reCAPTCHA redirect — staying in-app (APNs-only)")
+        completion?()
     }
 
     func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            let presenter = PhoneAuthCaptchaUIDelegate.topViewController(from: self.host)
-            presenter?.dismiss(animated: flag, completion: completion)
-        }
-    }
-
-    private static func topViewController(from start: UIViewController?) -> UIViewController? {
-        if var top = start {
-            while let presented = top.presentedViewController {
-                top = presented
-            }
-            return top
-        }
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap { $0.windows }.first(where: { $0.isKeyWindow }) ?? scenes.first?.windows.first
-        var top = window?.rootViewController
-        while let presented = top?.presentedViewController {
-            top = presented
-        }
-        return top
+        completion?()
     }
 }

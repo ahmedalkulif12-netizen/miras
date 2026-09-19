@@ -39,8 +39,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        // Missing Push entitlement is OK — Firebase Phone Auth falls back to Safari reCAPTCHA.
-        print("[PhoneAuth] APNs registration failed; verifyPhoneNumber will use reCAPTCHA fallback:", error.localizedDescription)
+        print("[PhoneAuth] APNs registration failed (SMS still attempted in-process, no Safari):", error.localizedDescription)
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) -> Bool {
