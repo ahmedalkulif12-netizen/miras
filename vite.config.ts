@@ -1,9 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import type { Plugin } from 'vite';
 import { defineConfig, loadEnv } from 'vite';
 import { buildAppleAppSiteAssociation, buildDigitalAssetLinks, parseAndroidSha256Fingerprints, readAppleTeamId } from './scripts/appleTeamId.mjs';
+
+const MIRAS_PRODUCTION = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, 'config/miras-production.json'), 'utf8')
+) as { projectId: string; publicAppOrigin: string };
 
 /** Emit Digital Asset Links / AASA from env so store App Links verify. */
 function appLinksWellKnownPlugin(mode: string, env: Record<string, string>): Plugin {
@@ -87,6 +92,18 @@ function requireClientEnvPlugin(mode: string, env: Record<string, string>): Plug
         throw new Error(
           `[vite] Missing required client env for ${mode} build: ${missing.join(', ')}. ` +
             'Set them in Codemagic group miras_client or in .env / .env.production.'
+        );
+      }
+      const projectId = String(merged.VITE_FIREBASE_PROJECT_ID || '').trim();
+      if (projectId !== MIRAS_PRODUCTION.projectId) {
+        throw new Error(
+          `[vite] VITE_FIREBASE_PROJECT_ID must be ${MIRAS_PRODUCTION.projectId} (live Miras App), got ${projectId}.`
+        );
+      }
+      const appUrl = String(merged.VITE_APP_URL || '').trim();
+      if (appUrl && appUrl !== MIRAS_PRODUCTION.publicAppOrigin && mode === 'production') {
+        throw new Error(
+          `[vite] VITE_APP_URL must be ${MIRAS_PRODUCTION.publicAppOrigin} for production/iOS builds (got ${appUrl}).`
         );
       }
       const appId = String(merged.VITE_FIREBASE_APP_ID || '').trim();

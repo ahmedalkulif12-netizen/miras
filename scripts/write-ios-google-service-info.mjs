@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadMirasProduction } from './loadMirasProduction.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,16 +41,30 @@ function isInventedIosOAuthClient(id, googleAppId) {
 const dest = path.join(root, 'ios', 'App', 'App', 'GoogleService-Info.plist');
 const existingXml = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
 
-const googleAppId = (process.env.FIREBASE_IOS_GOOGLE_APP_ID || plistString(existingXml, 'GOOGLE_APP_ID')).trim();
+const canon = loadMirasProduction();
+
+const envProject = (process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || '').trim();
+if (envProject && envProject !== canon.projectId) {
+  console.error(
+    `Refusing iOS plist for PROJECT_ID=${envProject}. Live Miras App is ${canon.projectId}.`
+  );
+  process.exit(1);
+}
+
+const googleAppId = (
+  process.env.FIREBASE_IOS_GOOGLE_APP_ID ||
+  plistString(existingXml, 'GOOGLE_APP_ID') ||
+  canon.iosGoogleAppId
+).trim();
 const apiKey = (
   process.env.FIREBASE_IOS_API_KEY ||
-  process.env.VITE_FIREBASE_API_KEY ||
-  plistString(existingXml, 'API_KEY')
+  plistString(existingXml, 'API_KEY') ||
+  canon.iosApiKey
 ).trim();
-const projectId = (process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || 'hamula-cfc6c').trim();
-const gcmSenderId = (process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '191963635866').trim();
-const storageBucket = (process.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`).trim();
-const bundleId = (process.env.BUNDLE_ID || 'com.ahmed.miras').trim();
+const projectId = canon.projectId;
+const gcmSenderId = canon.messagingSenderId;
+const storageBucket = canon.storageBucket;
+const bundleId = (process.env.BUNDLE_ID || canon.iosBundleId).trim();
 let clientId = (process.env.FIREBASE_IOS_CLIENT_ID || '').trim();
 let reversedClientId = (process.env.FIREBASE_IOS_REVERSED_CLIENT_ID || '').trim();
 if (isDisabledOAuthPlaceholder(clientId)) {
@@ -63,8 +78,26 @@ if (!/:ios:/i.test(googleAppId)) {
   console.error('FIREBASE_IOS_GOOGLE_APP_ID must be the Firebase iOS app id (1:…:ios:…).');
   process.exit(1);
 }
+if (googleAppId !== canon.iosGoogleAppId) {
+  console.error(
+    `GOOGLE_APP_ID must be the Miras App iOS id (${canon.iosGoogleAppId}), got ${googleAppId}.`
+  );
+  process.exit(1);
+}
 if (!apiKey) {
-  console.error('FIREBASE_IOS_API_KEY or VITE_FIREBASE_API_KEY is required to write GoogleService-Info.plist.');
+  console.error('FIREBASE_IOS_API_KEY is required to write GoogleService-Info.plist.');
+  process.exit(1);
+}
+if (apiKey === String(process.env.VITE_FIREBASE_API_KEY || '').trim() && apiKey !== canon.iosApiKey) {
+  console.error('Refusing to write the Web VITE_FIREBASE_API_KEY into GoogleService-Info.plist.');
+  process.exit(1);
+}
+if (apiKey !== canon.iosApiKey) {
+  console.error('FIREBASE_IOS_API_KEY must match the live Miras App iOS GoogleService-Info.plist API_KEY.');
+  process.exit(1);
+}
+if (bundleId !== canon.iosBundleId) {
+  console.error(`BUNDLE_ID must be ${canon.iosBundleId} (got ${bundleId}).`);
   process.exit(1);
 }
 

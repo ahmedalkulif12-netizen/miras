@@ -44,6 +44,12 @@ public enum PhoneAuthNativeBootstrap {
         print("[PhoneAuth] gcmSenderID=\(resolved.gcmSenderID)")
         print("[PhoneAuth] apiKeyPrefix=\(String((resolved.apiKey ?? "").prefix(8)))")
         print("[PhoneAuth] clientID=\(resolved.clientID ?? "nil")")
+        if resolved.projectID != "hamula-cfc6c" {
+            print("[PhoneAuth] ERROR: PROJECT_ID is not live Miras App (expected hamula-cfc6c)")
+        }
+        if resolved.bundleID != "com.ahmed.miras" {
+            print("[PhoneAuth] ERROR: bundleID is not com.ahmed.miras")
+        }
         print("[PhoneAuth] Saudi E.164 format required: +9665XXXXXXXX")
         #endif
         configureAuthLanguage()

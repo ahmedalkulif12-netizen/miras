@@ -4,10 +4,15 @@
  * those to Moyasar. Prefer VITE_APP_URL, then the Firebase Hosting site.
  */
 import { Capacitor } from '@capacitor/core';
+import {
+  MIRAS_ANDROID_PACKAGE,
+  MIRAS_IOS_BUNDLE_ID,
+  MIRAS_PRODUCTION_FIREBASE_PROJECT_ID,
+} from '@/lib/mirasProductionFirebase';
 
-export const DEFAULT_PUBLIC_APP_HOST = 'hamula-cfc6c.web.app';
-export const ANDROID_APP_PACKAGE = 'com.miras.app';
-export const IOS_BUNDLE_ID = 'com.ahmed.miras';
+export const DEFAULT_PUBLIC_APP_HOST = `${MIRAS_PRODUCTION_FIREBASE_PROJECT_ID}.web.app`;
+export const ANDROID_APP_PACKAGE = MIRAS_ANDROID_PACKAGE;
+export const IOS_BUNDLE_ID = MIRAS_IOS_BUNDLE_ID;
 
 export function isLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');

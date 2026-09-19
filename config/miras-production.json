@@ -1,0 +1,13 @@
+{
+  "brand": "Miras App",
+  "projectId": "hamula-cfc6c",
+  "storageBucket": "hamula-cfc6c.firebasestorage.app",
+  "messagingSenderId": "191963635866",
+  "authDomain": "hamula-cfc6c.firebaseapp.com",
+  "publicAppOrigin": "https://hamula-cfc6c.web.app",
+  "iosBundleId": "com.ahmed.miras",
+  "iosGoogleAppId": "1:191963635866:ios:73a41da4e6ffe55734bf23",
+  "iosApiKey": "AIzaSyChrhscAIITLzKiDAqWP2GXQbvhGjpY9q8",
+  "webAppId": "1:191963635866:web:b9813435125d467d34bf23",
+  "androidPackage": "com.miras.app"
+}

@@ -369,6 +369,13 @@ async function run(): Promise<void> {
   );
   assert(
     resolveApiOriginFrom({
+      isNative: true,
+      windowOrigin: 'capacitor://localhost',
+    }) === 'https://hamula-cfc6c.web.app',
+    'native API origin falls back to live Miras Hosting when env is empty'
+  );
+  assert(
+    resolveApiOriginFrom({
       envApiOrigin: 'https://hamoula-api.example.run.app',
       isNative: true,
       publicAppOrigin: 'https://hamula-cfc6c.web.app',

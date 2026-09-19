@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadMirasProduction } from './loadMirasProduction.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -68,8 +69,9 @@ if (!fs.existsSync(plistPath)) {
   process.exit(1);
 }
 const plistXml = fs.readFileSync(plistPath, 'utf8');
+const canon = loadMirasProduction();
 const iosGoogleAppId = plistString(plistXml, 'GOOGLE_APP_ID');
-const iosApiKey = plistString(plistXml, 'API_KEY') || prod.VITE_FIREBASE_API_KEY;
+const iosApiKey = plistString(plistXml, 'API_KEY') || canon.iosApiKey;
 function isInventedIosOAuthClient(id, googleAppId) {
   const hash = (String(googleAppId).split(':ios:')[1] || '').trim();
   return Boolean(id && hash && id.includes(hash));
@@ -91,8 +93,32 @@ if (!/:ios:/i.test(iosGoogleAppId)) {
   console.error('GoogleService-Info.plist GOOGLE_APP_ID must be an iOS app id.');
   process.exit(1);
 }
-if (iosBundleId !== 'com.ahmed.miras') {
-  console.error('GoogleService-Info.plist BUNDLE_ID must be com.ahmed.miras.');
+if (iosBundleId !== canon.iosBundleId) {
+  console.error(`GoogleService-Info.plist BUNDLE_ID must be ${canon.iosBundleId}.`);
+  process.exit(1);
+}
+if (plistString(plistXml, 'PROJECT_ID') !== canon.projectId) {
+  console.error(`GoogleService-Info.plist PROJECT_ID must be ${canon.projectId} (live Miras App).`);
+  process.exit(1);
+}
+if (plistString(plistXml, 'STORAGE_BUCKET') !== canon.storageBucket) {
+  console.error(`GoogleService-Info.plist STORAGE_BUCKET must be ${canon.storageBucket}.`);
+  process.exit(1);
+}
+if (iosGoogleAppId !== canon.iosGoogleAppId) {
+  console.error(`GoogleService-Info.plist GOOGLE_APP_ID must be ${canon.iosGoogleAppId}.`);
+  process.exit(1);
+}
+if (iosApiKey !== canon.iosApiKey) {
+  console.error('GoogleService-Info.plist API_KEY must be the Miras App iOS key, not the Web key.');
+  process.exit(1);
+}
+if (prod.VITE_FIREBASE_PROJECT_ID !== canon.projectId) {
+  console.error(`VITE_FIREBASE_PROJECT_ID must be ${canon.projectId} (live Miras App).`);
+  process.exit(1);
+}
+if (prod.VITE_APP_URL !== canon.publicAppOrigin) {
+  console.error(`VITE_APP_URL must be ${canon.publicAppOrigin}.`);
   process.exit(1);
 }
 
@@ -117,11 +143,11 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.ahmed.miras
+        bundle_identifier: ${canon.iosBundleId}
       vars:
         XCODE_PROJECT_PATH: ${yamlQuote('ios/App/App.xcodeproj')}
         XCODE_SCHEME: ${yamlQuote('App')}
-        BUNDLE_ID: ${yamlQuote('com.ahmed.miras')}
+        BUNDLE_ID: ${yamlQuote(canon.iosBundleId)}
         DEVELOPMENT_TEAM: ${yamlQuote('4TRJXRYK8A')}
         IOS_MARKETING_VERSION: ${yamlQuote('1.0.1')}
         NODE_ENV: ${yamlQuote('production')}
@@ -129,19 +155,20 @@ workflows:
         NPM_CONFIG_PRODUCTION: ${yamlQuote('false')}
         VITE_MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
         MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
-        MIRAS_EXPECTED_FIREBASE_PROJECT: ${yamlQuote('hamula-cfc6c')}
-        FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
+        MIRAS_EXPECTED_FIREBASE_PROJECT: ${yamlQuote(canon.projectId)}
+        FIREBASE_PROJECT_ID: ${yamlQuote(canon.projectId)}
         VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
-        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote('hamula-cfc6c.firebaseapp.com')}
-        VITE_FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
-        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote('hamula-cfc6c.firebasestorage.app')}
-        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote('191963635866')}
+        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote(canon.authDomain)}
+        VITE_FIREBASE_PROJECT_ID: ${yamlQuote(canon.projectId)}
+        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote(canon.storageBucket)}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote(canon.messagingSenderId)}
         VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
         VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId, 'G-04GKH516ND')}
         VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: ${yamlQuote('6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb')}
         VITE_APP_CHECK_DISABLED: ${yamlQuote('false')}
-        VITE_APP_URL: ${yamlQuote('https://hamula-cfc6c.web.app')}
+        VITE_APP_URL: ${yamlQuote(canon.publicAppOrigin)}
+        VITE_API_ORIGIN: ${yamlQuote(canon.publicAppOrigin)}
         VITE_IOS_TEAM_ID: ${yamlQuote('4TRJXRYK8A')}
         VITE_SUPPORT_EMAIL: ${yamlQuote('support@miras.com')}
         FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
@@ -154,7 +181,7 @@ workflows:
       - name: Force production client env
         script: |
           set -euo pipefail
-          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP VITE_API_ORIGIN
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
           export VITE_MIRAS_DEPLOY_ENV=production
@@ -326,18 +353,19 @@ workflows:
         CAPACITOR_BUILD: ${yamlQuote('1')}
         VITE_MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
         MIRAS_DEPLOY_ENV: ${yamlQuote('production')}
-        FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
+        FIREBASE_PROJECT_ID: ${yamlQuote(canon.projectId)}
         VITE_FIREBASE_API_KEY: ${yamlQuote(prod.VITE_FIREBASE_API_KEY)}
-        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote('hamula-cfc6c.firebaseapp.com')}
-        VITE_FIREBASE_PROJECT_ID: ${yamlQuote('hamula-cfc6c')}
-        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote('hamula-cfc6c.firebasestorage.app')}
-        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote('191963635866')}
+        VITE_FIREBASE_AUTH_DOMAIN: ${yamlQuote(canon.authDomain)}
+        VITE_FIREBASE_PROJECT_ID: ${yamlQuote(canon.projectId)}
+        VITE_FIREBASE_STORAGE_BUCKET: ${yamlQuote(canon.storageBucket)}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${yamlQuote(canon.messagingSenderId)}
         VITE_FIREBASE_APP_ID: ${yamlQuote(prod.VITE_FIREBASE_APP_ID)}
         VITE_FIREBASE_MEASUREMENT_ID: ${yamlQuote(measurementId, 'G-04GKH516ND')}
         VITE_GOOGLE_MAPS_PLATFORM_KEY: ${yamlQuote(mapsKey)}
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: ${yamlQuote('6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb')}
         VITE_APP_CHECK_DISABLED: ${yamlQuote('false')}
-        VITE_APP_URL: ${yamlQuote('https://hamula-cfc6c.web.app')}
+        VITE_APP_URL: ${yamlQuote(canon.publicAppOrigin)}
+        VITE_API_ORIGIN: ${yamlQuote(canon.publicAppOrigin)}
       node: 22
       java: 21
     scripts:

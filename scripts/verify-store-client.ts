@@ -9,6 +9,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadProjectEnv } from '../server/config/loadProjectEnv.ts';
 import { parseAndroidSha256Fingerprints } from './appleTeamId.mjs';
+import {
+  MIRAS_IOS_BUNDLE_ID,
+  MIRAS_IOS_GOOGLE_APP_ID,
+  MIRAS_PRODUCTION_API_ORIGIN,
+  MIRAS_PRODUCTION_FIREBASE_PROJECT_ID,
+  MIRAS_PRODUCTION_STORAGE_BUCKET,
+} from '../src/lib/mirasProductionFirebase.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -68,8 +75,24 @@ function main(): number {
   }
 
   const appUrl = process.env.VITE_APP_URL?.trim() || '';
-  if (!appUrl.startsWith('https://')) {
-    console.error('VITE_APP_URL must be an https:// origin (Moyasar / App Links callback).');
+  if (appUrl !== MIRAS_PRODUCTION_API_ORIGIN) {
+    console.error(
+      `VITE_APP_URL must be the live Miras App origin ${MIRAS_PRODUCTION_API_ORIGIN} (got ${appUrl || 'empty'}).`
+    );
+    return 1;
+  }
+
+  const projectId = process.env.VITE_FIREBASE_PROJECT_ID?.trim() || '';
+  if (projectId !== MIRAS_PRODUCTION_FIREBASE_PROJECT_ID) {
+    console.error(
+      `VITE_FIREBASE_PROJECT_ID must be ${MIRAS_PRODUCTION_FIREBASE_PROJECT_ID} (live Miras App), got ${projectId || 'empty'}.`
+    );
+    return 1;
+  }
+
+  const storageBucket = process.env.VITE_FIREBASE_STORAGE_BUCKET?.trim() || '';
+  if (storageBucket !== MIRAS_PRODUCTION_STORAGE_BUCKET) {
+    console.error(`VITE_FIREBASE_STORAGE_BUCKET must be ${MIRAS_PRODUCTION_STORAGE_BUCKET}.`);
     return 1;
   }
 
@@ -113,17 +136,28 @@ function main(): number {
     const xml = fs.readFileSync(localPlistPath, 'utf8');
     const bundleId = plistString(xml, 'BUNDLE_ID');
     const googleAppId = plistString(xml, 'GOOGLE_APP_ID');
-    const projectId = plistString(xml, 'PROJECT_ID');
-    if (bundleId !== 'com.ahmed.miras') {
-      console.error(`GoogleService-Info.plist BUNDLE_ID must be com.ahmed.miras (got ${bundleId || 'empty'}).`);
+    const plistProjectId = plistString(xml, 'PROJECT_ID');
+    if (bundleId !== MIRAS_IOS_BUNDLE_ID) {
+      console.error(`GoogleService-Info.plist BUNDLE_ID must be ${MIRAS_IOS_BUNDLE_ID} (got ${bundleId || 'empty'}).`);
+      return 1;
+    }
+    if (googleAppId !== MIRAS_IOS_GOOGLE_APP_ID) {
+      console.error(`GoogleService-Info.plist GOOGLE_APP_ID must be ${MIRAS_IOS_GOOGLE_APP_ID}.`);
       return 1;
     }
     if (appIdKind(googleAppId) !== 'ios') {
       console.error('GoogleService-Info.plist GOOGLE_APP_ID must be the Firebase iOS app id (1:…:ios:…).');
       return 1;
     }
-    if (projectId && projectId !== process.env.VITE_FIREBASE_PROJECT_ID?.trim()) {
-      console.error('GoogleService-Info.plist PROJECT_ID does not match VITE_FIREBASE_PROJECT_ID.');
+    if (plistProjectId !== MIRAS_PRODUCTION_FIREBASE_PROJECT_ID) {
+      console.error(
+        `GoogleService-Info.plist PROJECT_ID must be ${MIRAS_PRODUCTION_FIREBASE_PROJECT_ID} (got ${plistProjectId || 'empty'}).`
+      );
+      return 1;
+    }
+    const storage = plistString(xml, 'STORAGE_BUCKET');
+    if (storage !== MIRAS_PRODUCTION_STORAGE_BUCKET) {
+      console.error(`GoogleService-Info.plist STORAGE_BUCKET must be ${MIRAS_PRODUCTION_STORAGE_BUCKET}.`);
       return 1;
     }
   }

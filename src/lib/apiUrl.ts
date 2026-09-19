@@ -7,6 +7,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 import { getPublicAppOrigin, isLoopbackHostname } from '@/lib/appOrigin';
+import { MIRAS_PRODUCTION_API_ORIGIN } from '@/lib/mirasProductionFirebase';
 
 export function resolveApiOriginFrom(input: {
   envApiOrigin?: string;
@@ -38,7 +39,11 @@ export function resolveApiOriginFrom(input: {
     windowProtocol === 'https' && isLoopbackHostname(windowHost);
 
   if (input.isNative || nativeScheme || nativeLoopbackHttps) {
-    return (input.publicAppOrigin || '').trim().replace(/\/$/, '');
+    return (
+      (input.envApiOrigin || '').trim().replace(/\/$/, '') ||
+      (input.publicAppOrigin || '').trim().replace(/\/$/, '') ||
+      MIRAS_PRODUCTION_API_ORIGIN
+    );
   }
 
   return '';

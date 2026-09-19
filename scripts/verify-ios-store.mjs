@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
+import { loadMirasProduction } from './loadMirasProduction.mjs';
 import { readAppleTeamId } from './appleTeamId.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,8 +162,21 @@ async function main() {
   const plistRel = 'ios/App/App/GoogleService-Info.plist';
   if (exists(plistRel)) {
     const plist = read(plistRel);
-    if (!plist.includes('<string>com.ahmed.miras</string>')) {
-      failures.push('GoogleService-Info.plist BUNDLE_ID must be com.ahmed.miras');
+    const canon = loadMirasProduction();
+    if (!plist.includes(`<string>${canon.iosBundleId}</string>`)) {
+      failures.push(`GoogleService-Info.plist BUNDLE_ID must be ${canon.iosBundleId}`);
+    }
+    if (!plist.includes(`<string>${canon.projectId}</string>`)) {
+      failures.push(`GoogleService-Info.plist PROJECT_ID must be ${canon.projectId} (live Miras App)`);
+    }
+    if (!plist.includes(`<string>${canon.storageBucket}</string>`)) {
+      failures.push(`GoogleService-Info.plist STORAGE_BUCKET must be ${canon.storageBucket}`);
+    }
+    if (!plist.includes(`<string>${canon.iosGoogleAppId}</string>`)) {
+      failures.push(`GoogleService-Info.plist GOOGLE_APP_ID must be ${canon.iosGoogleAppId}`);
+    }
+    if (!plist.includes(`<string>${canon.iosApiKey}</string>`)) {
+      failures.push('GoogleService-Info.plist API_KEY must be the Miras App iOS key, not the Web key');
     }
     if (!/GOOGLE_APP_ID[\s\S]*:ios:/.test(plist)) {
       failures.push('GoogleService-Info.plist GOOGLE_APP_ID must be the Firebase iOS app (1:…:ios:…)');

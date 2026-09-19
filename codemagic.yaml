@@ -41,6 +41,7 @@ workflows:
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
         VITE_APP_URL: "https://hamula-cfc6c.web.app"
+        VITE_API_ORIGIN: "https://hamula-cfc6c.web.app"
         VITE_IOS_TEAM_ID: "4TRJXRYK8A"
         VITE_SUPPORT_EMAIL: "support@miras.com"
         FIREBASE_IOS_GOOGLE_APP_ID: "1:191963635866:ios:73a41da4e6ffe55734bf23"
@@ -53,7 +54,7 @@ workflows:
       - name: Force production client env
         script: |
           set -euo pipefail
-          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP VITE_API_ORIGIN
+          unset VITE_ENABLE_DEV_AUTH_BYPASS VITE_PHONE_AUTH_TESTING VITE_APP_CHECK_DEBUG_TOKEN APPLE_REVIEW_PHONE APPLE_REVIEW_OTP
           export NODE_ENV=production
           export CAPACITOR_BUILD=1
           export VITE_MIRAS_DEPLOY_ENV=production
@@ -209,9 +210,7 @@ workflows:
           failure: true
       app_store_connect:
         auth: integration
-        # Upload the IPA only. Do not submit for TestFlight beta review or App Review —
-        # a second submission fails while another build is already in review.
-        submit_to_testflight: false
+        submit_to_testflight: true
         submit_to_app_store: false
 
   android-internal:
@@ -239,6 +238,7 @@ workflows:
         VITE_APP_CHECK_RECAPTCHA_SITE_KEY: "6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb"
         VITE_APP_CHECK_DISABLED: "false"
         VITE_APP_URL: "https://hamula-cfc6c.web.app"
+        VITE_API_ORIGIN: "https://hamula-cfc6c.web.app"
       node: 22
       java: 21
     scripts:
@@ -260,7 +260,7 @@ workflows:
             echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
           fi
           if [ ! -f android/app/google-services.json ]; then
-            echo "Add GOOGLE_SERVICES_JSON (base64) to Codemagic group miras_client for Android builds."
+            echo "android/app/google-services.json missing. iOS workflow is self-contained; Android still needs GOOGLE_SERVICES_JSON or a checked-in file."
             exit 1
           fi
       - name: Build web and sync Android
