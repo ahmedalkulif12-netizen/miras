@@ -1,5 +1,4 @@
 import UIKit
-import Security
 #if canImport(FirebaseCore)
 import FirebaseCore
 #endif
@@ -50,22 +49,11 @@ public enum PhoneAuthNativeBootstrap {
         configureAuthLanguage()
     }
 
-    /// Register for silent APNs only when the provisioning profile actually includes Push.
+    /// Silent APNs requires `aps-environment`, which the App Store profile does not include.
+    /// Skip registration so archive/signing stay valid; Phone Auth uses in-app AuthUIDelegate.
     public static func registerForSilentPushIfEntitled(_ application: UIApplication) {
-        if hasApsEnvironmentEntitlement() {
-            application.registerForRemoteNotifications()
-            print("[PhoneAuth] Push entitlement present — registering silent APNs")
-        } else {
-            print("[PhoneAuth] no aps-environment entitlement — native Phone Auth uses in-app verification fallback")
-        }
-    }
-
-    private static func hasApsEnvironmentEntitlement() -> Bool {
-        guard let task = SecTaskCreateFromSelf(nil) else { return false }
-        var error: Unmanaged<CFError>?
-        let value = SecTaskCopyValueForEntitlement(task, "aps-environment" as CFString, &error)
-        error?.release()
-        return value != nil
+        _ = application
+        print("[PhoneAuth] skipping silent APNs registration — native Phone Auth uses in-app verification fallback")
     }
 
     #if canImport(FirebaseCore)
