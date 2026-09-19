@@ -1,5 +1,5 @@
 # Miras API — Cloud Run (API-only; SPA is hosted separately on Firebase Hosting)
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY src ./src
 # API image does not run the IMAP agent. Use Dockerfile.agents / hamula-agents.
 RUN npm run build:server
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 

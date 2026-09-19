@@ -1,7 +1,7 @@
 # Miras email / payout HITL worker — always-on (not the public API).
 # IMAP polling needs a process that never sleeps. Do not merge this into hamula-api
 # (that service uses --min-instances=0 and CPU throttling).
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

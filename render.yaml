@@ -1,5 +1,8 @@
 # Render Blueprint — 24/7 email / payout worker (not the public Firebase SPA).
-# Native Node. Start command is npm run start:agents (tsx src/agents/whatsapp.js).
+# Native Node 22 (Capacitor CLI + package.json engines require >=22; Node 20 npm ci fails).
+# Start command is npm run start:agents (tsx src/agents/whatsapp.js).
+# If a dashboard web service named `miras` auto-runs `npm run build`, scripts/ci-build.mjs
+# skips the Vite SPA (needs VITE_FIREBASE_*) and only emits dist/server.cjs.
 # Starter+ required: free web services sleep and IMAP drops.
 #
 # Secrets (sync: false) must be entered in the Render dashboard:
@@ -14,11 +17,11 @@ services:
     plan: starter
     region: frankfurt
     numInstances: 1
-    buildCommand: npm ci
+    buildCommand: npm ci --omit=dev
     startCommand: npm run start:agents
     envVars:
       - key: NODE_VERSION
-        value: "20"
+        value: "22"
       - key: NODE_ENV
         value: production
       - key: PORT

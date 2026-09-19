@@ -1,5 +1,4 @@
 import express from 'express';
-import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import admin from 'firebase-admin';
@@ -1943,8 +1942,10 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
+  // Vite middleware for local `npm run dev` only. Production CJS (`node dist/server.cjs`)
+  // must not `require('vite')` — Vite is ESM and its optional Rollup natives break Render.
   if (!config.isProduction) {
+    const { createServer: createViteServer } = await import('vite');
     const viteMode = 'development';
     const vite = await createViteServer({
       root: process.cwd(),

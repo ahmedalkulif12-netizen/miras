@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && npm run build:server",
+    "build": "node scripts/ci-build.mjs",
     "build:web": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:render": "npm run build:server",
     "start": "node dist/server.cjs",
     "clean": "node scripts/clean-build.mjs",
     "clean:build": "node scripts/clean-build.mjs && npm run build",
@@ -56,7 +57,7 @@
     "diag:imap": "tsx scripts/diag-imap-inbox.mjs"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22 <25"
   },
   "dependencies": {
     "@capacitor-firebase/app-check": "^8.5.0",
