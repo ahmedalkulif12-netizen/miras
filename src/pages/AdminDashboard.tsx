@@ -41,6 +41,7 @@ import {
   aggregateServiceDistribution,
 } from '@/domain/serviceCategories';
 import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
+import { readAdminOverviewCache } from '@/lib/adminOverviewCache';
 
 interface Driver {
   id: string;
@@ -110,8 +111,8 @@ const AdminDashboard: React.FC = () => {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [rejectTarget, setRejectTarget] = useState<Driver | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
-  const [loadingOverview, setLoadingOverview] = useState(true);
+  const [overview, setOverview] = useState<AdminOverviewResponse | null>(() => readAdminOverviewCache());
+  const [loadingOverview, setLoadingOverview] = useState(() => !readAdminOverviewCache());
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [driversFetched, setDriversFetched] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -123,19 +124,19 @@ const AdminDashboard: React.FC = () => {
   >('ready_for_review');
 
   const loadOverview = useCallback(async (opts?: { quiet?: boolean }) => {
-    if (!opts?.quiet) setLoadingOverview(true);
+    const hasCached = Boolean(readAdminOverviewCache());
+    if (!opts?.quiet && !hasCached) setLoadingOverview(true);
     try {
       const data = await fetchAdminOverview();
       setOverview(data);
     } catch (error) {
-      console.error('Admin overview load failed:', error);
-      if (!opts?.quiet) {
-        toast.error(isRtl ? 'تعذر تحميل ملخص لوحة التحكم' : 'Failed to load admin overview');
-      }
+      console.warn('Admin overview load failed (suppressed):', error);
+      const cached = readAdminOverviewCache();
+      if (cached) setOverview(cached);
     } finally {
-      if (!opts?.quiet) setLoadingOverview(false);
+      setLoadingOverview(false);
     }
-  }, [isRtl]);
+  }, []);
 
   const loadDrivers = useCallback(async (opts?: { quiet?: boolean }) => {
     if (!opts?.quiet) setLoadingDrivers(true);

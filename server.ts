@@ -9,7 +9,7 @@ import {
   assertProductionSecrets,
   assertMoyasarConfigured,
 } from './server/config/env.ts';
-import { verifyFirebaseToken, type AuthenticatedRequest } from './server/middleware/verifyFirebaseToken.ts';
+import { verifyFirebaseToken, adminOverviewTokenOptions, type AuthenticatedRequest } from './server/middleware/verifyFirebaseToken.ts';
 import { verifyAppCheck } from './server/middleware/verifyAppCheck.ts';
 import {
   captureRawBody,
@@ -58,7 +58,7 @@ import {
 } from './server/lib/moyasarCallback.ts';
 import { nativeApiCors } from './server/lib/nativeApiCors.ts';
 import { verifyAdmin } from './server/middleware/verifyAdmin.ts';
-import { getAdminOverview } from './server/lib/adminOverview.ts';
+import { emptyAdminOverview, getAdminOverview } from './server/lib/adminOverview.ts';
 import {
   listAdminDrivers,
   updateAdminDriverStatus,
@@ -319,6 +319,11 @@ async function startServer() {
   // Authenticated APIs also accept App Check tokens (enforced when APP_CHECK_ENFORCE=true).
   const secureApi = [verifyAppCheck(), verifyFirebaseToken()];
   const adminApi = [...secureApi, verifyAdmin(db, admin.auth())];
+  const adminOverviewApi = [
+    verifyAppCheck(),
+    verifyFirebaseToken(adminOverviewTokenOptions),
+    verifyAdmin(db, admin.auth()),
+  ];
 
   // Moyasar return verification — authenticated customer only (callback landing).
   // Accepts draftId (pre-payment) or orderId (legacy); finalizes order only after paid.
@@ -744,15 +749,16 @@ async function startServer() {
     }
   });
 
-  // Admin dashboard metrics — read-only Firestore via Admin SDK.
-  app.get('/api/admin/overview', ...adminApi, async (_req: AuthenticatedRequest, res: any) => {
+  // Admin dashboard metrics — tolerant ID token + never 500 on Firestore/cold-start.
+  app.get('/api/admin/overview', ...adminOverviewApi, async (_req: AuthenticatedRequest, res: any) => {
     try {
       const overview = await getAdminOverview(db);
       res.json(overview);
     } catch (error: any) {
       console.error('Admin overview error:', error);
-      res.status(error?.statusCode ?? 500).json({
-        error: error?.message || 'Failed to load admin overview',
+      res.status(200).json({
+        ...emptyAdminOverview(),
+        degraded: true,
       });
     }
   });

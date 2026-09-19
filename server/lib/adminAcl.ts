@@ -195,8 +195,13 @@ export async function getAuthUserPhone(
   auth: admin.auth.Auth,
   uid: string
 ): Promise<string | null> {
-  const user = await auth.getUser(uid);
-  return normalizeAdminPhoneE164(user.phoneNumber ?? null);
+  try {
+    const user = await auth.getUser(uid);
+    return normalizeAdminPhoneE164(user.phoneNumber ?? null);
+  } catch (err) {
+    console.warn('[adminAcl] getAuthUserPhone failed:', err);
+    return null;
+  }
 }
 
 /** Grant admin custom claims after allowlist validation (server-only). */
@@ -285,7 +290,11 @@ export async function verifyAdminAccess(
     typeof decodedToken.phone_number === 'string' ? decodedToken.phone_number : null
   );
   if (authSdk) {
-    authPhone = (await getAuthUserPhone(authSdk, decodedToken.uid)) ?? authPhone;
+    try {
+      authPhone = (await getAuthUserPhone(authSdk, decodedToken.uid)) ?? authPhone;
+    } catch (err) {
+      console.warn('[verifyAdminAccess] Auth user lookup soft-fail — using token phone:', err);
+    }
   }
 
   if (!isAuthorizedAdminPhone(authPhone)) {

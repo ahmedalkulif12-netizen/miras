@@ -1,6 +1,14 @@
 import { authFetch, isDevBypassAuthSession } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { ensureAdminApiReady } from '@/lib/adminAuth';
+import { persistCurrentIdToken, ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
+import {
+  adminOverviewRetryDelayMs,
+  emptyAdminOverviewResponse,
+  isRetryableAdminOverviewStatus,
+  persistAdminOverviewCache,
+  readAdminOverviewCache,
+} from '@/lib/adminOverviewCache';
 import type { DriverAccountStatus } from '@/types';
 
 async function adminAuthedFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -167,30 +175,8 @@ export interface AdminFinancialLedgerResponse {
   }>;
 }
 
-/** Sample admin dashboard data for localhost developer bypass (no Firebase token). */
 function buildDevAdminOverview(): AdminOverviewResponse {
-  return {
-    stats: {
-      activeDrivers: 0,
-      pendingDrivers: 0,
-      totalUsers: 0,
-      totalDrivers: 0,
-      totalIndividualDrivers: 0,
-      totalFleetDrivers: 0,
-      totalClients: 0,
-      totalCorporate: 0,
-      totalOperators: 0,
-      activeTrips: 0,
-      completedOrders: 0,
-      openOrders: 0,
-      netRevenueSar: 0,
-      clientPaymentsSar: 0,
-      driverEarningsSar: 0,
-      platformCommissionSar: 0,
-    },
-    recentOrders: [],
-    serviceDistribution: [],
-  };
+  return emptyAdminOverviewResponse();
 }
 
 function buildDevAdminDrivers(): AdminDriverApiRow[] {
@@ -216,15 +202,60 @@ function buildDevAdminFinancials(): AdminFinancialLedgerResponse {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function fetchAdminOverview(): Promise<AdminOverviewResponse> {
   if (isDevBypassAuthSession()) {
     return buildDevAdminOverview();
   }
-  const res = await adminAuthedFetch('/api/admin/overview');
-  if (!res.ok) {
-    throw new Error(await readApiErrorMessage(res, 'Failed to load admin overview'));
+
+  const maxRetries = 3;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      if (attempt > 0) {
+        await sleep(adminOverviewRetryDelayMs(attempt - 1));
+        try {
+          await ensureSignedInFirebaseUid(12_000);
+          await persistCurrentIdToken(true);
+        } catch (tokenError) {
+          console.warn('[admin] waiting for Firebase ID token before overview retry:', tokenError);
+        }
+      }
+
+      await ensureAdminApiReady();
+      const res = await adminAuthedFetch('/api/admin/overview');
+      if (res.ok) {
+        const data = await readApiJson<AdminOverviewResponse>(res);
+        persistAdminOverviewCache(data);
+        return data;
+      }
+
+      lastError = new Error(await readApiErrorMessage(res, 'Failed to load admin overview'));
+      if (!isRetryableAdminOverviewStatus(res.status) && attempt >= 1) {
+        break;
+      }
+      console.warn(
+        `[admin] overview ${res.status} — retry ${attempt + 1}/${maxRetries}`,
+        lastError instanceof Error ? lastError.message : lastError
+      );
+    } catch (error) {
+      lastError = error;
+      console.warn('[admin] overview fetch failed — will retry after token wait:', error);
+    }
   }
-  return readApiJson<AdminOverviewResponse>(res);
+
+  const cached = readAdminOverviewCache();
+  if (cached) {
+    console.warn('[admin] overview using stale cache after retries', lastError);
+    return cached;
+  }
+
+  console.warn('[admin] overview falling back to empty summary after retries', lastError);
+  return emptyAdminOverviewResponse();
 }
 
 export async function fetchAdminDrivers(): Promise<AdminDriverApiRow[]> {

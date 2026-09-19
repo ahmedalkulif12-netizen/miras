@@ -16,6 +16,7 @@
     "test:auth-routing": "tsx scripts/test-auth-routing.ts",
     "test:app-check-runtime": "tsx scripts/test-app-check-runtime.ts",
     "test:phone-auth": "tsx scripts/test-phone-auth.ts",
+    "test:admin-overview": "tsx scripts/test-admin-overview.ts",
     "verify:staging": "tsx scripts/verify-production-env.ts staging",
     "verify:production": "tsx scripts/verify-production-env.ts production",
     "verify:firebase-client": "tsx scripts/verify-firebase-client-env.ts",
