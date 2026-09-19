@@ -48,7 +48,7 @@ class PhoneAuthProviderHandler: NSObject {
         }
         if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
            let options = FirebaseOptions(contentsOfFile: path) {
-            stripInventedOAuthClient(options)
+            stripUnusedOAuthClient(options)
             FirebaseApp.configure(options: options)
             CAPLog.print("[PhoneAuth] FirebaseApp.configure() from GoogleService-Info.plist")
             logConfiguredFirebaseOptions()
@@ -59,12 +59,13 @@ class PhoneAuthProviderHandler: NSObject {
         Auth.auth().languageCode = "ar"
     }
 
-    private func stripInventedOAuthClient(_ options: FirebaseOptions) {
+    private func stripUnusedOAuthClient(_ options: FirebaseOptions) {
+        guard let clientID = options.clientID, !clientID.isEmpty else { return }
         let hash = options.googleAppID.split(separator: ":").last.map(String.init) ?? ""
-        guard !hash.isEmpty, let clientID = options.clientID, clientID.contains(hash) else {
-            return
-        }
-        CAPLog.print("[PhoneAuth] dropping invented CLIENT_ID (matches GOOGLE_APP_ID hash) to prevent auth/invalid-oauth-client-id")
+        let isPlaceholder = clientID == "DISABLED_USE_BUNDLED_PLIST" || clientID.hasPrefix("DISABLED_")
+        let isInvented = !hash.isEmpty && clientID.contains(hash)
+        guard isPlaceholder || isInvented else { return }
+        CAPLog.print("[PhoneAuth] ignoring env/placeholder CLIENT_ID — Auth uses GoogleService-Info.plist only")
         options.clientID = nil
     }
 

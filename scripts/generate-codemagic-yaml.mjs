@@ -74,10 +74,16 @@ function isInventedIosOAuthClient(id, googleAppId) {
   const hash = (String(googleAppId).split(':ios:')[1] || '').trim();
   return Boolean(id && hash && id.includes(hash));
 }
+function isDisabledOAuthPlaceholder(id) {
+  const value = String(id || '').trim();
+  return !value || value === 'DISABLED_USE_BUNDLED_PLIST' || /^DISABLED_/i.test(value);
+}
 let iosClientId = plistString(plistXml, 'CLIENT_ID');
 let iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID');
-if (isInventedIosOAuthClient(iosClientId, iosGoogleAppId) || isInventedIosOAuthClient(iosReversedClientId, iosGoogleAppId)) {
+if (isDisabledOAuthPlaceholder(iosClientId) || isInventedIosOAuthClient(iosClientId, iosGoogleAppId)) {
   iosClientId = '';
+}
+if (isDisabledOAuthPlaceholder(iosReversedClientId) || isInventedIosOAuthClient(iosReversedClientId, iosGoogleAppId)) {
   iosReversedClientId = '';
 }
 const iosBundleId = plistString(plistXml, 'BUNDLE_ID') || 'com.ahmed.miras';
@@ -140,8 +146,8 @@ workflows:
         VITE_SUPPORT_EMAIL: ${yamlQuote('support@miras.com')}
         FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
         FIREBASE_IOS_API_KEY: ${yamlQuote(iosApiKey)}
-        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, '')}
-        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId, '')}
+        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, 'DISABLED_USE_BUNDLED_PLIST')}
+        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId, 'DISABLED_USE_BUNDLED_PLIST')}
       node: 22
       xcode: latest
     scripts:

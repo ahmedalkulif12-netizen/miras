@@ -24,6 +24,13 @@ function iosAppHash(googleAppId) {
   return (String(googleAppId).split(':ios:')[1] || '').trim();
 }
 
+const OAUTH_PLACEHOLDER = 'DISABLED_USE_BUNDLED_PLIST';
+
+function isDisabledOAuthPlaceholder(id) {
+  const value = String(id || '').trim();
+  return !value || value === OAUTH_PLACEHOLDER || /^DISABLED_/i.test(value);
+}
+
 /** Invented IDs were `{projectNumber}-{GOOGLE_APP_ID hash}` — they cause auth/invalid-oauth-client-id. */
 function isInventedIosOAuthClient(id, googleAppId) {
   const hash = iosAppHash(googleAppId);
@@ -43,8 +50,14 @@ const projectId = (process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_
 const gcmSenderId = (process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '191963635866').trim();
 const storageBucket = (process.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`).trim();
 const bundleId = (process.env.BUNDLE_ID || 'com.ahmed.miras').trim();
-let clientId = (process.env.FIREBASE_IOS_CLIENT_ID || plistString(existingXml, 'CLIENT_ID')).trim();
-let reversedClientId = (process.env.FIREBASE_IOS_REVERSED_CLIENT_ID || plistString(existingXml, 'REVERSED_CLIENT_ID')).trim();
+let clientId = (process.env.FIREBASE_IOS_CLIENT_ID || '').trim();
+let reversedClientId = (process.env.FIREBASE_IOS_REVERSED_CLIENT_ID || '').trim();
+if (isDisabledOAuthPlaceholder(clientId)) {
+  clientId = plistString(existingXml, 'CLIENT_ID');
+}
+if (isDisabledOAuthPlaceholder(reversedClientId)) {
+  reversedClientId = plistString(existingXml, 'REVERSED_CLIENT_ID');
+}
 
 if (!/:ios:/i.test(googleAppId)) {
   console.error('FIREBASE_IOS_GOOGLE_APP_ID must be the Firebase iOS app id (1:…:ios:…).');
@@ -55,6 +68,8 @@ if (!apiKey) {
   process.exit(1);
 }
 
+if (isDisabledOAuthPlaceholder(clientId)) clientId = '';
+if (isDisabledOAuthPlaceholder(reversedClientId)) reversedClientId = '';
 if (isInventedIosOAuthClient(clientId, googleAppId) || isInventedIosOAuthClient(reversedClientId, googleAppId)) {
   console.warn(
     '[PhoneAuth] dropping invented FIREBASE_IOS_CLIENT_ID / REVERSED_CLIENT_ID (GOOGLE_APP_ID hash). ' +

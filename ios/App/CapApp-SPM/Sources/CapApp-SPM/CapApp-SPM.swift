@@ -30,7 +30,7 @@ public enum PhoneAuthNativeBootstrap {
             configureAuthLanguage()
             return
         }
-        stripInventedOAuthClient(options)
+        stripUnusedOAuthClient(options)
         if FirebaseApp.app() == nil {
             FirebaseApp.configure(options: options)
         }
@@ -49,13 +49,14 @@ public enum PhoneAuthNativeBootstrap {
     }
 
     #if canImport(FirebaseCore)
-    /// `{projectNumber}-{GOOGLE_APP_ID hash}` is not a Google OAuth client and causes auth/invalid-oauth-client-id.
-    private static func stripInventedOAuthClient(_ options: FirebaseOptions) {
+    /// Ignore Codemagic YAML placeholders and invented `{projectNumber}-{GOOGLE_APP_ID hash}` client IDs.
+    private static func stripUnusedOAuthClient(_ options: FirebaseOptions) {
+        guard let clientID = options.clientID, !clientID.isEmpty else { return }
         let hash = options.googleAppID.split(separator: ":").last.map(String.init) ?? ""
-        guard !hash.isEmpty, let clientID = options.clientID, clientID.contains(hash) else {
-            return
-        }
-        print("[PhoneAuth] dropping invented CLIENT_ID (matches GOOGLE_APP_ID hash) to prevent auth/invalid-oauth-client-id")
+        let isPlaceholder = clientID == "DISABLED_USE_BUNDLED_PLIST" || clientID.hasPrefix("DISABLED_")
+        let isInvented = !hash.isEmpty && clientID.contains(hash)
+        guard isPlaceholder || isInvented else { return }
+        print("[PhoneAuth] ignoring env/placeholder CLIENT_ID — Auth uses GoogleService-Info.plist only")
         options.clientID = nil
     }
     #endif
