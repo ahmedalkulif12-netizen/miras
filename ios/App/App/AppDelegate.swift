@@ -9,6 +9,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         PhoneAuthNativeBootstrap.configureIfNeeded()
+        // Silent APNs challenge for Firebase Phone Auth — no alert permission, no Safari.
+        application.registerForRemoteNotifications()
+        print("[PhoneAuth] registered for silent remote notifications")
         return true
     }
 
@@ -39,7 +42,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        print("[PhoneAuth] APNs not available (profile has no Push entitlement):", error.localizedDescription)
+        print("[PhoneAuth] APNs registration failed:", error.localizedDescription)
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) -> Bool {

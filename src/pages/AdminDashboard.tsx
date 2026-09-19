@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { DriverAccountStatus } from '@/types';
 import { normalizeOrderStatus } from '@/domain/order-status';
+import { useAuth } from '@/hooks/useAuth';
 import {
   fetchAdminOverview,
   fetchAdminDrivers,
@@ -95,6 +96,7 @@ const AdminDashboard: React.FC = () => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
   const location = useLocation();
+  const { user, loading: authLoading } = useAuth();
 
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -119,16 +121,18 @@ const AdminDashboard: React.FC = () => {
     'all' | 'ready_for_review' | 'approved' | 'rejected' | 'suspended' | 'banned'
   >('ready_for_review');
 
-  const loadOverview = useCallback(async () => {
-    setLoadingOverview(true);
+  const loadOverview = useCallback(async (opts?: { quiet?: boolean }) => {
+    if (!opts?.quiet) setLoadingOverview(true);
     try {
       const data = await fetchAdminOverview();
       setOverview(data);
     } catch (error) {
       console.error('Admin overview load failed:', error);
-      toast.error(isRtl ? 'تعذر تحميل ملخص لوحة التحكم' : 'Failed to load admin overview');
+      if (!opts?.quiet) {
+        toast.error(isRtl ? 'تعذر تحميل ملخص لوحة التحكم' : 'Failed to load admin overview');
+      }
     } finally {
-      setLoadingOverview(false);
+      if (!opts?.quiet) setLoadingOverview(false);
     }
   }, [isRtl]);
 
@@ -209,8 +213,9 @@ const AdminDashboard: React.FC = () => {
   }, [isRtl, withdrawalFilter]);
 
   useEffect(() => {
-    loadOverview();
-  }, [loadOverview]);
+    if (authLoading || !user) return;
+    void loadOverview();
+  }, [authLoading, user, loadOverview]);
 
   useEffect(() => {
     if (location.pathname.startsWith('/admin/drivers')) {
@@ -230,17 +235,18 @@ const AdminDashboard: React.FC = () => {
   /** Keep pending-driver queue live while admin is in the console. */
   const pendingDriversBaselineRef = useRef<number | null>(null);
   useEffect(() => {
+    if (authLoading || !user) return;
     // Always hydrate drivers once so overview + drivers page share actionable data.
     void loadDrivers({ quiet: true });
 
     const intervalMs = 5_000;
     const interval = window.setInterval(() => {
-      void loadOverview();
+      void loadOverview({ quiet: true });
       void loadDrivers({ quiet: true });
     }, intervalMs);
 
     return () => window.clearInterval(interval);
-  }, [loadOverview, loadDrivers, location.pathname]);
+  }, [authLoading, user, loadOverview, loadDrivers, location.pathname]);
 
   useEffect(() => {
     const count = overview?.stats.pendingDrivers;

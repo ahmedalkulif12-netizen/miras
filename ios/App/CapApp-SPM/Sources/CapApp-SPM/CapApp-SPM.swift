@@ -8,7 +8,7 @@ import FirebaseAuth
 
 public let isCapacitorApp = true
 
-/// Native Phone Auth without Push / App Attest entitlements.
+/// Native Phone Auth via silent APNs (no Safari / reCAPTCHA webview).
 /// Configures Firebase from the bundled GoogleService-Info.plist.
 public enum PhoneAuthNativeBootstrap {
     public static func configureIfNeeded() {

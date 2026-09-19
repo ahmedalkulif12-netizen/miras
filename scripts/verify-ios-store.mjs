@@ -86,12 +86,20 @@ async function main() {
   if (!infoPlist.includes('<key>NSLocationWhenInUseUsageDescription</key>')) {
     failures.push('Info.plist must include NSLocationWhenInUseUsageDescription');
   }
+  if (!infoPlist.includes('<string>remote-notification</string>')) {
+    failures.push('Info.plist UIBackgroundModes must include remote-notification for silent Firebase Phone Auth APNs');
+  }
   if (infoPlist.includes('<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>')) {
     failures.push(
       'Info.plist must not declare Always location — the app only uses When In Use. Remove NSLocationAlways* keys.'
     );
   }
   const entitlements = read('ios/App/App/App.entitlements');
+  if (!entitlements.includes('aps-environment')) {
+    failures.push(
+      'App.entitlements must include aps-environment so Firebase Phone Auth can use silent APNs (no Safari/reCAPTCHA)'
+    );
+  }
   // Codemagic profile "miras app store profile" does not include Associated
   // Domains. Keep entitlements empty of applinks until the App ID + profile
   // are regenerated with that capability.

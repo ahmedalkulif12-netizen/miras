@@ -448,6 +448,12 @@ export async function confirmPhoneOtp(otp: string): Promise<User> {
       activeConfirmation = null;
       await clearRecaptchaVerifier();
       await resetNativePhoneAuth();
+      try {
+        await credential.user.getIdToken(true);
+      } catch (error) {
+        console.warn('[phoneAuth] ID token persist after OTP confirm:', error);
+        await credential.user.getIdToken(false).catch(() => undefined);
+      }
       return credential.user;
     } catch (error) {
       const authError = preserveAuthError(error);

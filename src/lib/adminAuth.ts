@@ -1,6 +1,7 @@
 import { auth } from '@/lib/firebase';
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
+import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { normalizePhoneE164 } from '@/lib/authRouting';
 import type { UserProfile } from '@/lib/userProfile';
 import type { RegistrableRole } from '@/domain/user-schema';
@@ -197,4 +198,39 @@ export async function hasAdminClaim(): Promise<boolean> {
   }
   // Allowlisted phone is treated as admin even before custom claims propagate.
   return true;
+}
+
+/**
+ * Wait until the Firebase session (and allowlisted admin claims) is usable for /api/admin/*.
+ * Retries one token refresh so the first dashboard fetch is not 401/unauthenticated.
+ */
+export async function ensureAdminApiReady(): Promise<void> {
+  await ensureSignedInFirebaseUid(12_000);
+  const user = auth.currentUser;
+  if (!user) {
+    throw new AdminAccessDeniedError('NOT_AUTHENTICATED');
+  }
+
+  let tokenResult: Awaited<ReturnType<typeof user.getIdTokenResult>>;
+  try {
+    tokenResult = await user.getIdTokenResult(false);
+  } catch (error) {
+    console.warn('[ensureAdminApiReady] ID token not ready — force refresh:', error);
+    tokenResult = await user.getIdTokenResult(true);
+  }
+
+  if (!isAuthorizedAdminPhone(user.phoneNumber)) {
+    return;
+  }
+
+  if (tokenResult.claims.admin === true) {
+    return;
+  }
+
+  try {
+    await establishAdminSession();
+    await user.getIdToken(true);
+  } catch (error) {
+    console.warn('[ensureAdminApiReady] admin session establish soft-fail:', error);
+  }
 }

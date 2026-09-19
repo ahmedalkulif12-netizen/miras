@@ -8,9 +8,8 @@ class PhoneAuthProviderHandler: NSObject {
     private var pluginImplementation: FirebaseAuthentication
     private var signInOnConfirm = true
     private var skipNativeAuthOnConfirm = false
-    /// Retained for verifyPhoneNumber. Presents Firebase's in-app verification sheet
-    /// from the Capacitor WebView (not Safari.app).
-    private var recaptchaUIDelegate: PhoneAuthInAppUIDelegate?
+    /// Retained so Firebase Auth does not fall back to Safari / reCAPTCHA webview.
+    private var recaptchaUIDelegate: PhoneAuthSilentUIDelegate?
 
     init(_ pluginImplementation: FirebaseAuthentication) {
         self.pluginImplementation = pluginImplementation
@@ -79,8 +78,8 @@ class PhoneAuthProviderHandler: NSObject {
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
         ensureFirebaseConfigured()
         let phoneNumber = sanitizeSaudiE164(options.getPhoneNumber())
-        recaptchaUIDelegate = PhoneAuthInAppUIDelegate(host: pluginImplementation.getPlugin().bridge?.viewController)
-        CAPLog.print("[PhoneAuth] Verification Request Sent \(phoneNumber)")
+        recaptchaUIDelegate = PhoneAuthSilentUIDelegate()
+        CAPLog.print("[PhoneAuth] Verification Request Sent \(phoneNumber) (APNs silent, no Safari)")
         guard isSaudiMobileE164(phoneNumber) else {
             let error = NSError(
                 domain: "FIRAuthErrorDomain",
@@ -150,46 +149,15 @@ class PhoneAuthProviderHandler: NSObject {
     }
 }
 
-/// Presents Firebase Phone Auth verification in-app from the Capacitor controller.
-final class PhoneAuthInAppUIDelegate: NSObject, AuthUIDelegate {
-    weak var host: UIViewController?
-
-    init(host: UIViewController?) {
-        self.host = host
-        super.init()
-    }
-
+/// Blocks Safari / reCAPTCHA webview. SMS must go out via silent APNs.
+final class PhoneAuthSilentUIDelegate: NSObject, AuthUIDelegate {
     func present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            var presenter = self.host
-            while let shown = presenter?.presentedViewController {
-                presenter = shown
-            }
-            if presenter == nil {
-                let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-                let window = scenes.flatMap { $0.windows }.first(where: { $0.isKeyWindow }) ?? scenes.first?.windows.first
-                presenter = window?.rootViewController
-                while let shown = presenter?.presentedViewController {
-                    presenter = shown
-                }
-            }
-            CAPLog.print("[PhoneAuth] presenting in-app verification sheet presenter=\(presenter != nil)")
-            guard let presenter = presenter else {
-                CAPLog.print("[PhoneAuth] Error: no UIViewController to present Firebase verification")
-                completion?()
-                return
-            }
-            presenter.present(viewControllerToPresent, animated: flag, completion: completion)
-        }
+        CAPLog.print("[PhoneAuth] blocked Safari/reCAPTCHA presentation — silent APNs only")
+        completion?()
+        viewControllerToPresent.dismiss(animated: false, completion: nil)
     }
 
     func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
-        DispatchQueue.main.async {
-            var presenter = self.host
-            while let shown = presenter?.presentedViewController {
-                presenter = shown
-            }
-            presenter?.dismiss(animated: flag, completion: completion)
-        }
+        completion?()
     }
 }

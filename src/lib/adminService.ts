@@ -1,5 +1,6 @@
 import { authFetch, isDevBypassAuthSession } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
+import { ensureAdminApiReady } from '@/lib/adminAuth';
 import type { DriverAccountStatus } from '@/types';
 
 export type CustomerAccountStatus = 'active' | 'blocked' | 'banned' | 'pending' | 'suspended';
@@ -208,7 +209,13 @@ export async function fetchAdminOverview(): Promise<AdminOverviewResponse> {
   if (isDevBypassAuthSession()) {
     return buildDevAdminOverview();
   }
-  const res = await authFetch('/api/admin/overview');
+  await ensureAdminApiReady();
+  let res = await authFetch('/api/admin/overview');
+  if (res.status === 401 || res.status === 403) {
+    console.warn('[admin] overview unauthorized — re-establishing session and retrying', res.status);
+    await ensureAdminApiReady();
+    res = await authFetch('/api/admin/overview');
+  }
   if (!res.ok) {
     throw new Error(await readApiErrorMessage(res, 'Failed to load admin overview'));
   }
