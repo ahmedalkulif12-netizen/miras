@@ -43,8 +43,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         print("[PhoneAuth] APNs registration failed; verifyPhoneNumber will use reCAPTCHA fallback:", error.localizedDescription)
     }
 
+    func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any]) -> Bool {
+        return PhoneAuthNativeBootstrap.handleNotification(userInfo)
+    }
+
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         if PhoneAuthNativeBootstrap.handleNotification(userInfo) {
+            print("[PhoneAuth] Firebase Auth handled silent APNs challenge")
             completionHandler(.noData)
             return
         }
@@ -52,6 +57,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        print("[PhoneAuth] open URL scheme=\(url.scheme ?? "")")
         if PhoneAuthNativeBootstrap.handleURL(url) {
             return true
         }
@@ -59,9 +65,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
-        // Called when the app was launched with an activity, including Universal Links.
-        // Feel free to add additional processing here, but if you want the App API to support
-        // tracking app url opens, make sure to keep this call
+        if let url = userActivity.webpageURL, PhoneAuthNativeBootstrap.handleURL(url) {
+            return true
+        }
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 

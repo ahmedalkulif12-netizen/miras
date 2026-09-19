@@ -92,4 +92,16 @@ if (reversedClientId) {
   }
 }
 
+const encodedAppScheme = `app-${googleAppId.replace(/:/g, '-')}`;
+const looksInventedClientId = /-[0-9a-f]{20,}\.apps\.googleusercontent\.com$/i.test(clientId) &&
+  googleAppId.split(':ios:')[1] &&
+  clientId.includes(googleAppId.split(':ios:')[1]);
+if (!clientId || looksInventedClientId) {
+  console.warn(
+    '[PhoneAuth] CLIENT_ID/REVERSED_CLIENT_ID missing or derived from GOOGLE_APP_ID. ' +
+      'Safari reCAPTCHA needs the real iOS OAuth client from Firebase Console → Project settings → Your apps → Apple app. ' +
+      `Encoded app URL scheme ${encodedAppScheme} is still registered as a fallback.`,
+  );
+}
+
 console.log('Wrote ios/App/App/GoogleService-Info.plist for com.ahmed.miras');

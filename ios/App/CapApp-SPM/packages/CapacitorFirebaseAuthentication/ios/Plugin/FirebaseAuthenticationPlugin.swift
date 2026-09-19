@@ -524,6 +524,7 @@ public class FirebaseAuthenticationPlugin: CAPPlugin, CAPBridgedPlugin {
         let options = SignInWithPhoneNumberOptions(skipNativeAuth: skipNativeAuth, phoneNumber: phoneNumber)
 
         do {
+            CAPLog.print("[PhoneAuth] JS signInWithPhoneNumber accepted \(phoneNumber) skipNativeAuth=\(skipNativeAuth)")
             try implementation?.signInWithPhoneNumber(options)
             call.resolve()
         } catch {
@@ -709,13 +710,16 @@ public class FirebaseAuthenticationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func handlePhoneVerificationFailed(_ error: Error) {
-        CAPLog.print("[", self.tag, "] ", error)
+        let nsError = error as NSError
+        CAPLog.print("[PhoneAuth] phoneVerificationFailed \(nsError.domain) \(nsError.code) \(error.localizedDescription)")
         var result = JSObject()
         result["message"] = error.localizedDescription
+        result["code"] = "\(nsError.domain).\(nsError.code)"
         notifyListeners(phoneVerificationFailedEvent, data: result, retainUntilConsumed: true)
     }
 
     @objc func handlePhoneCodeSent(_ verificationId: String) {
+        CAPLog.print("[PhoneAuth] phoneCodeSent verificationId length=\(verificationId.count)")
         var result = JSObject()
         result["verificationId"] = verificationId
         notifyListeners(phoneCodeSentEvent, data: result, retainUntilConsumed: true)

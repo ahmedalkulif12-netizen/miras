@@ -15,13 +15,19 @@ public enum PhoneAuthNativeBootstrap {
         if FirebaseApp.app() == nil {
             FirebaseApp.configure()
         }
+        let clientId = FirebaseApp.app()?.options.clientID ?? "MISSING"
+        print("[PhoneAuth] Firebase configured clientID=\(clientId)")
         #endif
-        UIApplication.shared.registerForRemoteNotifications()
+        DispatchQueue.main.async {
+            UIApplication.shared.registerForRemoteNotifications()
+            print("[PhoneAuth] registerForRemoteNotifications requested (APNs optional; reCAPTCHA is fallback)")
+        }
     }
 
     public static func setAPNSToken(_ deviceToken: Data) {
         #if canImport(FirebaseAuth)
         Auth.auth().setAPNSToken(deviceToken, type: .unknown)
+        print("[PhoneAuth] APNs token forwarded to Firebase Auth (\(deviceToken.count) bytes)")
         #endif
     }
 
@@ -35,9 +41,11 @@ public enum PhoneAuthNativeBootstrap {
 
     public static func handleURL(_ url: URL) -> Bool {
         #if canImport(FirebaseAuth)
-        return Auth.auth().canHandle(url)
-        #else
-        return false
+        if Auth.auth().canHandle(url) {
+            print("[PhoneAuth] Firebase Auth handled reCAPTCHA callback \(url.scheme ?? "")")
+            return true
+        }
         #endif
+        return false
     }
 }

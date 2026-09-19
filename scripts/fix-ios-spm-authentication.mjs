@@ -105,6 +105,7 @@ fs.writeFileSync(packageSwiftPath, text);
 
 text = injectFirebaseAuthForPhoneAuth(text);
 fs.writeFileSync(packageSwiftPath, text);
+applyNativePhoneAuthPatches(destDir);
 
 if (!text.includes(`path: "${uniqueRelPath}"`)) {
   console.error(`Package.swift is missing path: "${uniqueRelPath}" for CapacitorFirebaseAuthentication.`);
@@ -137,40 +138,64 @@ function injectFirebaseAuthForPhoneAuth(source) {
       `.product(name: "CapacitorFirebaseAuthentication", package: "CapacitorFirebaseAuthentication"),\n                ${authProduct}\n                ${coreProduct}`,
     );
   }
-
-  const handlerPath = path.join(destDir, 'ios', 'Plugin', 'Handlers', 'PhoneAuthProviderHandler.swift');
-  if (fs.existsSync(handlerPath)) {
-    let handler = fs.readFileSync(handlerPath, 'utf8');
-    if (!handler.includes('[PhoneAuth] Init native verifyPhoneNumber')) {
-      handler = handler.replace(
-        `    private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
-        PhoneAuthProvider.provider()
-            .verifyPhoneNumber(options.getPhoneNumber(), uiDelegate: nil) { verificationID, error in
-                if let error = error {
-                    self.pluginImplementation.handlePhoneVerificationFailed(error)
-                } else {
-                    self.pluginImplementation.handlePhoneCodeSent(verificationID ?? "")
-                }
-            }
-    }`,
-        `    private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {
-        let phoneNumber = options.getPhoneNumber()
-        CAPLog.print("[PhoneAuth] Init native verifyPhoneNumber \\(phoneNumber)")
-        PhoneAuthProvider.provider()
-            .verifyPhoneNumber(phoneNumber, uiDelegate: nil) { verificationID, error in
-                if let error = error {
-                    CAPLog.print("[PhoneAuth] verifyPhoneNumber failed \\(error.localizedDescription)")
-                    self.pluginImplementation.handlePhoneVerificationFailed(error)
-                } else {
-                    CAPLog.print("[PhoneAuth] Verification ID Received")
-                    self.pluginImplementation.handlePhoneCodeSent(verificationID ?? "")
-                }
-            }
-    }`,
-      );
-      fs.writeFileSync(handlerPath, handler);
-    }
-  }
-
   return next;
+}
+
+function applyNativePhoneAuthPatches(pluginRoot) {
+  const handlerPatch = path.join(root, 'scripts', 'ios-patches', 'PhoneAuthProviderHandler.swift');
+  const handlerPath = path.join(pluginRoot, 'ios', 'Plugin', 'Handlers', 'PhoneAuthProviderHandler.swift');
+  if (!fs.existsSync(handlerPatch)) {
+    console.error('Missing scripts/ios-patches/PhoneAuthProviderHandler.swift');
+    process.exit(1);
+  }
+  fs.mkdirSync(path.dirname(handlerPath), { recursive: true });
+  fs.copyFileSync(handlerPatch, handlerPath);
+
+  const pluginPath = path.join(pluginRoot, 'ios', 'Plugin', 'FirebaseAuthenticationPlugin.swift');
+  if (!fs.existsSync(pluginPath)) {
+    return;
+  }
+  let plugin = fs.readFileSync(pluginPath, 'utf8');
+  plugin = plugin.replace(
+    `        do {
+            try implementation?.signInWithPhoneNumber(options)
+            call.resolve()
+        } catch {`,
+    `        do {
+            CAPLog.print("[PhoneAuth] JS signInWithPhoneNumber accepted \\(phoneNumber) skipNativeAuth=\\(skipNativeAuth)")
+            try implementation?.signInWithPhoneNumber(options)
+            call.resolve()
+        } catch {`,
+  );
+  plugin = plugin.replace(
+    `    @objc func handlePhoneVerificationFailed(_ error: Error) {
+        CAPLog.print("[", self.tag, "] ", error)
+        var result = JSObject()
+        result["message"] = error.localizedDescription
+        notifyListeners(phoneVerificationFailedEvent, data: result, retainUntilConsumed: true)
+    }
+
+    @objc func handlePhoneCodeSent(_ verificationId: String) {
+        var result = JSObject()
+        result["verificationId"] = verificationId
+        notifyListeners(phoneCodeSentEvent, data: result, retainUntilConsumed: true)
+    }`,
+    `    @objc func handlePhoneVerificationFailed(_ error: Error) {
+        let nsError = error as NSError
+        CAPLog.print("[PhoneAuth] phoneVerificationFailed \\(nsError.domain) \\(nsError.code) \\(error.localizedDescription)")
+        var result = JSObject()
+        result["message"] = error.localizedDescription
+        result["code"] = "\\(nsError.domain).\\(nsError.code)"
+        notifyListeners(phoneVerificationFailedEvent, data: result, retainUntilConsumed: true)
+    }
+
+    @objc func handlePhoneCodeSent(_ verificationId: String) {
+        CAPLog.print("[PhoneAuth] phoneCodeSent verificationId length=\\(verificationId.count)")
+        var result = JSObject()
+        result["verificationId"] = verificationId
+        notifyListeners(phoneCodeSentEvent, data: result, retainUntilConsumed: true)
+    }`,
+  );
+  fs.writeFileSync(pluginPath, plugin);
+  console.log('Applied native Phone Auth UIDelegate + SMS dispatch patches.');
 }
