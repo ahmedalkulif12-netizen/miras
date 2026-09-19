@@ -44,12 +44,23 @@ async function main() {
   if (!pbxproj.includes('PRODUCT_BUNDLE_IDENTIFIER = com.ahmed.miras;')) {
     failures.push('Xcode PRODUCT_BUNDLE_IDENTIFIER must be com.ahmed.miras');
   }
+  if (!pbxproj.includes('GoogleService-Info.plist in Resources')) {
+    failures.push('Xcode App target must copy GoogleService-Info.plist in Resources');
+  }
   if (!infoPlist.includes('com.ahmed.miras')) {
     failures.push('Info.plist URL scheme must include com.ahmed.miras');
   }
-  if (!infoPlist.includes('com.googleusercontent.apps.')) {
+  if (
+    !infoPlist.includes('app-1-191963635866-ios-73a41da4e6ffe55734bf23') &&
+    !infoPlist.includes('com.googleusercontent.apps.')
+  ) {
     failures.push(
-      'Info.plist URL schemes must include the Firebase REVERSED_CLIENT_ID (com.googleusercontent.apps.…) for native iOS Phone Auth reCAPTCHA fallback'
+      'Info.plist URL schemes must include the Firebase encoded app id (app-1-…-ios-…) or a real REVERSED_CLIENT_ID'
+    );
+  }
+  if (infoPlist.includes('com.googleusercontent.apps.191963635866-73a41da4e6ffe55734bf23')) {
+    failures.push(
+      'Info.plist still has the invented REVERSED_CLIENT_ID (GOOGLE_APP_ID hash). That causes auth/invalid-oauth-client-id — use the real iOS OAuth client or the encoded app URL scheme only.'
     );
   }
   if (!infoPlist.includes('<string>comgooglemaps</string>')) {
@@ -141,6 +152,11 @@ async function main() {
     }
     if (!/GOOGLE_APP_ID[\s\S]*:ios:/.test(plist)) {
       failures.push('GoogleService-Info.plist GOOGLE_APP_ID must be the Firebase iOS app (1:…:ios:…)');
+    }
+    if (plist.includes('191963635866-73a41da4e6ffe55734bf23')) {
+      failures.push(
+        'GoogleService-Info.plist still has the invented CLIENT_ID (GOOGLE_APP_ID hash). That causes auth/invalid-oauth-client-id.'
+      );
     }
   } else {
     console.warn(

@@ -70,11 +70,16 @@ if (!fs.existsSync(plistPath)) {
 const plistXml = fs.readFileSync(plistPath, 'utf8');
 const iosGoogleAppId = plistString(plistXml, 'GOOGLE_APP_ID');
 const iosApiKey = plistString(plistXml, 'API_KEY') || prod.VITE_FIREBASE_API_KEY;
-const iosAppHash = (iosGoogleAppId.split(':ios:')[1] || 'iosapp').replace(/[^a-zA-Z0-9]/g, '');
-const defaultIosClientId = `191963635866-${iosAppHash}.apps.googleusercontent.com`;
-const defaultIosReversedClientId = `com.googleusercontent.apps.191963635866-${iosAppHash}`;
-const iosClientId = plistString(plistXml, 'CLIENT_ID') || defaultIosClientId;
-const iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID') || defaultIosReversedClientId;
+function isInventedIosOAuthClient(id, googleAppId) {
+  const hash = (String(googleAppId).split(':ios:')[1] || '').trim();
+  return Boolean(id && hash && id.includes(hash));
+}
+let iosClientId = plistString(plistXml, 'CLIENT_ID');
+let iosReversedClientId = plistString(plistXml, 'REVERSED_CLIENT_ID');
+if (isInventedIosOAuthClient(iosClientId, iosGoogleAppId) || isInventedIosOAuthClient(iosReversedClientId, iosGoogleAppId)) {
+  iosClientId = '';
+  iosReversedClientId = '';
+}
 const iosBundleId = plistString(plistXml, 'BUNDLE_ID') || 'com.ahmed.miras';
 if (!/:ios:/i.test(iosGoogleAppId)) {
   console.error('GoogleService-Info.plist GOOGLE_APP_ID must be an iOS app id.');
@@ -135,8 +140,8 @@ workflows:
         VITE_SUPPORT_EMAIL: ${yamlQuote('support@miras.com')}
         FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
         FIREBASE_IOS_API_KEY: ${yamlQuote(iosApiKey)}
-        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, defaultIosClientId)}
-        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId, defaultIosReversedClientId)}
+        FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, '')}
+        FIREBASE_IOS_REVERSED_CLIENT_ID: ${yamlQuote(iosReversedClientId, '')}
       node: 22
       xcode: latest
     scripts:
@@ -162,6 +167,12 @@ workflows:
           set -euo pipefail
           node scripts/write-ios-google-service-info.mjs
           test -f "$CM_BUILD_DIR/ios/App/App/GoogleService-Info.plist"
+          if grep -E -q '191963635866-73a41da4e6ffe55734bf23' \\
+            "$CM_BUILD_DIR/ios/App/App/GoogleService-Info.plist" \\
+            "$CM_BUILD_DIR/ios/App/App/Info.plist"; then
+            echo "error: invented iOS OAuth CLIENT_ID present (auth/invalid-oauth-client-id)"
+            exit 1
+          fi
       - name: Verify production store client env
         script: |
           set -euo pipefail

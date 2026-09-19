@@ -43,17 +43,36 @@ class PhoneAuthProviderHandler: NSObject {
 
     private func ensureFirebaseConfigured() {
         if FirebaseApp.app() != nil {
+            logConfiguredFirebaseOptions()
             return
         }
         if let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
            let options = FirebaseOptions(contentsOfFile: path) {
+            stripInventedOAuthClient(options)
             FirebaseApp.configure(options: options)
-            CAPLog.print("[PhoneAuth] FirebaseApp.configure() from GoogleService-Info.plist googleAppID=\(options.googleAppID)")
+            CAPLog.print("[PhoneAuth] FirebaseApp.configure() from GoogleService-Info.plist")
+            logConfiguredFirebaseOptions()
         } else {
             CAPLog.print("[PhoneAuth] Error: GoogleService-Info.plist missing — calling FirebaseApp.configure()")
             FirebaseApp.configure()
         }
         Auth.auth().languageCode = "ar"
+    }
+
+    private func stripInventedOAuthClient(_ options: FirebaseOptions) {
+        let hash = options.googleAppID.split(separator: ":").last.map(String.init) ?? ""
+        guard !hash.isEmpty, let clientID = options.clientID, clientID.contains(hash) else {
+            return
+        }
+        CAPLog.print("[PhoneAuth] dropping invented CLIENT_ID (matches GOOGLE_APP_ID hash) to prevent auth/invalid-oauth-client-id")
+        options.clientID = nil
+    }
+
+    private func logConfiguredFirebaseOptions() {
+        guard let options = FirebaseApp.app()?.options else { return }
+        CAPLog.print("[PhoneAuth] googleAppID=\(options.googleAppID)")
+        CAPLog.print("[PhoneAuth] apiKeyPrefix=\(String((options.apiKey ?? "").prefix(8)))")
+        CAPLog.print("[PhoneAuth] clientID=\(options.clientID ?? "nil")")
     }
 
     private func verifyPhoneNumber(_ options: SignInWithPhoneNumberOptions) {

@@ -45,8 +45,8 @@ workflows:
         VITE_SUPPORT_EMAIL: "support@miras.com"
         FIREBASE_IOS_GOOGLE_APP_ID: "1:191963635866:ios:73a41da4e6ffe55734bf23"
         FIREBASE_IOS_API_KEY: "AIzaSyChrhscAIITLzKiDAqWP2GXQbvhGjpY9q8"
-        FIREBASE_IOS_CLIENT_ID: "191963635866-73a41da4e6ffe55734bf23.apps.googleusercontent.com"
-        FIREBASE_IOS_REVERSED_CLIENT_ID: "com.googleusercontent.apps.191963635866-73a41da4e6ffe55734bf23"
+        FIREBASE_IOS_CLIENT_ID: ""
+        FIREBASE_IOS_REVERSED_CLIENT_ID: ""
       node: 22
       xcode: latest
     scripts:
@@ -72,6 +72,12 @@ workflows:
           set -euo pipefail
           node scripts/write-ios-google-service-info.mjs
           test -f "$CM_BUILD_DIR/ios/App/App/GoogleService-Info.plist"
+          if grep -E -q '191963635866-73a41da4e6ffe55734bf23' \
+            "$CM_BUILD_DIR/ios/App/App/GoogleService-Info.plist" \
+            "$CM_BUILD_DIR/ios/App/App/Info.plist"; then
+            echo "error: invented iOS OAuth CLIENT_ID present (auth/invalid-oauth-client-id)"
+            exit 1
+          fi
       - name: Verify production store client env
         script: |
           set -euo pipefail

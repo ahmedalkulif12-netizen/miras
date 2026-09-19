@@ -30,20 +30,35 @@ public enum PhoneAuthNativeBootstrap {
             configureAuthLanguage()
             return
         }
+        stripInventedOAuthClient(options)
         if FirebaseApp.app() == nil {
             FirebaseApp.configure(options: options)
         }
         let app = FirebaseApp.app()
+        let resolved = app?.options ?? options
         print("[PhoneAuth] Firebase Auth from GoogleService-Info.plist")
-        print("[PhoneAuth] projectID=\(app?.options.projectID ?? options.projectID ?? "nil")")
-        print("[PhoneAuth] googleAppID=\(app?.options.googleAppID ?? options.googleAppID)")
-        print("[PhoneAuth] bundleID=\(app?.options.bundleID ?? options.bundleID ?? "nil")")
-        print("[PhoneAuth] gcmSenderID=\(app?.options.gcmSenderID ?? options.gcmSenderID)")
-        print("[PhoneAuth] apiKeyPrefix=\(String((app?.options.apiKey ?? options.apiKey ?? "").prefix(8)))")
+        print("[PhoneAuth] projectID=\(resolved.projectID ?? "nil")")
+        print("[PhoneAuth] googleAppID=\(resolved.googleAppID)")
+        print("[PhoneAuth] bundleID=\(resolved.bundleID ?? "nil")")
+        print("[PhoneAuth] gcmSenderID=\(resolved.gcmSenderID)")
+        print("[PhoneAuth] apiKeyPrefix=\(String((resolved.apiKey ?? "").prefix(8)))")
+        print("[PhoneAuth] clientID=\(resolved.clientID ?? "nil")")
         print("[PhoneAuth] Saudi E.164 format required: +9665XXXXXXXX")
         #endif
         configureAuthLanguage()
     }
+
+    #if canImport(FirebaseCore)
+    /// `{projectNumber}-{GOOGLE_APP_ID hash}` is not a Google OAuth client and causes auth/invalid-oauth-client-id.
+    private static func stripInventedOAuthClient(_ options: FirebaseOptions) {
+        let hash = options.googleAppID.split(separator: ":").last.map(String.init) ?? ""
+        guard !hash.isEmpty, let clientID = options.clientID, clientID.contains(hash) else {
+            return
+        }
+        print("[PhoneAuth] dropping invented CLIENT_ID (matches GOOGLE_APP_ID hash) to prevent auth/invalid-oauth-client-id")
+        options.clientID = nil
+    }
+    #endif
 
     private static func configureAuthLanguage() {
         #if canImport(FirebaseAuth)

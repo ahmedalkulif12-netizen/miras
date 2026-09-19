@@ -15,14 +15,36 @@ function xmlEscape(value) {
     .replace(/>/g, '&gt;');
 }
 
-const googleAppId = (process.env.FIREBASE_IOS_GOOGLE_APP_ID || '').trim();
-const apiKey = (process.env.FIREBASE_IOS_API_KEY || process.env.VITE_FIREBASE_API_KEY || '').trim();
+function plistString(xml, key) {
+  const match = xml.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`));
+  return match?.[1]?.trim() || '';
+}
+
+function iosAppHash(googleAppId) {
+  return (String(googleAppId).split(':ios:')[1] || '').trim();
+}
+
+/** Invented IDs were `{projectNumber}-{GOOGLE_APP_ID hash}` — they cause auth/invalid-oauth-client-id. */
+function isInventedIosOAuthClient(id, googleAppId) {
+  const hash = iosAppHash(googleAppId);
+  return Boolean(id && hash && id.includes(hash));
+}
+
+const dest = path.join(root, 'ios', 'App', 'App', 'GoogleService-Info.plist');
+const existingXml = fs.existsSync(dest) ? fs.readFileSync(dest, 'utf8') : '';
+
+const googleAppId = (process.env.FIREBASE_IOS_GOOGLE_APP_ID || plistString(existingXml, 'GOOGLE_APP_ID')).trim();
+const apiKey = (
+  process.env.FIREBASE_IOS_API_KEY ||
+  process.env.VITE_FIREBASE_API_KEY ||
+  plistString(existingXml, 'API_KEY')
+).trim();
 const projectId = (process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || 'hamula-cfc6c').trim();
 const gcmSenderId = (process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '191963635866').trim();
 const storageBucket = (process.env.VITE_FIREBASE_STORAGE_BUCKET || `${projectId}.firebasestorage.app`).trim();
 const bundleId = (process.env.BUNDLE_ID || 'com.ahmed.miras').trim();
-const clientId = (process.env.FIREBASE_IOS_CLIENT_ID || '').trim();
-const reversedClientId = (process.env.FIREBASE_IOS_REVERSED_CLIENT_ID || '').trim();
+let clientId = (process.env.FIREBASE_IOS_CLIENT_ID || plistString(existingXml, 'CLIENT_ID')).trim();
+let reversedClientId = (process.env.FIREBASE_IOS_REVERSED_CLIENT_ID || plistString(existingXml, 'REVERSED_CLIENT_ID')).trim();
 
 if (!/:ios:/i.test(googleAppId)) {
   console.error('FIREBASE_IOS_GOOGLE_APP_ID must be the Firebase iOS app id (1:…:ios:…).');
@@ -31,6 +53,15 @@ if (!/:ios:/i.test(googleAppId)) {
 if (!apiKey) {
   console.error('FIREBASE_IOS_API_KEY or VITE_FIREBASE_API_KEY is required to write GoogleService-Info.plist.');
   process.exit(1);
+}
+
+if (isInventedIosOAuthClient(clientId, googleAppId) || isInventedIosOAuthClient(reversedClientId, googleAppId)) {
+  console.warn(
+    '[PhoneAuth] dropping invented FIREBASE_IOS_CLIENT_ID / REVERSED_CLIENT_ID (GOOGLE_APP_ID hash). ' +
+      'That value is not a Google OAuth client and causes auth/invalid-oauth-client-id.',
+  );
+  clientId = '';
+  reversedClientId = '';
 }
 
 const extra = [];
@@ -74,7 +105,6 @@ ${extra.join('\n')}
 </plist>
 `;
 
-const dest = path.join(root, 'ios', 'App', 'App', 'GoogleService-Info.plist');
 fs.mkdirSync(path.dirname(dest), { recursive: true });
 fs.writeFileSync(dest, xml);
 
@@ -93,15 +123,15 @@ if (reversedClientId) {
 }
 
 const encodedAppScheme = `app-${googleAppId.replace(/:/g, '-')}`;
-const looksInventedClientId = /-[0-9a-f]{20,}\.apps\.googleusercontent\.com$/i.test(clientId) &&
-  googleAppId.split(':ios:')[1] &&
-  clientId.includes(googleAppId.split(':ios:')[1]);
-if (!clientId || looksInventedClientId) {
+if (!clientId) {
   console.warn(
-    '[PhoneAuth] CLIENT_ID/REVERSED_CLIENT_ID missing or derived from GOOGLE_APP_ID. ' +
-      'Safari reCAPTCHA needs the real iOS OAuth client from Firebase Console → Project settings → Your apps → Apple app. ' +
-      `Encoded app URL scheme ${encodedAppScheme} is still registered as a fallback.`,
+    '[PhoneAuth] CLIENT_ID omitted — using API_KEY + GOOGLE_APP_ID from GoogleService-Info.plist. ' +
+      `Encoded app URL scheme ${encodedAppScheme} remains registered. ` +
+      'Add the real iOS OAuth client (Firebase Console → Project settings → Your apps → Apple app) when Console provides CLIENT_ID.',
   );
 }
 
-console.log('Wrote ios/App/App/GoogleService-Info.plist for com.ahmed.miras');
+console.log(
+  `Wrote ios/App/App/GoogleService-Info.plist bundle=${bundleId} googleAppId=${googleAppId} ` +
+    `apiKeyPrefix=${apiKey.slice(0, 8)} clientId=${clientId ? 'from-plist' : 'omitted'}`,
+);

@@ -73,6 +73,8 @@ export function getPhoneAuthErrorMessage(
       'App Check env vars missing. See .env.example (VITE_APP_CHECK_DEBUG_TOKEN + VITE_APP_CHECK_RECAPTCHA_SITE_KEY).',
     'auth/app-not-authorized':
       'This iOS app is not authorized for Firebase Phone Auth (auth/app-not-authorized). Confirm GoogleService-Info.plist GOOGLE_APP_ID / BUNDLE_ID match the Apple app in Firebase Console.',
+    'auth/invalid-oauth-client-id':
+      'Firebase rejected this iOS OAuth client (auth/invalid-oauth-client-id). Native Auth must use CLIENT_ID from the GoogleService-Info.plist downloaded for com.ahmed.miras — never a client id derived from GOOGLE_APP_ID.',
     'auth/missing-apns-token':
       'Firebase could not verify the iOS app (missing APNs token). SMS was not sent.',
     'auth/app-not-verified':
@@ -139,6 +141,8 @@ export function getPhoneAuthErrorMessage(
     APP_CHECK_NOT_CONFIGURED: 'متغيرات App Check مفقودة. راجع .env.example.',
     'auth/app-not-authorized':
       'هذا التطبيق غير مصرّح له بمصادقة الجوال في Firebase (auth/app-not-authorized). تأكد أن GoogleService-Info.plist يطابق تطبيق iOS في Console.',
+    'auth/invalid-oauth-client-id':
+      'رفض Firebase معرّف OAuth لتطبيق iOS (auth/invalid-oauth-client-id). يجب أن تأتي CLIENT_ID من GoogleService-Info.plist المحمّل لـ com.ahmed.miras وليس من GOOGLE_APP_ID.',
     'auth/missing-apns-token': 'تعذر التحقق من التطبيق (رمز APNs مفقود). لم يُرسل SMS.',
     'auth/app-not-verified': 'تعذر التحقق من تطبيق iOS، لذلك لم يُرسل SMS.',
     'auth/notification-not-forwarded': 'لم يصل تحدي APNs إلى Firebase Auth. لم يُرسل SMS.',
