@@ -405,6 +405,14 @@ async function run(): Promise<void> {
     ),
     'CORS allows Capacitor origin'
   );
+  assert(
+    isAllowedNativeApiOrigin('capacitor://localhost', 'https://hamula-cfc6c.web.app'),
+    'CORS allows capacitor://localhost'
+  );
+  assert(
+    isAllowedNativeApiOrigin('https://localhost', 'https://hamula-cfc6c.web.app'),
+    'CORS allows https://localhost Android WebView'
+  );
 
   applyLocalWalletCredit(
     'drv-test',

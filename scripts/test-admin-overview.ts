@@ -36,10 +36,22 @@ function run(): void {
     iat: nowSec - 3600,
   });
 
+  const superJwt = makeJwt({
+    sub: 'admin-uid',
+    superuser: true,
+    role: 'admin',
+    exp: nowSec + 3600,
+    iat: nowSec,
+  });
+  const superClaims = decodeIdTokenPayload(superJwt);
+  assert(superClaims?.superuser === true, 'superuser claim decoded');
+  assertEqual(String(superClaims?.role || ''), 'admin', 'role=admin claim decoded');
+
   const claims = decodeIdTokenPayload(expiredJwt);
   assert(claims !== null, 'decode expired JWT payload');
   assertEqual(claims?.uid, 'admin-uid', 'uid from user_id/sub');
   assertEqual(claims?.phone_number, '+966541330720', 'phone_number claim');
+  assert(claims?.admin === true, 'admin claim decoded');
   assert(isWithinClockSkew(claims!, 600, nowSec), '90s-expired token is within 10m skew');
   assert(!isWithinClockSkew(claims!, 30, nowSec), '90s-expired token is outside 30s skew');
 
@@ -55,6 +67,7 @@ function run(): void {
   assert(!isTransientFirebaseAuthError({ code: 'auth/argument-error' }), 'argument-error is not transient');
 
   assert(isRetryableAdminOverviewStatus(401), '401 retryable');
+  assert(isRetryableAdminOverviewStatus(403), '403 retryable');
   assert(isRetryableAdminOverviewStatus(503), '503 retryable');
   assert(isRetryableAdminOverviewStatus(500), '500 retryable');
   assert(!isRetryableAdminOverviewStatus(404), '404 not retryable');

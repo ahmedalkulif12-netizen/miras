@@ -14,6 +14,8 @@ export type LooseIdTokenClaims = {
   user_id?: string;
   phone_number?: string;
   admin?: unknown;
+  superuser?: unknown;
+  role?: unknown;
   exp?: number;
   iat?: number;
   auth_time?: number;
@@ -71,6 +73,8 @@ export function decodeIdTokenPayload(token: string): LooseIdTokenClaims | null {
       user_id: typeof payload.user_id === 'string' ? payload.user_id : uid,
       phone_number: typeof payload.phone_number === 'string' ? payload.phone_number : undefined,
       admin: payload.admin,
+      superuser: payload.superuser,
+      role: payload.role,
       exp: typeof payload.exp === 'number' ? payload.exp : undefined,
       iat: typeof payload.iat === 'number' ? payload.iat : undefined,
       auth_time: typeof payload.auth_time === 'number' ? payload.auth_time : undefined,

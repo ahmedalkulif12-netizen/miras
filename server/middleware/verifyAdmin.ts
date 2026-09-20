@@ -6,9 +6,8 @@ import { verifyAdminAccess } from '../lib/adminAcl.ts';
 import type { AuthenticatedRequest } from './verifyFirebaseToken.ts';
 
 /**
- * P0-14: Server-side admin gate — requires the sole authorized phone
- * +966541330720 (0541330720). No other number can pass, even with claims/ACL.
- * Never trust client profile.role alone.
+ * Server-side admin gate: allowlisted phone (+966541330720) OR token claims
+ * `admin` / `superuser` / `role=admin`. Never trust client profile.role alone.
  */
 export function verifyAdmin(db: admin.firestore.Firestore, authSdk?: admin.auth.Auth) {
   return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

@@ -1,9 +1,10 @@
 import { resolveApiUrl } from '@/lib/apiUrl';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
+import { platformFetch } from '@/lib/nativeHttp';
 
 /** Unauthenticated fetch — always resolves through VITE_API_ORIGIN / Hosting rewrites. */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(resolveApiUrl(path), init);
+  return platformFetch(resolveApiUrl(path), init);
 }
 
 export async function apiJson<T>(

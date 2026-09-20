@@ -11,6 +11,9 @@ import {
   saveDevBypassProfile,
   saveLocalGuestRole,
 } from '@/lib/devAuthBypass';
+import { shouldRefreshIdToken } from '@/lib/authHeaders';
+
+export { shouldRefreshIdToken };
 
 export async function ensureSignedInFirebaseUid(timeoutMs = 12000): Promise<string> {
   await ensureFirebaseReady();
@@ -58,10 +61,21 @@ export async function persistCurrentIdToken(forceRefresh = false): Promise<strin
     throw new Error('NOT_AUTHENTICATED');
   }
   try {
-    return await user.getIdToken(forceRefresh);
+    if (!forceRefresh) {
+      const result = await user.getIdTokenResult(false);
+      if (!shouldRefreshIdToken(result.expirationTime)) {
+        if (!result.token) throw new Error('NOT_AUTHENTICATED');
+        return result.token;
+      }
+    }
+    const token = await user.getIdToken(true);
+    if (!token) throw new Error('NOT_AUTHENTICATED');
+    return token;
   } catch (error) {
     console.warn('[auth] ID token refresh failed — retrying once:', error);
-    return user.getIdToken(true);
+    const token = await user.getIdToken(true);
+    if (!token) throw new Error('NOT_AUTHENTICATED');
+    return token;
   }
 }
 

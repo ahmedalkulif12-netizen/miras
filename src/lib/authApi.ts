@@ -3,6 +3,10 @@ import { ensureAppCheckTokenForApi, isAppCheckDisabled, isNativeCapacitorRuntime
 import { resolveApiUrl } from '@/lib/apiUrl';
 import { isDevAuthBypassEnabled, loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { ensureSignedInFirebaseUid, persistCurrentIdToken } from '@/lib/firebaseAuthSession';
+import { platformFetch } from '@/lib/nativeHttp';
+import { buildBearerAuthorization } from '@/lib/authHeaders';
+
+export { buildBearerAuthorization };
 
 /** True when the screenshot/dev bypass session is active (no real Firebase Auth user). */
 export function isDevBypassAuthSession(): boolean {
@@ -39,7 +43,7 @@ export async function getFirebaseIdToken(forceRefresh = false): Promise<string> 
 }
 
 function isUnauthorizedStatus(status: number): boolean {
-  return status === 401;
+  return status === 401 || status === 403;
 }
 
 function isNotAuthenticatedError(error: unknown): boolean {
@@ -76,7 +80,7 @@ export async function authFetch(
       } catch (error) {
         console.warn('[authApi] waiting for Firebase session before API call:', error);
       }
-      headers.set('Authorization', `Bearer ${await getFirebaseIdToken(forceRefresh)}`);
+      headers.set('Authorization', buildBearerAuthorization(await getFirebaseIdToken(forceRefresh)));
     }
 
     let appCheckToken: string | null = null;
@@ -109,7 +113,7 @@ export async function authFetch(
     if (!headers.has('Content-Type') && init.body) {
       headers.set('Content-Type', 'application/json');
     }
-    return fetch(resolveApiUrl(url), { ...init, headers });
+    return platformFetch(resolveApiUrl(url), { ...init, headers });
   };
 
   try {

@@ -6,7 +6,7 @@ rules_version = '2';
  * Order / payment creates & money mutations go through Admin SDK (Cloud Functions /
  * Express API). Clients get least-privilege reads and narrow field updates only.
  *
- * Admin check: custom claim `admin == true` OR document `admins/{uid}` with active.
+ * Admin check: custom claim `admin` / `superuser` / `role=admin`, or `admins/{uid}` active.
  */
 
 service cloud.firestore {
@@ -27,7 +27,12 @@ service cloud.firestore {
     }
 
     function isTokenAdmin() {
-      return request.auth != null && request.auth.token.admin == true;
+      return request.auth != null && (
+        request.auth.token.admin == true
+        || request.auth.token.superuser == true
+        || request.auth.token.role == 'admin'
+        || request.auth.token.role == 'superuser'
+      );
     }
 
     function userDoc() {
@@ -45,7 +50,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.admin == true
+        isTokenAdmin()
         || (
           exists(/databases/$(database)/documents/admins/$(uid()))
           && get(/databases/$(database)/documents/admins/$(uid())).data.active == true

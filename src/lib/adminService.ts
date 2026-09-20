@@ -12,15 +12,26 @@ import {
 import type { DriverAccountStatus } from '@/types';
 
 async function adminAuthedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  await ensureAdminApiReady();
-  let res = await authFetch(path, init);
-  if (res.status === 401 || res.status === 403) {
-    console.warn('[admin] unauthorized — re-establishing session and retrying', path, res.status);
+  let last: Response | undefined;
+  for (let attempt = 0; attempt <= 3; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(adminOverviewRetryDelayMs(attempt - 1));
+      try {
+        await persistCurrentIdToken(true);
+      } catch (error) {
+        console.warn('[admin] token refresh before retry failed:', error);
+      }
+    }
     await ensureAdminApiReady();
-    res = await authFetch(path, init);
+    last = await authFetch(path, init);
+    if (last.ok) return last;
+    if (!isRetryableAdminOverviewStatus(last.status)) return last;
+    console.warn('[admin] unauthorized/retryable — re-establishing session', path, last.status, attempt);
   }
-  return res;
+  return last as Response;
 }
+
+export { adminAuthedFetch };
 
 export type CustomerAccountStatus = 'active' | 'blocked' | 'banned' | 'pending' | 'suspended';
 

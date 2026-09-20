@@ -17,6 +17,7 @@
     "test:app-check-runtime": "tsx scripts/test-app-check-runtime.ts",
     "test:phone-auth": "tsx scripts/test-phone-auth.ts",
     "test:admin-overview": "tsx scripts/test-admin-overview.ts",
+    "test:admin-native-auth": "tsx scripts/test-admin-native-auth.ts",
     "test:ios-firebase": "tsx scripts/test-ios-firebase-align.ts",
     "verify:staging": "tsx scripts/verify-production-env.ts staging",
     "verify:production": "tsx scripts/verify-production-env.ts production",

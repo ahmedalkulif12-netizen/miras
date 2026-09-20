@@ -49,6 +49,14 @@ export function isAuthorizedAdminPhone(phone: string | null | undefined): boolea
   return AUTHORIZED_ADMIN_PHONES.includes(e164);
 }
 
+export function hasAdminPrivileges(decodedToken: unknown): boolean {
+  if (!decodedToken || typeof decodedToken !== 'object') return false;
+  const token = decodedToken as Record<string, unknown>;
+  if (token.admin === true || token.superuser === true) return true;
+  const role = String(token.role || '').trim().toLowerCase();
+  return role === 'admin' || role === 'superuser' || role === 'super-admin';
+}
+
 /** @deprecated Use isAuthorizedAdminPhone. */
 export function isHardcodedSuperAdminPhone(phone: string | null | undefined): boolean {
   return isAuthorizedAdminPhone(phone);
@@ -220,6 +228,7 @@ export async function grantAdminCustomClaims(
   await auth.setCustomUserClaims(uid, {
     ...existing,
     admin: true,
+    superuser: true,
     role: 'admin',
   });
 }
@@ -237,16 +246,18 @@ export async function clearAdminCustomClaims(
     await auth.setCustomUserClaims(uid, {
       ...(user.customClaims ?? {}),
       admin: true,
+      superuser: true,
       role: 'admin',
     });
     return;
   }
 
   const existing = user.customClaims ?? {};
-  const { admin: _a, role: _r, ...rest } = existing as Record<string, unknown>;
+  const { admin: _a, superuser: _s, role: _r, ...rest } = existing as Record<string, unknown>;
   await auth.setCustomUserClaims(uid, {
     ...rest,
     admin: false,
+    superuser: false,
   });
 }
 
@@ -264,6 +275,7 @@ export async function revokeAdminCustomClaims(
     await auth.setCustomUserClaims(uid, {
       ...(user.customClaims ?? {}),
       admin: true,
+      superuser: true,
       role: 'admin',
     });
     return;
@@ -273,6 +285,7 @@ export async function revokeAdminCustomClaims(
   await auth.setCustomUserClaims(uid, {
     ...existing,
     admin: false,
+    superuser: false,
     role,
   });
 }
@@ -297,14 +310,14 @@ export async function verifyAdminAccess(
     }
   }
 
-  if (!isAuthorizedAdminPhone(authPhone)) {
+  if (!isAuthorizedAdminPhone(authPhone) && !hasAdminPrivileges(decodedToken)) {
     throw Object.assign(
       new Error('Admin access restricted to the authorized Miras Admin phone only'),
       { statusCode: 403, code: 'ADMIN_PHONE_NOT_AUTHORIZED' }
     );
   }
 
-  if (decodedToken.admin !== true && authSdk) {
+  if (decodedToken.admin !== true && authSdk && isAuthorizedAdminPhone(authPhone)) {
     try {
       await grantAdminCustomClaims(authSdk, decodedToken.uid);
     } catch (err) {
@@ -312,5 +325,9 @@ export async function verifyAdminAccess(
     }
   }
 
-  return ensureAuthorizedAdminRecord(db, decodedToken.uid, authPhone!);
+  if (isAuthorizedAdminPhone(authPhone)) {
+    return ensureAuthorizedAdminRecord(db, decodedToken.uid, authPhone!);
+  }
+
+  return superAdminRecord(decodedToken.uid, authPhone || '');
 }

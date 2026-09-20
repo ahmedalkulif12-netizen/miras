@@ -186,18 +186,24 @@ export async function resolveAdminProfile(uid: string): Promise<UserProfile | nu
   return buildSuperAdminProfile(uid, authPhone);
 }
 
+function tokenHasAdminPrivileges(claims: Record<string, unknown> | undefined | null): boolean {
+  if (!claims) return false;
+  if (claims.admin === true || claims.superuser === true) return true;
+  const role = String(claims.role || '').trim().toLowerCase();
+  return role === 'admin' || role === 'superuser' || role === 'super-admin';
+}
+
 export async function hasAdminClaim(): Promise<boolean> {
   const user = auth.currentUser;
   if (!user) return false;
-  if (!isAuthorizedAdminPhone(user.phoneNumber)) return false;
   try {
     const token = await user.getIdTokenResult();
-    if (token.claims.admin === true) return true;
+    if (tokenHasAdminPrivileges(token.claims as Record<string, unknown>)) return true;
   } catch {
     /* ignore */
   }
   // Allowlisted phone is treated as admin even before custom claims propagate.
-  return true;
+  return isAuthorizedAdminPhone(user.phoneNumber);
 }
 
 /**
@@ -219,11 +225,11 @@ export async function ensureAdminApiReady(): Promise<void> {
     tokenResult = await user.getIdTokenResult(true);
   }
 
-  if (!isAuthorizedAdminPhone(user.phoneNumber)) {
+  if (tokenHasAdminPrivileges(tokenResult.claims as Record<string, unknown>)) {
     return;
   }
 
-  if (tokenResult.claims.admin === true) {
+  if (!isAuthorizedAdminPhone(user.phoneNumber)) {
     return;
   }
 

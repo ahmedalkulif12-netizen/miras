@@ -1,4 +1,5 @@
 import { authFetch, isDevBypassAuthSession } from '@/lib/authApi';
+import { adminAuthedFetch } from '@/lib/adminService';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { readStorageWithLegacy } from '@/lib/storageMigration';
 import { isLocalDevRuntime } from '@/lib/localDevRuntime';
@@ -500,7 +501,7 @@ export async function fetchAdminWithdrawals(
 
   try {
     const qs = status && status !== 'all' ? `?status=${encodeURIComponent(status)}` : '';
-    const res = await authFetch(`/api/admin/withdrawals${qs}`);
+    const res = await adminAuthedFetch(`/api/admin/withdrawals${qs}`);
     if (res.ok) {
       const data = await readApiJson<{ withdrawals: WithdrawalRequest[] }>(res);
       return data.withdrawals;
@@ -527,7 +528,7 @@ export async function approveAdminWithdrawal(
     });
   }
   try {
-    const res = await authFetch(`/api/admin/withdrawals/${withdrawalId}/approve`, {
+    const res = await adminAuthedFetch(`/api/admin/withdrawals/${withdrawalId}/approve`, {
       method: 'POST',
       body: JSON.stringify({}),
     });
@@ -582,7 +583,7 @@ export async function rejectAdminWithdrawal(
     return rejectLocalWithdrawal(withdrawalId, reason);
   }
   try {
-    const res = await authFetch(`/api/admin/withdrawals/${withdrawalId}/reject`, {
+    const res = await adminAuthedFetch(`/api/admin/withdrawals/${withdrawalId}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

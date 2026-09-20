@@ -318,8 +318,7 @@ async function startServer() {
 
   // Authenticated APIs also accept App Check tokens (enforced when APP_CHECK_ENFORCE=true).
   const secureApi = [verifyAppCheck(), verifyFirebaseToken()];
-  const adminApi = [...secureApi, verifyAdmin(db, admin.auth())];
-  const adminOverviewApi = [
+  const adminApi = [
     verifyAppCheck(),
     verifyFirebaseToken(adminOverviewTokenOptions),
     verifyAdmin(db, admin.auth()),
@@ -750,7 +749,7 @@ async function startServer() {
   });
 
   // Admin dashboard metrics — tolerant ID token + never 500 on Firestore/cold-start.
-  app.get('/api/admin/overview', ...adminOverviewApi, async (_req: AuthenticatedRequest, res: any) => {
+  app.get('/api/admin/overview', ...adminApi, async (_req: AuthenticatedRequest, res: any) => {
     try {
       const overview = await getAdminOverview(db);
       res.json(overview);

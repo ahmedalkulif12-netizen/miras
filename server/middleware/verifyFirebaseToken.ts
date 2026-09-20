@@ -42,6 +42,8 @@ function claimsToDecodedToken(claims: LooseIdTokenClaims): admin.auth.DecodedIdT
     user_id: claims.user_id || claims.uid,
     phone_number: claims.phone_number,
     admin: claims.admin === true,
+    superuser: claims.superuser === true,
+    role: typeof claims.role === 'string' ? claims.role : undefined,
     exp: claims.exp || 0,
     iat: claims.iat || 0,
     auth_time: claims.auth_time || claims.iat || 0,
