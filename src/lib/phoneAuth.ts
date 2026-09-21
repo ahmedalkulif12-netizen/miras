@@ -333,6 +333,8 @@ async function sendPhoneOtpOnce(
 
 /**
  * Sends SMS OTP via Firebase Phone Auth (Admin, Customer, Driver share this path).
+ * The Google Play reviewer number (+966500000000) never reaches this function —
+ * `useAuth.loginWithPhone` short-circuits it so no SMS is sent.
  * Exactly one SMS per successful call; concurrent identical requests share one send.
  * Refuses to send when a Firebase Auth session is already active (must logout first).
  */

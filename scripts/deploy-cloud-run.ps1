@@ -84,7 +84,7 @@ gcloud run deploy $ServiceName `
   --cpu=1 `
   --min-instances=0 `
   --max-instances=10 `
-  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,MOYASAR_SECRET_KEY=$MoyasarSecretKey,MOYASAR_WEBHOOK_SECRET=$MoyasarWebhookSecret"
+  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,MOYASAR_SECRET_KEY=$MoyasarSecretKey,MOYASAR_WEBHOOK_SECRET=$MoyasarWebhookSecret"
 
 $url = gcloud run services describe $ServiceName --project=$ProjectId --region=$Region --format="value(status.url)"
 Write-Host ""

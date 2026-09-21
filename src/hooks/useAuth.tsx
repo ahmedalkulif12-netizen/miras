@@ -1,10 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, signInAnonymously, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut, type User } from 'firebase/auth';
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
 import { persistCurrentIdToken } from '@/lib/firebaseAuthSession';
+import { apiJson } from '@/lib/apiClient';
+import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { App } from '@capacitor/app';
 import { sendPhoneOtp, confirmPhoneOtp, resetPhoneAuthFlow } from '@/lib/phoneAuth';
 import { logPhoneAuth, shouldUseNativeIosPhoneAuth } from '@/lib/nativePhoneAuth';
+import {
+  isPlayReviewOtp,
+  isPlayReviewPhone,
+  PLAY_REVIEW_NAME,
+  PLAY_REVIEW_PHONE_E164,
+  PLAY_REVIEW_ROLE,
+} from '@/lib/playReviewAuth';
 import {
   loadCachedProfile,
   saveCachedProfile,
@@ -487,6 +496,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Do not toggle global `loading` here — AuthGuestRoute unmounts login pages while
     // loading is true, which drops local step state before setStep('otp') can run.
     await assertCanRequestOtp();
+    if (isPlayReviewPhone(phone)) {
+      const phoneE164 = toFirebasePhoneE164(phone);
+      saveLoginIntent(role, phoneE164, mode);
+      setPendingRegistration({ phone, phoneE164, role });
+      setPendingAdminLogin(null);
+      logPhoneAuth('Play review OTP (no SMS)', phoneE164);
+      return;
+    }
     const phoneE164 = await sendPhoneOtp(phone, recaptchaContainerId);
     saveLoginIntent(role, phoneE164, mode);
     setPendingRegistration({ phone, phoneE164, role });
@@ -515,6 +532,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
     }
     if (pendingRegistration) {
+      if (isPlayReviewPhone(pendingRegistration.phoneE164 || pendingRegistration.phone)) {
+        return;
+      }
       await sendPhoneOtp(pendingRegistration.phoneE164);
       return;
     }
@@ -559,6 +579,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const pending = pendingRegistration;
+
+    if (isPlayReviewPhone(pending.phoneE164 || pending.phone)) {
+      if (!isPlayReviewOtp(otp)) {
+        throw Object.assign(new Error('auth/invalid-verification-code'), {
+          code: 'auth/invalid-verification-code',
+        });
+      }
+
+      const session = await apiJson<{
+        uid: string;
+        customToken: string;
+        profile?: { uid: string; phone: string; role: string; name: string };
+      }>(
+        '/api/auth/play-review',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: PLAY_REVIEW_PHONE_E164, otp }),
+        },
+        'Play review sign-in failed'
+      );
+
+      const credential = await signInWithCustomToken(auth, session.customToken);
+      const firebaseUser = credential.user;
+      setUser(firebaseUser);
+      await persistCurrentIdToken(true).catch(() => undefined);
+
+      let existingProfile: UserProfile | null = null;
+      try {
+        existingProfile = await resolveUserProfile(firebaseUser);
+      } catch (err) {
+        console.warn('[auth] play-review profile lookup failed:', err);
+      }
+
+      const profile = await persistExistingSession({
+        uid: firebaseUser.uid,
+        phone: existingProfile?.phone || session.profile?.phone || PLAY_REVIEW_PHONE_E164,
+        role: (existingProfile?.role as LoginRole) || PLAY_REVIEW_ROLE,
+        name: existingProfile?.name || session.profile?.name || PLAY_REVIEW_NAME,
+      });
+      return { isNewUser: false, profile };
+    }
 
     const firebaseUser = await confirmPhoneOtp(otp);
     setUser(firebaseUser);

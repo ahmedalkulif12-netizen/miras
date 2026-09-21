@@ -29,6 +29,34 @@
         }
       },
       {
+        "source": "/qr",
+        "run": {
+          "serviceId": "hamula-api",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/qr/**",
+        "run": {
+          "serviceId": "hamula-api",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/download",
+        "run": {
+          "serviceId": "hamula-api",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/download/**",
+        "run": {
+          "serviceId": "hamula-api",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
@@ -71,6 +99,32 @@
           {
             "key": "Cache-Control",
             "value": "no-store"
+          }
+        ]
+      },
+      {
+        "source": "/qr",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "Vary",
+            "value": "User-Agent"
+          }
+        ]
+      },
+      {
+        "source": "/download",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-store"
+          },
+          {
+            "key": "Vary",
+            "value": "User-Agent"
           }
         ]
       }

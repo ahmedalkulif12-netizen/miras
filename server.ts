@@ -57,6 +57,11 @@ import {
   resolveMoyasarCallbackUrl,
 } from './server/lib/moyasarCallback.ts';
 import { nativeApiCors } from './server/lib/nativeApiCors.ts';
+import {
+  consumePlayReviewRateLimit,
+  isPlayReviewCredentials,
+  issuePlayReviewSession,
+} from './server/lib/playReviewAuth.ts';
 import { verifyAdmin } from './server/middleware/verifyAdmin.ts';
 import { emptyAdminOverview, getAdminOverview } from './server/lib/adminOverview.ts';
 import {
@@ -99,6 +104,7 @@ import {
   isDevBypassBearer,
   publishAfterLocalCheckoutAsUser,
 } from './server/lib/userScopedOrderWrite.ts';
+import { resolveSmartQrRedirectUrl } from './src/lib/smartQrRedirect.ts';
 
 async function startServer() {
   loadServerEnv();
@@ -147,6 +153,18 @@ async function startServer() {
       appUrl: config.appUrl,
     });
   });
+
+  // Smart / Universal QR — 302 by User-Agent (iOS App Store, Android Play, else landing).
+  // Public: no App Check. Hosting must rewrite /qr and /download here (not index.html).
+  const sendSmartQrRedirect = (req: express.Request, res: express.Response) => {
+    const userAgent = String(req.get('user-agent') || '');
+    const location = resolveSmartQrRedirectUrl(userAgent, { appUrl: config.appUrl });
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Vary', 'User-Agent');
+    res.redirect(302, location);
+  };
+  app.get(['/qr', '/qr/', '/download', '/download/'], sendSmartQrRedirect);
 
   // Never serve HTML for /api — JSON only (Firebase Hosting rewrites + Cloud Run).
   app.use('/api', (_req, res, next) => {
@@ -285,6 +303,38 @@ async function startServer() {
   initFirebaseAdmin(config.firebaseProjectId);
   const db = admin.firestore();
   const pricingService = createPricingService(db);
+
+  // Google Play reviewer login — public, App Check not required (Play Integrity may be absent).
+  app.post('/api/auth/play-review', async (req, res) => {
+    const ip = String(req.ip || req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim();
+    if (!consumePlayReviewRateLimit(ip)) {
+      return res.status(429).json({
+        error: 'Too many reviewer login attempts. Wait a few minutes.',
+        code: 'PLAY_REVIEW_RATE_LIMIT',
+      });
+    }
+
+    const phone = String(req.body?.phone || '');
+    const otp = String(req.body?.otp || '');
+    if (!isPlayReviewCredentials(phone, otp)) {
+      return res.status(403).json({
+        error: 'Invalid reviewer credentials',
+        code: 'PLAY_REVIEW_INVALID_CODE',
+      });
+    }
+
+    try {
+      const session = await issuePlayReviewSession(admin.auth(), db);
+      return res.json(session);
+    } catch (error) {
+      console.error('[play-review] session failed:', error);
+      return res.status(503).json({
+        error: 'Reviewer session is unavailable — retry shortly',
+        code: 'PLAY_REVIEW_UNAVAILABLE',
+        retryable: true,
+      });
+    }
+  });
 
   // Seed missing pricing/{service} docs when Admin credentials exist.
   // Local `npm run dev` usually has no service account — quotes use built-in defaults instead.
@@ -1968,7 +2018,12 @@ async function startServer() {
     if (hasSpaBundle) {
       app.use(express.static(distPath));
       app.get('*', (req, res) => {
-        if (req.path.startsWith('/api') || req.path === '/health') {
+        if (
+          req.path.startsWith('/api') ||
+          req.path === '/health' ||
+          req.path === '/qr' ||
+          req.path === '/download'
+        ) {
           return res.status(404).json({
             error: 'Not found',
             path: req.originalUrl,

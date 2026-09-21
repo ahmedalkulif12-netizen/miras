@@ -78,8 +78,8 @@ async function main() {
     failures.push('Xcode MARKETING_VERSION must be 1.0.1 for this App Store submission');
   }
   const iosBuild = Number((pbxproj.match(/CURRENT_PROJECT_VERSION = (\d+);/) || [])[1] || 0);
-  if (!Number.isFinite(iosBuild) || iosBuild < 2) {
-    failures.push('Xcode CURRENT_PROJECT_VERSION must be >= 2 (1.0 already used build 1)');
+  if (!Number.isFinite(iosBuild) || iosBuild < 63) {
+    failures.push('Xcode CURRENT_PROJECT_VERSION must be >= 63 for this App Store / TestFlight train');
   }
   if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>') || !infoPlist.includes('<false/>')) {
     failures.push('Info.plist must set ITSAppUsesNonExemptEncryption to false');

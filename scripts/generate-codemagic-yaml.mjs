@@ -138,6 +138,14 @@ workflows:
     name: Miras iOS TestFlight
     max_build_duration: 120
     instance_type: mac_mini_m2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
     integrations:
       app_store_connect: codemagic
     environment:
@@ -150,6 +158,9 @@ workflows:
         BUNDLE_ID: ${yamlQuote(canon.iosBundleId)}
         DEVELOPMENT_TEAM: ${yamlQuote('4TRJXRYK8A')}
         IOS_MARKETING_VERSION: ${yamlQuote('1.0.1')}
+        IOS_MIN_BUILD_NUMBER: ${yamlQuote('63')}
+        APP_STORE_APPLE_ID: ${yamlQuote(prod.APP_STORE_APPLE_ID || '6807503584')}
+        VITE_APP_STORE_APPLE_ID: ${yamlQuote(prod.VITE_APP_STORE_APPLE_ID || prod.APP_STORE_APPLE_ID || '6807503584')}
         NODE_ENV: ${yamlQuote('production')}
         CAPACITOR_BUILD: ${yamlQuote('1')}
         NPM_CONFIG_PRODUCTION: ${yamlQuote('false')}
@@ -261,8 +272,8 @@ workflows:
           if [ "$NEW_BUILD" -lt "\${BUILD_NUMBER:-1}" ]; then
             NEW_BUILD=$BUILD_NUMBER
           fi
-          if [ "$NEW_BUILD" -lt 2 ]; then
-            NEW_BUILD=2
+          if [ "$NEW_BUILD" -lt "\${IOS_MIN_BUILD_NUMBER:-63}" ]; then
+            NEW_BUILD="\${IOS_MIN_BUILD_NUMBER:-63}"
           fi
           MARKETING="\${IOS_MARKETING_VERSION:-1.0.1}"
           agvtool new-version -all "$NEW_BUILD"

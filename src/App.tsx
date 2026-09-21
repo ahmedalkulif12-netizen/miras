@@ -11,6 +11,7 @@ import { useAuthSurfaceRedirect } from '@/hooks/usePostLoginRedirect';
 import { APP_ROLES } from '@/domain/user-schema';
 
 import LandingPage from '@/pages/LandingPage';
+import SmartQrRedirectPage from '@/pages/SmartQrRedirectPage';
 import LoginPage from '@/pages/LoginPage';
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import AdminLoginPage from '@/pages/AdminLoginPage';
@@ -54,6 +55,8 @@ const App: React.FC = () => {
 
           <Routes>
             <Route path="/index.html" element={<Navigate to="/" replace />} />
+            <Route path="/qr" element={<SmartQrRedirectPage />} />
+            <Route path="/download" element={<SmartQrRedirectPage />} />
             <Route
               path="/"
               element={

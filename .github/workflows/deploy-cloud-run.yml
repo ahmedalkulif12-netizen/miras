@@ -1,0 +1,148 @@
+name: Deploy Cloud Run API
+
+# Builds and deploys hamula-api on every push to main (same flags as
+# scripts/deploy-cloud-run.ps1). Firebase Hosting rewrites /api/**, /health,
+# /qr, and /download to this service — this workflow does not deploy the SPA.
+#
+# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
+#   GCP_SA_KEY              — GCP service account JSON (Cloud Run + Cloud Build)
+#   MOYASAR_SECRET_KEY      — sk_test_* while MIRAS_DEPLOY_ENV=staging
+#   MOYASAR_WEBHOOK_SECRET  — webhook HMAC secret (staging may fall back)
+#
+# Optional repository variables:
+#   MIRAS_DEPLOY_ENV        — staging (default, matches the PowerShell script) or production
+#   CLOUD_RUN_APP_URL       — https://hamula-cfc6c.web.app
+#   APP_CHECK_ENFORCE       — false (default)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cloud-run-hamula-api
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: hamula-cfc6c
+  SERVICE_NAME: hamula-api
+  REGION: us-central1
+  APP_URL: ${{ vars.CLOUD_RUN_APP_URL || 'https://hamula-cfc6c.web.app' }}
+  DEPLOY_ENV: ${{ vars.MIRAS_DEPLOY_ENV || 'staging' }}
+  APP_CHECK_ENFORCE: ${{ vars.APP_CHECK_ENFORCE || 'false' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deploy env and Moyasar keys
+        env:
+          MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
+          MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${MOYASAR_SECRET_KEY}" ]]; then
+            echo "Missing GitHub secret MOYASAR_SECRET_KEY (see scripts/deploy-cloud-run.ps1)."
+            exit 1
+          fi
+          if [[ -z "${MOYASAR_WEBHOOK_SECRET}" ]]; then
+            if [[ "${DEPLOY_ENV}" == "staging" ]]; then
+              echo "MOYASAR_WEBHOOK_SECRET unset — using staging fallback whsec_test_dummy"
+              echo "MOYASAR_WEBHOOK_SECRET=whsec_test_dummy" >> "$GITHUB_ENV"
+            else
+              echo "Missing GitHub secret MOYASAR_WEBHOOK_SECRET (required for production)."
+              exit 1
+            fi
+          else
+            echo "MOYASAR_WEBHOOK_SECRET=${MOYASAR_WEBHOOK_SECRET}" >> "$GITHUB_ENV"
+          fi
+          if [[ "${APP_URL}" != https://* ]]; then
+            echo "APP_URL must be HTTPS for Moyasar callbacks (got: ${APP_URL})"
+            exit 1
+          fi
+          if [[ "${DEPLOY_ENV}" == "staging" && "${MOYASAR_SECRET_KEY}" != sk_test_* ]]; then
+            echo "Staging Cloud Run requires Moyasar TEST key (sk_test_*)."
+            exit 1
+          fi
+          if [[ "${DEPLOY_ENV}" == "production" && "${MOYASAR_SECRET_KEY}" != sk_live_* ]]; then
+            echo "Production Cloud Run requires Moyasar LIVE key (sk_live_*)."
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Enable Cloud Run APIs
+        run: |
+          gcloud services enable \
+            run.googleapis.com \
+            cloudbuild.googleapis.com \
+            artifactregistry.googleapis.com \
+            --project="${PROJECT_ID}"
+
+      - name: Write Cloud Run env file
+        env:
+          MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
+        run: |
+          cat > /tmp/hamula-api.env.yaml <<EOF
+          NODE_ENV: production
+          MIRAS_PROCESS_ROLE: api
+          MIRAS_DEPLOY_ENV: ${DEPLOY_ENV}
+          HAMOULA_DEPLOY_ENV: ${DEPLOY_ENV}
+          FIREBASE_PROJECT_ID: ${PROJECT_ID}
+          MIRAS_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}
+          HAMOULA_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}
+          APP_URL: ${APP_URL}
+          APP_CHECK_ENFORCE: ${APP_CHECK_ENFORCE}
+          APP_STORE_APPLE_ID: "6807503584"
+          MOYASAR_SECRET_KEY: ${MOYASAR_SECRET_KEY}
+          MOYASAR_WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET}
+          EOF
+
+      - name: Deploy hamula-api
+        run: |
+          gcloud run deploy "${SERVICE_NAME}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --source=. \
+            --platform=managed \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=10 \
+            --quiet \
+            --env-vars-file=/tmp/hamula-api.env.yaml
+
+      - name: Smoke-test /health
+        run: |
+          URL="$(gcloud run services describe "${SERVICE_NAME}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --format='value(status.url)')"
+          echo "Deployed: ${URL}"
+          echo "Health:   ${URL}/health"
+          echo "Same-origin after Hosting rewrites: ${APP_URL}/health"
+          for i in 1 2 3 4 5; do
+            if curl -fsS --max-time 20 "${URL}/health"; then
+              echo
+              exit 0
+            fi
+            echo "Health check attempt ${i} failed — retrying..."
+            sleep 5
+          done
+          echo "hamula-api /health did not return success after deploy."
+          exit 1

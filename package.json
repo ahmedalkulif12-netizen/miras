@@ -19,6 +19,7 @@
     "test:admin-overview": "tsx scripts/test-admin-overview.ts",
     "test:admin-native-auth": "tsx scripts/test-admin-native-auth.ts",
     "test:ios-firebase": "tsx scripts/test-ios-firebase-align.ts",
+    "test:smart-qr": "tsx scripts/test-smart-qr.ts",
     "verify:staging": "tsx scripts/verify-production-env.ts staging",
     "verify:production": "tsx scripts/verify-production-env.ts production",
     "verify:firebase-client": "tsx scripts/verify-firebase-client-env.ts",

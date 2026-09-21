@@ -91,6 +91,7 @@ Authentication → Sign-in method → Phone → **Phone numbers for testing**:
 | Phone | OTP code |
 |-------|----------|
 | `+966501234567` | `123456` |
+| `+966500000000` | `123456` (**Google Play reviewer / testers** — also hardcoded in-app; no SMS) |
 | `+966500000001` | `123456` (test customer) |
 | `+966500000002` | `123456` (test driver) |
 
