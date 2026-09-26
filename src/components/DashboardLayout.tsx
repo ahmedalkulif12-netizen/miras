@@ -38,6 +38,7 @@ import {
   normalizeAppRole,
 } from '@/domain/user-schema';
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
+import { PlayReviewRoleSwitch } from '@/components/PlayReviewRoleSwitch';
 import { DevBypassPanel } from '@/components/DevBypassPanel';
 
 export interface DashboardTripChatProps {
@@ -253,6 +254,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 relative app-bottom-safe">
+          <PlayReviewRoleSwitch />
           {children}
 
           {showDeleteConfirm && (

@@ -398,6 +398,22 @@ async function run(): Promise<void> {
     }),
     'live production never uses sandbox checkout'
   );
+  const { toMoyasarMetadata } = await import('../server/lib/moyasarMetadata.ts');
+  const meta = toMoyasarMetadata({
+    userId: 'uid-1',
+    draftId: 'abc',
+    orderId: null,
+    platformFee: 12.5,
+    empty: '',
+  });
+  assert(meta.userId === 'uid-1', 'Moyasar metadata keeps string ids');
+  assert(meta.draftId === 'abc', 'Moyasar metadata keeps draft id');
+  assert(meta.platformFee === '12.5', 'Moyasar metadata stringifies amounts');
+  assert(meta.orderId === undefined, 'Moyasar metadata drops nulls');
+  const { parsePlayReviewRole } = await import('../src/lib/playReviewAuth.ts');
+  assert(parsePlayReviewRole('b2c_driver') === 'b2c_driver', 'review role parses driver');
+  assert(parsePlayReviewRole('driver') === 'b2c_driver', 'review role aliases driver');
+  assert(parsePlayReviewRole('admin') === 'b2c_client', 'review role never elevates to admin');
   assert(
     isAllowedNativeApiOrigin(
       'capacitor://hamula-cfc6c.web.app',

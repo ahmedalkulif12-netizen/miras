@@ -3,6 +3,8 @@ import { onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut, 
 import { auth, ensureFirebaseReady } from '@/lib/firebase';
 import { persistCurrentIdToken } from '@/lib/firebaseAuthSession';
 import { apiJson } from '@/lib/apiClient';
+import { authFetch } from '@/lib/authApi';
+import { readApiJson } from '@/lib/apiResponse';
 import { toFirebasePhoneE164 } from '@/lib/phoneUtils';
 import { App } from '@capacitor/app';
 import { sendPhoneOtp, confirmPhoneOtp, resetPhoneAuthFlow } from '@/lib/phoneAuth';
@@ -10,9 +12,10 @@ import { logPhoneAuth, shouldUseNativeIosPhoneAuth } from '@/lib/nativePhoneAuth
 import {
   isPlayReviewOtp,
   isPlayReviewPhone,
+  parsePlayReviewRole,
   PLAY_REVIEW_NAME,
   PLAY_REVIEW_PHONE_E164,
-  PLAY_REVIEW_ROLE,
+  type PlayReviewRole,
 } from '@/lib/playReviewAuth';
 import {
   loadCachedProfile,
@@ -136,6 +139,8 @@ interface AuthContextType {
    * Supports all AppRoles including admin. Only when `isDevAuthBypassEnabled()`.
    */
   loginAsDevBypass: (role: AppRole) => Promise<UserProfile>;
+  /** Store review account only — switch Customer ↔ Driver without a new OTP. */
+  switchPlayReviewRole: (role: PlayReviewRole) => Promise<UserProfile>;
   /** Merge profile fields locally + Firestore (drivers/clients updating their data). */
   updateProfile: (patch: Partial<UserProfile>) => Promise<UserProfile>;
   cancelPhoneOtpFlow: () => Promise<void>;
@@ -304,9 +309,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             if (resolved && isRegistrableRole(resolved.role)) {
-              syncUserProfileToFirestore(resolved).catch((err) =>
-                console.warn('users/{uid} sync failed:', err)
-              );
+              if (resolved.playReview !== true) {
+                syncUserProfileToFirestore(resolved).catch((err) =>
+                  console.warn('users/{uid} sync failed:', err)
+                );
+              }
               establishUserSession(resolved.role).catch((err) =>
                 console.warn('[auth] background session refresh failed:', err)
               );
@@ -563,10 +570,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch (error) {
         console.warn('[auth] establishUserSession failed after OTP — continuing with local profile:', error);
       }
-      try {
-        await syncUserProfileToFirestore(profileWithRole);
-      } catch (error) {
-        console.warn('[auth] users/{uid} sync failed after OTP:', error);
+      // Store-review profiles are written by Admin SDK only (role freeze in rules).
+      if (profileWithRole.playReview !== true) {
+        try {
+          await syncUserProfileToFirestore(profileWithRole);
+        } catch (error) {
+          console.warn('[auth] users/{uid} sync failed after OTP:', error);
+        }
       }
     }
 
@@ -590,13 +600,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const session = await apiJson<{
         uid: string;
         customToken: string;
-        profile?: { uid: string; phone: string; role: string; name: string };
+        profile?: {
+          uid: string;
+          phone: string;
+          role: string;
+          name: string;
+          vehicleType?: string;
+          accountStatus?: string;
+        };
       }>(
         '/api/auth/play-review',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: PLAY_REVIEW_PHONE_E164, otp }),
+          body: JSON.stringify({
+            phone: PLAY_REVIEW_PHONE_E164,
+            otp,
+            role: parsePlayReviewRole(pending.role),
+          }),
         },
         'Play review sign-in failed'
       );
@@ -606,18 +627,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(firebaseUser);
       await persistCurrentIdToken(true).catch(() => undefined);
 
-      let existingProfile: UserProfile | null = null;
-      try {
-        existingProfile = await resolveUserProfile(firebaseUser);
-      } catch (err) {
-        console.warn('[auth] play-review profile lookup failed:', err);
-      }
-
+      const issuedRole = parsePlayReviewRole(session.profile?.role || pending.role);
       const profile = await persistExistingSession({
         uid: firebaseUser.uid,
-        phone: existingProfile?.phone || session.profile?.phone || PLAY_REVIEW_PHONE_E164,
-        role: (existingProfile?.role as LoginRole) || PLAY_REVIEW_ROLE,
-        name: existingProfile?.name || session.profile?.name || PLAY_REVIEW_NAME,
+        phone: session.profile?.phone || PLAY_REVIEW_PHONE_E164,
+        role: issuedRole,
+        name: session.profile?.name || PLAY_REVIEW_NAME,
+        playReview: true,
+        ...(issuedRole === APP_ROLES.B2C_DRIVER
+          ? { vehicleType: 'flatbed', accountStatus: 'approved' }
+          : { accountStatus: 'active' }),
       });
       return { isNewUser: false, profile };
     }
@@ -859,6 +878,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [establishGuestSession]
   );
 
+  const switchPlayReviewRole = async (role: PlayReviewRole): Promise<UserProfile> => {
+    const target = parsePlayReviewRole(role);
+    const response = await authFetch('/api/auth/play-review/switch-role', {
+      method: 'POST',
+      body: JSON.stringify({ role: target }),
+    });
+    if (!response.ok) {
+      const { readApiErrorMessage } = await import('@/lib/apiResponse');
+      throw new Error(await readApiErrorMessage(response, 'Could not switch review role'));
+    }
+    const session = await readApiJson<{
+      customToken: string;
+      profile?: {
+        uid: string;
+        phone: string;
+        role: string;
+        name: string;
+        vehicleType?: string;
+        accountStatus?: string;
+      };
+    }>(response);
+    const credential = await signInWithCustomToken(auth, session.customToken);
+    setUser(credential.user);
+    await persistCurrentIdToken(true).catch(() => undefined);
+    return persistExistingSession({
+      uid: credential.user.uid,
+      phone: session.profile?.phone || PLAY_REVIEW_PHONE_E164,
+      role: parsePlayReviewRole(session.profile?.role || target),
+      name: session.profile?.name || PLAY_REVIEW_NAME,
+      playReview: true,
+      ...(target === APP_ROLES.B2C_DRIVER
+        ? { vehicleType: 'flatbed', accountStatus: 'approved' }
+        : { accountStatus: 'active' }),
+    });
+  };
+
   const updateProfile = useCallback(
     async (patch: Partial<UserProfile>): Promise<UserProfile> => {
       if (!profile) {
@@ -981,6 +1036,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         completeRegistration,
         resendOtp,
         loginAsDevBypass,
+        switchPlayReviewRole,
         updateProfile,
         cancelPhoneOtpFlow,
         logout,

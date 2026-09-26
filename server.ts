@@ -56,11 +56,13 @@ import {
   isDemoMoyasarId,
   resolveMoyasarCallbackUrl,
 } from './server/lib/moyasarCallback.ts';
-import { nativeApiCors } from './server/lib/nativeApiCors.ts';
+import { toMoyasarMetadata } from './server/lib/moyasarMetadata.ts';
 import {
   consumePlayReviewRateLimit,
   isPlayReviewCredentials,
+  isPlayReviewToken,
   issuePlayReviewSession,
+  parsePlayReviewRole,
 } from './server/lib/playReviewAuth.ts';
 import { verifyAdmin } from './server/middleware/verifyAdmin.ts';
 import { emptyAdminOverview, getAdminOverview } from './server/lib/adminOverview.ts';
@@ -105,6 +107,7 @@ import {
   publishAfterLocalCheckoutAsUser,
 } from './server/lib/userScopedOrderWrite.ts';
 import { resolveSmartQrRedirectUrl } from './src/lib/smartQrRedirect.ts';
+import { nativeApiCors } from './server/lib/nativeApiCors.ts';
 
 async function startServer() {
   loadServerEnv();
@@ -324,7 +327,7 @@ async function startServer() {
     }
 
     try {
-      const session = await issuePlayReviewSession(admin.auth(), db);
+      const session = await issuePlayReviewSession(admin.auth(), db, req.body?.role);
       return res.json(session);
     } catch (error) {
       console.error('[play-review] session failed:', error);
@@ -373,6 +376,35 @@ async function startServer() {
     verifyFirebaseToken(adminOverviewTokenOptions),
     verifyAdmin(db, admin.auth()),
   ];
+
+  app.post(
+    '/api/auth/play-review/switch-role',
+    ...secureApi,
+    async (req: AuthenticatedRequest, res: any) => {
+      const decoded = req.firebaseToken;
+      if (!decoded || !isPlayReviewToken(decoded)) {
+        return res.status(403).json({
+          error: 'Only the store review account can switch Customer/Driver roles',
+          code: 'PLAY_REVIEW_ROLE_FORBIDDEN',
+        });
+      }
+      try {
+        const session = await issuePlayReviewSession(
+          admin.auth(),
+          db,
+          parsePlayReviewRole(req.body?.role)
+        );
+        return res.json(session);
+      } catch (error) {
+        console.error('[play-review] switch-role failed:', error);
+        return res.status(503).json({
+          error: 'Could not switch review role — retry shortly',
+          code: 'PLAY_REVIEW_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+    }
+  );
 
   // Moyasar return verification — authenticated customer only (callback landing).
   // Accepts draftId (pre-payment) or orderId (legacy); finalizes order only after paid.
@@ -495,9 +527,14 @@ async function startServer() {
       const result = await createCheckoutDraft(db, pricingService, userId, req.body);
       res.status(201).json(result);
     } catch (error: any) {
-      console.error('Checkout draft error:', error);
+      console.error('Checkout draft error:', {
+        code: error?.code || error?.statusCode,
+        message: error?.message || error,
+        uid: req.firebaseUid,
+      });
       res.status(error?.statusCode ?? 500).json({
         error: error?.message || 'Failed to prepare checkout draft',
+        code: error?.code || 'CHECKOUT_DRAFT_FAILED',
       });
     }
   });
@@ -1662,6 +1699,7 @@ async function startServer() {
       const statusCode = error?.statusCode ?? 500;
       res.status(statusCode).json({
         error: error?.message || 'Failed to prepare checkout draft',
+        code: error?.code || 'CHECKOUT_DRAFT_FAILED',
       });
     }
   });
@@ -1739,24 +1777,19 @@ async function startServer() {
           ? `Miras Order - ${serviceType} (${waterBits.join('/')})`
           : `Miras Order - ${serviceType}`;
 
-      const moyasarMethods = paymentMethod === 'applepay' ? ['applepay'] : undefined;
-
       const moyasarPayload = {
         amount: amountInHalalas,
         currency: 'SAR',
         description: moyasarDescription,
         callback_url: moyasarCallbackUrl,
-        ...(moyasarMethods ? { methods: moyasarMethods } : {}),
-        metadata: {
+        metadata: toMoyasarMetadata({
           userId,
-          draftId: chargeDraftId || null,
-          orderId: orderId || null,
+          draftId: chargeDraftId,
           serviceType,
           paymentMethod,
-          platformFee:
-            (financials?.platformFee ?? 0) + (financials?.serviceFee ?? 0),
+          platformFee: (financials?.platformFee ?? 0) + (financials?.serviceFee ?? 0),
           driverAmount: financials?.driverNet ?? 0,
-        },
+        }),
       };
 
       // Hosted invoice — live or test Moyasar keys, never collect PAN in-app.
@@ -1768,16 +1801,18 @@ async function startServer() {
         moyasarId = String(invoice.id || '');
         paymentUrl = String(invoice.url || invoice.source?.transaction_url || '');
       } catch (invoiceError: any) {
-        console.warn(
-          '[payments] Moyasar /invoices failed, trying /payments:',
-          invoiceError?.response?.data || invoiceError?.message
-        );
-        const paymentResponse = await moyasar.post('/payments', moyasarPayload);
-        const payment = paymentResponse.data;
-        moyasarId = String(payment.id || '');
-        paymentUrl = String(
-          payment.source?.transaction_url ||
-            (moyasarId ? `${MOYASAR_API_URL}/payments/${moyasarId}` : '')
+        const invoiceDetail = invoiceError?.response?.data || invoiceError?.message;
+        console.error('[payments] Moyasar /invoices failed:', invoiceDetail);
+        throw Object.assign(
+          new Error(
+            invoiceError?.response?.data?.message ||
+              invoiceError?.message ||
+              'Moyasar invoice create failed'
+          ),
+          {
+            statusCode: invoiceError?.response?.status || 502,
+            response: invoiceError?.response,
+          }
         );
       }
 

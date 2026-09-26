@@ -74,6 +74,7 @@ function readFirestoreProfile(
       ...(data.commercialRegistration
         ? { commercialRegistration: String(data.commercialRegistration) }
         : {}),
+      ...(data.playReview === true ? { playReview: true } : {}),
     };
     return role === APP_ROLES.B2C_DRIVER ? attachDriverKyc(base, data) : base;
   }

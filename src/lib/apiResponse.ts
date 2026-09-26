@@ -27,8 +27,16 @@ export async function readApiJson<T>(res: Response): Promise<T> {
 
 export async function readApiErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
-    const data = (await readApiJson<{ error?: string }>(res)) as { error?: string };
-    return data.error || fallback;
+    const data = (await readApiJson<{ error?: string; code?: string }>(res)) as {
+      error?: string;
+      code?: string;
+    };
+    const error = data.error || fallback;
+    const code = String(data.code || '').trim();
+    if (code && !error.toLowerCase().includes(code.toLowerCase())) {
+      return `${code}: ${error}`;
+    }
+    return error;
   } catch (error) {
     if (error instanceof Error && error.message.includes('HTML instead of JSON')) {
       return error.message;

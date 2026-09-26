@@ -111,6 +111,15 @@ export async function createCheckoutDraft(
   const serviceFeeWaived = shouldWaiveServiceFee(previousOrdersCount);
 
   if (!canUseAdminFirestore()) {
+    const deploy = String(process.env.MIRAS_DEPLOY_ENV || process.env.HAMOULA_DEPLOY_ENV || '').toLowerCase();
+    if (deploy === 'staging' || deploy === 'production' || process.env.NODE_ENV === 'production') {
+      throw Object.assign(
+        new Error(
+          'Checkout is unavailable: server cannot persist the payment draft (Admin Firestore).'
+        ),
+        { statusCode: 503, code: 'CHECKOUT_DRAFT_UNAVAILABLE' }
+      );
+    }
     const draftId = `draft-${Date.now()}`;
     console.info('[checkout-draft] Local draft (no Admin credentials)', draftId);
     return {

@@ -211,8 +211,21 @@ export function resolvePostOtpAuth(options: {
   if (existing?.uid) {
     const role = normalizeAppRole(existing.role) ?? existing.role;
     const isDriver = role === APP_ROLES.B2C_DRIVER;
-    if (isDriver && !hasCompleteDriverKyc(existing)) {
+    if (isDriver && !hasCompleteDriverKyc(existing) && existing.playReview !== true) {
       return { kind: 'onboarding', intendedRole: APP_ROLES.B2C_DRIVER };
+    }
+    if (existing.playReview === true) {
+      const intended = isRegistrableRole(options.intendedRole)
+        ? options.intendedRole
+        : APP_ROLES.B2C_CLIENT;
+      if (intended === APP_ROLES.B2C_CLIENT || intended === APP_ROLES.B2C_DRIVER) {
+        const profile = { ...existing, role: intended };
+        return {
+          kind: 'existing',
+          profile,
+          path: resolvePostLoginPath(profile, options.nextRaw),
+        };
+      }
     }
     const profile = { ...existing, role };
     return {

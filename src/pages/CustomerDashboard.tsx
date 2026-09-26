@@ -34,6 +34,7 @@ import { useTripChatUnread } from '@/hooks/useTripChatUnread';
 import { TripChatNotifyButton } from '@/components/TripChatNotifyButton';
 import { useAuth } from '@/hooks/useAuth';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
+import { formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
 import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
 import {
   persistPendingCheckoutDraftId,
@@ -1067,14 +1068,15 @@ const CustomerDashboard: React.FC = () => {
       console.error('Error preparing checkout:', error);
       const missingAuth =
         error instanceof Error && error.message === 'NOT_AUTHENTICATED';
+      const detail = formatFirestoreErrorDetails(error);
       toast.error(
         missingAuth
           ? isRtl
             ? 'جلسة الدخول غير نشطة. سجّل الدخول ثم أعد المحاولة.'
             : 'No active sign-in. Please log in and try again.'
           : isRtl
-            ? 'فشل تجهيز الدفع'
-            : 'Failed to prepare checkout',
+            ? `فشل تجهيز الدفع: ${detail}`
+            : `Failed to prepare checkout: ${detail}`,
         { id: 'booking-toast' }
       );
     } finally {
@@ -1156,7 +1158,12 @@ const CustomerDashboard: React.FC = () => {
       window.location.assign(intent.paymentUrl);
     } catch (error) {
       console.error('Error in payment flow:', error);
-      toast.error(isRtl ? 'فشل فتح بوابة الدفع. يرجى المحاولة مرة أخرى.' : 'Could not open payment gateway. Please try again.', {
+      const detail = formatFirestoreErrorDetails(error);
+      toast.error(
+        isRtl
+          ? `فشل فتح بوابة الدفع: ${detail}`
+          : `Could not open payment gateway: ${detail}`,
+        {
         id: 'payment-toast',
       });
       setIsProcessing(false);

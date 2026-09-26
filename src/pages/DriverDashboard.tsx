@@ -312,6 +312,10 @@ const DriverDashboard: React.FC = () => {
             (snap) => {
               if (!snap.exists()) {
                 hasDriverDoc = false;
+                if (profile.playReview === true) {
+                  applyAccountStatus('approved');
+                  return;
+                }
                 setAccountStatus('pending');
                 setLocalDevWorkEnabled(readLocalDevWorkEnabled(uid));
                 setAccountStatusLoaded(true);

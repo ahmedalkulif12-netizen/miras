@@ -10,6 +10,8 @@ import {
   isPlayReviewPhone,
   isPlayReviewOtp,
   isPlayReviewCredentials,
+  parsePlayReviewRole,
+  playReviewRoleFromTokenClaims,
   PLAY_REVIEW_OTP,
   PLAY_REVIEW_PHONE_E164,
 } from '../src/lib/playReviewAuth.ts';
@@ -77,6 +79,16 @@ function run(): void {
   );
   assert(serverPlayReviewCredentials('0500000000', '123456'), 'server accepts reviewer pair');
   assert(!serverPlayReviewCredentials('+966511111111', '123456'), 'server rejects other phones');
+  assert(parsePlayReviewRole('b2c_driver') === 'b2c_driver', 'Driver tab maps to b2c_driver');
+  assert(parsePlayReviewRole('admin') === 'b2c_client', 'reviewer cannot select admin');
+  assert(
+    playReviewRoleFromTokenClaims({ playReview: true, role: 'b2c_driver' }) === 'b2c_driver',
+    'token claims drive reviewer Driver role'
+  );
+  assert(
+    playReviewRoleFromTokenClaims({ role: 'b2c_driver' }) === null,
+    'non-review tokens cannot pick a dual role'
+  );
   const rateKey = `test-${Date.now()}`;
   for (let i = 0; i < 12; i += 1) {
     assert(consumePlayReviewRateLimit(rateKey, 1_000, 60_000, 12), `rate hit ${i + 1} allowed`);

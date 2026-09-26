@@ -97,6 +97,20 @@ function run(): void {
     );
   }
 
+  const reviewDriver = resolvePostOtpAuth({
+    existingProfile: { ...profile(APP_ROLES.B2C_CLIENT), playReview: true },
+    intendedRole: APP_ROLES.B2C_DRIVER,
+  });
+  assert(reviewDriver.kind === 'existing', 'store review account skips KYC onboarding');
+  if (reviewDriver.kind === 'existing') {
+    assertEqual(reviewDriver.profile.role, APP_ROLES.B2C_DRIVER, 'review login honors Driver tab');
+    assertEqual(
+      reviewDriver.path.split('?')[0],
+      '/b2c/driver',
+      'review Driver tab opens driver panel'
+    );
+  }
+
   // Brand-new users — every registrable role goes to the registration form.
   for (const intendedRole of [
     APP_ROLES.B2C_CLIENT,

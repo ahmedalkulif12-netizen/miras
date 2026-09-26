@@ -1,13 +1,24 @@
 /**
  * Google Play reviewer Phone Auth — server gate.
  * Only +966500000000 / 123456 may mint a custom token. Never grants admin.
+ * Role follows the login tab (customer vs driver) so reviewers can open either panel.
  */
 import firebaseAdmin from 'firebase-admin';
+import { APP_ROLES, type AppRole } from '../../src/domain/user-schema.ts';
 
 export const PLAY_REVIEW_PHONE_E164 = '+966500000000';
 export const PLAY_REVIEW_OTP = '123456';
 export const PLAY_REVIEW_NAME = 'Test User';
-export const PLAY_REVIEW_ROLE = 'b2c_client' as const;
+export const PLAY_REVIEW_ROLE = APP_ROLES.B2C_CLIENT;
+export const PLAY_REVIEW_ROLES = [APP_ROLES.B2C_CLIENT, APP_ROLES.B2C_DRIVER] as const;
+export type PlayReviewRole = (typeof PLAY_REVIEW_ROLES)[number];
+
+const PLAY_REVIEW_KYC_FILE = (key: string) => ({
+  status: 'uploaded' as const,
+  storagePath: `play-review/${key}.jpg`,
+  fileName: `play-review-${key}.jpg`,
+  uploadedAt: new Date().toISOString(),
+});
 
 function saudiDigits(value: string): string {
   return String(value || '').replace(/\D/g, '').replace(/^966/, '').replace(/^0/, '');
@@ -26,6 +37,14 @@ export function isPlayReviewCredentials(
   otp: string | null | undefined
 ): boolean {
   return isPlayReviewPhone(phone) && isPlayReviewOtp(otp);
+}
+
+export function parsePlayReviewRole(raw: unknown): PlayReviewRole {
+  const value = String(raw || '').trim().toLowerCase();
+  if (value === APP_ROLES.B2C_DRIVER || value === 'driver') {
+    return APP_ROLES.B2C_DRIVER;
+  }
+  return APP_ROLES.B2C_CLIENT;
 }
 
 const rateHits = new Map<string, number[]>();
@@ -53,8 +72,11 @@ export interface PlayReviewSession {
   profile: {
     uid: string;
     phone: string;
-    role: typeof PLAY_REVIEW_ROLE;
+    role: PlayReviewRole;
     name: string;
+    playReview: true;
+    vehicleType?: string;
+    accountStatus?: string;
   };
 }
 
@@ -83,10 +105,84 @@ async function loadOrCreatePlayReviewUser(
   }
 }
 
+async function applyPlayReviewRoleDocs(
+  db: firebaseAdmin.firestore.Firestore,
+  uid: string,
+  role: PlayReviewRole,
+  name: string
+): Promise<void> {
+  const now = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+  const isDriver = role === APP_ROLES.B2C_DRIVER;
+  const accountStatus = isDriver ? 'approved' : 'active';
+
+  await db.collection('users').doc(uid).set(
+    {
+      uid,
+      phone: PLAY_REVIEW_PHONE_E164,
+      role,
+      name,
+      accountStatus,
+      playReview: true,
+      ...(isDriver
+        ? {
+            vehicleType: 'flatbed',
+            vehicleOption: 'normal',
+            documentUploadStatuses: {
+              id: 'uploaded',
+              registration: 'uploaded',
+              permit: 'uploaded',
+              license: 'uploaded',
+            },
+            documentFiles: {
+              id: PLAY_REVIEW_KYC_FILE('id'),
+              registration: PLAY_REVIEW_KYC_FILE('registration'),
+              permit: PLAY_REVIEW_KYC_FILE('permit'),
+              license: PLAY_REVIEW_KYC_FILE('license'),
+            },
+          }
+        : {}),
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await db.collection('customers').doc(uid).set(
+    {
+      uid,
+      fullName: name,
+      phone: PLAY_REVIEW_PHONE_E164,
+      role: APP_ROLES.B2C_CLIENT,
+      playReview: true,
+      accountStatus: 'active',
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  if (isDriver) {
+    await db.collection('drivers').doc(uid).set(
+      {
+        uid,
+        fullName: name,
+        phone: PLAY_REVIEW_PHONE_E164,
+        role: APP_ROLES.B2C_DRIVER,
+        playReview: true,
+        accountStatus: 'approved',
+        vehicleType: 'flatbed',
+        vehicleSize: 'normal',
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  }
+}
+
 export async function issuePlayReviewSession(
   auth: firebaseAdmin.auth.Auth,
-  db: firebaseAdmin.firestore.Firestore
+  db: firebaseAdmin.firestore.Firestore,
+  requestedRole: unknown = PLAY_REVIEW_ROLE
 ): Promise<PlayReviewSession> {
+  const role = parsePlayReviewRole(requestedRole);
   const user = await loadOrCreatePlayReviewUser(auth);
   const uid = user.uid;
 
@@ -97,44 +193,19 @@ export async function issuePlayReviewSession(
     admin: false,
     superuser: false,
     playReview: true,
-    role: PLAY_REVIEW_ROLE,
+    role,
   });
 
-  const now = firebaseAdmin.firestore.FieldValue.serverTimestamp();
   const userRef = db.collection('users').doc(uid);
   const existing = await userRef.get();
   const existingName = existing.exists ? String(existing.data()?.name || '').trim() : '';
+  const name = existingName || PLAY_REVIEW_NAME;
 
-  await userRef.set(
-    {
-      uid,
-      phone: PLAY_REVIEW_PHONE_E164,
-      role: PLAY_REVIEW_ROLE,
-      name: existingName || PLAY_REVIEW_NAME,
-      accountStatus: 'active',
-      playReview: true,
-      updatedAt: now,
-      ...(existing.exists ? {} : { createdAt: now }),
-    },
-    { merge: true }
-  );
-
-  await db.collection('customers').doc(uid).set(
-    {
-      uid,
-      fullName: existingName || PLAY_REVIEW_NAME,
-      phone: PLAY_REVIEW_PHONE_E164,
-      role: PLAY_REVIEW_ROLE,
-      playReview: true,
-      updatedAt: now,
-      ...(existing.exists ? {} : { createdAt: now }),
-    },
-    { merge: true }
-  );
+  await applyPlayReviewRoleDocs(db, uid, role, name);
 
   const customToken = await auth.createCustomToken(uid, {
     playReview: true,
-    role: PLAY_REVIEW_ROLE,
+    role,
   });
 
   return {
@@ -143,8 +214,19 @@ export async function issuePlayReviewSession(
     profile: {
       uid,
       phone: PLAY_REVIEW_PHONE_E164,
-      role: PLAY_REVIEW_ROLE,
-      name: existingName || PLAY_REVIEW_NAME,
+      role,
+      name,
+      playReview: true,
+      ...(role === APP_ROLES.B2C_DRIVER
+        ? { vehicleType: 'flatbed', accountStatus: 'approved' }
+        : { accountStatus: 'active' }),
     },
   };
+}
+
+export function isPlayReviewToken(decoded: unknown): boolean {
+  if (!decoded || typeof decoded !== 'object') return false;
+  const rec = decoded as { playReview?: unknown; phone_number?: string };
+  if (rec.playReview === true) return true;
+  return isPlayReviewPhone(rec.phone_number);
 }

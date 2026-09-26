@@ -65,9 +65,11 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     : undefined;
   const existingNormalized = existingRoleRaw ? normalizeAppRole(existingRoleRaw) : null;
   const roleForWrite: AnyStoredRole =
-    existingNormalized && isRegistrableRole(existingNormalized)
-      ? (existingRoleRaw as AnyStoredRole)
-      : role;
+    profile.playReview === true
+      ? role
+      : existingNormalized && isRegistrableRole(existingNormalized)
+        ? (existingRoleRaw as AnyStoredRole)
+        : role;
 
   // --- users/{uid} (always) -------------------------------------------------
   const userDoc: Omit<FirestoreUserDocument, 'role'> & { role: AnyStoredRole } = {
@@ -87,6 +89,7 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     ...(profile.commercialRegistration
       ? { commercialRegistration: profile.commercialRegistration }
       : {}),
+    ...(profile.playReview ? { playReview: true } : {}),
     ...(isNewUser
       ? {
           accountStatus:

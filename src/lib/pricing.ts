@@ -16,6 +16,7 @@ import {
 } from '@/lib/waterTankerDistance';
 import { auth } from '@/lib/firebase';
 import { tryCountCustomerPaidOrders } from '@/lib/customerOrderCount';
+import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 
 export interface CalculatedPrice {
   /** @deprecated use financials.tripFare */
@@ -205,11 +206,14 @@ export const calculateOrderPrice = async (
         ...(service === 'water_tanker' && waterType ? { waterType } : {}),
       }),
     });
-    if (!response.ok) {
-      throw new Error(await readApiErrorMessage(response, 'Failed to calculate price on server'));
+    if (response.ok) {
+      return readApiJson<CalculatedPrice>(response);
     }
-    return readApiJson<CalculatedPrice>(response);
+    throw new Error(await readApiErrorMessage(response, 'Failed to calculate price on server'));
   } catch (error) {
+    if (!allowsSandboxCheckout()) {
+      throw error instanceof Error ? error : new Error('Failed to calculate price on server');
+    }
     console.warn('[pricing] Server quote unavailable — using built-in rates:', error);
     return buildLocalDevPrice(safeDistanceKm, service, {
       capacity: normalizedCapacity,

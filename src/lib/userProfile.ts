@@ -56,6 +56,8 @@ export interface UserProfile {
   documentFiles?: Partial<Record<DriverDocumentKey, DriverDocumentFileRecord>>;
   /** Driver application moderation status */
   accountStatus?: string;
+  /** Store-reviewer dual-role account (`0500000000`). */
+  playReview?: boolean;
   /** B2B organization fields */
   companyName?: string;
   commercialRegistration?: string;
