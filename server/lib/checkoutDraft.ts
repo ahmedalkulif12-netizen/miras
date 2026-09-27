@@ -16,6 +16,7 @@ import { appendStatusHistory, OrderStatus } from './orderStatus.ts';
 import { assertCustomerCanBook } from './adminCustomers.ts';
 import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { canUseAdminFirestore } from './firebaseAdmin.ts';
+import { sanitizeForFirestore } from './firestoreSanitize.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { debitCustomerWalletOnOrder } from './customerWallet.ts';
 import { toPersistedOrderMoneyFields, normalizeTripFinancials, shouldWaiveServiceFee } from '../../src/domain/financials.ts';
@@ -139,26 +140,28 @@ export async function createCheckoutDraft(
   const draftId = draftRef.id;
   const now = admin.firestore.FieldValue.serverTimestamp();
 
-  await draftRef.set({
-    draftId,
-    userId,
-    payload: {
-      ...body,
-      serviceType,
-      serviceDetails: {
-        ...(body.serviceDetails || {}),
-        ...(capacity ? { capacity, type: capacity } : {}),
-        ...(waterType ? { waterType } : {}),
+  await draftRef.set(
+    sanitizeForFirestore({
+      draftId,
+      userId,
+      payload: {
+        ...body,
+        serviceType,
+        serviceDetails: {
+          ...(body.serviceDetails || {}),
+          ...(capacity ? { capacity, type: capacity } : {}),
+          ...(waterType ? { waterType } : {}),
+        },
       },
-    },
-    financials,
-    quote,
-    status: 'awaiting_payment',
-    previousPaidOrderCount: previousOrdersCount,
-    serviceFeeWaived,
-    createdAt: now,
-    updatedAt: now,
-  });
+      financials,
+      quote,
+      status: 'awaiting_payment',
+      previousPaidOrderCount: previousOrdersCount,
+      serviceFeeWaived,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
 
   return {
     draftId,
@@ -450,7 +453,7 @@ export async function writeBroadcastingOrder(
     promotedAt: now,
   };
 
-  await orderRef.set(orderDoc);
+  await orderRef.set(sanitizeForFirestore(orderDoc));
   console.info('[orders] Broadcasting order written', orderRef.id, { serviceType });
   if (input.debitCustomerWallet) {
     await debitCustomerWalletOnOrder(db, {

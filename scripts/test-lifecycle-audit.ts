@@ -410,6 +410,43 @@ async function run(): Promise<void> {
   assert(meta.draftId === 'abc', 'Moyasar metadata keeps draft id');
   assert(meta.platformFee === '12.5', 'Moyasar metadata stringifies amounts');
   assert(meta.orderId === undefined, 'Moyasar metadata drops nulls');
+  const { sanitizeForFirestore, withDefinedPricingMaps } = await import(
+    '../server/lib/firestoreSanitize.ts'
+  );
+  const { mergePricingConfig } = await import('../src/lib/pricingDefaults.ts');
+  const mergedQuote = mergePricingConfig('furniture_moving', { base_price: 60 });
+  assert(
+    mergedQuote.capacity_prices != null && typeof mergedQuote.capacity_prices === 'object',
+    'merged pricing always has capacity_prices map'
+  );
+  const dirtyDraft = {
+    quote: {
+      pricingSnapshot: {
+        capacity_prices: undefined,
+        extra_km: undefined,
+        tier_prices: { small_truck: { base_price: 60, price_per_km: 1 } },
+      },
+    },
+  };
+  const cleanDraft = sanitizeForFirestore(dirtyDraft) as {
+    quote: { pricingSnapshot: Record<string, unknown> };
+  };
+  assert(
+    JSON.stringify(cleanDraft.quote.pricingSnapshot.capacity_prices) === '{}',
+    'undefined capacity_prices becomes {}'
+  );
+  assert(
+    !('extra_km' in cleanDraft.quote.pricingSnapshot),
+    'undefined snapshot scalars are omitted'
+  );
+  const snapshot = withDefinedPricingMaps({
+    capacity_prices: undefined,
+    base_price: 60,
+  } as Record<string, unknown>);
+  assert(
+    snapshot.capacity_prices != null && typeof snapshot.capacity_prices === 'object',
+    'pricing snapshot defaults capacity_prices'
+  );
   const { parsePlayReviewRole } = await import('../src/lib/playReviewAuth.ts');
   assert(parsePlayReviewRole('b2c_driver') === 'b2c_driver', 'review role parses driver');
   assert(parsePlayReviewRole('driver') === 'b2c_driver', 'review role aliases driver');

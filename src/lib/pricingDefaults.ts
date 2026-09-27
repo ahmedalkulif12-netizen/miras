@@ -109,7 +109,6 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   price_per_km: 0.75,
   free_km: INCLUDED_KM,
   included_km: INCLUDED_KM,
-  max_price: undefined,
   heavy_multiplier: 1,
   cold_multiplier: 1,
   hydraulic_multiplier: 1,
@@ -118,6 +117,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   surge_multiplier: 1.0,
   platform_commission_percentage: 15,
   tier_prices: { ...SERVICE_TIER_PRICES.flatbed },
+  capacity_prices: {},
 };
 
 /** Prefer an existing sibling doc when a service-specific pricing row is absent. */
@@ -266,7 +266,7 @@ function configFromTiers(serviceType: string): PricingConfig {
       ? Object.fromEntries(
           Object.entries(tiers).map(([k, v]) => [k, v.base_price])
         )
-      : undefined;
+      : {};
 
   return {
     base_price: defaultTier.base_price,
@@ -281,7 +281,7 @@ function configFromTiers(serviceType: string): PricingConfig {
     surge_multiplier: 1.0,
     platform_commission_percentage: 15,
     tier_prices: { ...tiers },
-    ...(capacityPrices ? { capacity_prices: capacityPrices } : {}),
+    capacity_prices: capacityPrices,
   };
 }
 
@@ -311,8 +311,8 @@ export function mergePricingConfig(
     ...row,
     included_km: included,
     free_km: INCLUDED_KM,
-    tier_prices: row.tier_prices || defaults.tier_prices,
-    capacity_prices: row.capacity_prices || defaults.capacity_prices,
+    tier_prices: row.tier_prices || defaults.tier_prices || {},
+    capacity_prices: row.capacity_prices || defaults.capacity_prices || {},
     heavy_multiplier: 1,
     cold_multiplier: 1,
     hydraulic_multiplier: 1,
@@ -328,6 +328,8 @@ export function firestorePricingDoc(serviceType: string): Record<string, unknown
     customer_service_fee_percentage: 5,
     included_km: INCLUDED_KM,
     free_km: INCLUDED_KM,
+    capacity_prices: cfg.capacity_prices || {},
+    tier_prices: cfg.tier_prices || {},
     updatedAt: new Date().toISOString(),
   };
 }

@@ -10,6 +10,7 @@ import { canonicalizeServiceType } from '../../src/domain/serviceCategories.ts';
 import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields } from '../../src/domain/financials.ts';
+import { sanitizeForFirestore } from './firestoreSanitize.ts';
 
 /** Max trip / driver-to-client distance accepted (km). */
 const MAX_DISTANCE_KM = 3000;
@@ -280,7 +281,7 @@ export async function createOrderSecure(
     updatedAt: now,
   };
 
-  const ref = await db.collection('orders').add(orderDoc);
+  const ref = await db.collection('orders').add(sanitizeForFirestore(orderDoc));
 
   return {
     orderId: ref.id,

@@ -87,6 +87,20 @@ export type AdminCredentialMode = 'cert' | 'adc' | 'project-only';
 
 let credentialMode: AdminCredentialMode = 'project-only';
 let adminFirestoreReady = false;
+let firestoreSettingsApplied = false;
+
+/** Must run before any collection read/write. Drops nested `undefined` on set/update. */
+export function applyAdminFirestoreSettings(
+  db: admin.firestore.Firestore = admin.firestore()
+): void {
+  if (firestoreSettingsApplied) return;
+  try {
+    db.settings({ ignoreUndefinedProperties: true });
+  } catch (error) {
+    console.warn('[firebase-admin] Firestore settings already applied:', error);
+  }
+  firestoreSettingsApplied = true;
+}
 
 function isCloudRuntime(): boolean {
   return Boolean(
@@ -118,6 +132,7 @@ export function getAdminCredentialMode(): AdminCredentialMode {
  */
 export function initFirebaseAdmin(projectId: string): admin.app.App {
   if (admin.apps.length) {
+    applyAdminFirestoreSettings();
     return admin.app();
   }
 
@@ -126,10 +141,12 @@ export function initFirebaseAdmin(projectId: string): admin.app.App {
     adminFirestoreReady = true;
     credentialMode = 'cert';
     console.info('[firebase-admin] Initialized with service account env credentials');
-    return admin.initializeApp({
+    const app = admin.initializeApp({
       credential: admin.credential.cert(fromEnv),
       projectId: fromEnv.projectId || projectId || undefined,
     });
+    applyAdminFirestoreSettings(admin.firestore());
+    return app;
   }
 
   for (const filePath of candidateCredentialFiles()) {
@@ -138,10 +155,12 @@ export function initFirebaseAdmin(projectId: string): admin.app.App {
       adminFirestoreReady = true;
       credentialMode = 'cert';
       console.info('[firebase-admin] Initialized with service account file');
-      return admin.initializeApp({
+      const app = admin.initializeApp({
         credential: admin.credential.cert(fromFile),
         projectId: fromFile.projectId || projectId || undefined,
       });
+      applyAdminFirestoreSettings(admin.firestore());
+      return app;
     }
   }
 
@@ -154,6 +173,7 @@ export function initFirebaseAdmin(projectId: string): admin.app.App {
       adminFirestoreReady = true;
       credentialMode = 'adc';
       console.info('[firebase-admin] Initialized with application default credentials');
+      applyAdminFirestoreSettings(admin.firestore());
       return app;
     } catch (error) {
       console.warn(
@@ -169,7 +189,9 @@ export function initFirebaseAdmin(projectId: string): admin.app.App {
     '[firebase-admin] No service account on this machine — Admin Firestore writes are disabled. ' +
       'publish-after-checkout will use the caller ID token or return clientWriteRequired (no 500).'
   );
-  return admin.initializeApp(projectId ? { projectId } : undefined);
+  const app = admin.initializeApp(projectId ? { projectId } : undefined);
+  applyAdminFirestoreSettings(admin.firestore());
+  return app;
 }
 
 export function isFirebaseAdminCredentialError(error: unknown): boolean {

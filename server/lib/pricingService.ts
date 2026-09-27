@@ -9,6 +9,7 @@ import {
   pricingDocCandidates,
 } from '../../src/lib/pricingDefaults.ts';
 import { canUseAdminFirestore } from './firebaseAdmin.ts';
+import { withDefinedPricingMaps } from './firestoreSanitize.ts';
 import {
   WATER_TANKER_MOCK_DISTANCE_KM,
   sanitizeWaterTankerDistanceKm,
@@ -135,7 +136,7 @@ export function createPricingService(db: admin.firestore.Firestore) {
       waiveServiceFee: isServiceFeeFree,
     });
 
-    const pricingSnapshot = {
+    const pricingSnapshot = withDefinedPricingMaps({
       ...pricing,
       platform_commission_percentage: 15,
       customer_service_fee_percentage: 5,
@@ -145,13 +146,13 @@ export function createPricingService(db: admin.firestore.Firestore) {
       ...(fare.capacity ? { capacity: fare.capacity } : {}),
       ...(fare.waterType ? { waterType: fare.waterType } : {}),
       driver_distance_km: safeDistance,
-      extra_km: fare.extraKm,
+      extra_km: fare.extraKm ?? 0,
       line_base: fare.base,
       line_extra_km_cost: fare.extraKmCost,
       line_subtotal: lineSubtotal,
       price_per_km: fare.rate,
       base_price: fare.base,
-    };
+    });
 
     return {
       ...toLegacyPricingFields(financials, {

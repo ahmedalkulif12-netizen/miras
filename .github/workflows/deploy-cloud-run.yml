@@ -1,18 +1,20 @@
 name: Deploy Cloud Run API
 
-# Builds and deploys hamula-api on every push to main (same flags as
-# scripts/deploy-cloud-run.ps1). Firebase Hosting rewrites /api/**, /health,
-# /qr, and /download to this service — this workflow does not deploy the SPA.
+# Builds and deploys hamula-api on every push to main.
+# Firebase Hosting rewrites /api/**, /health, /qr, and /download to this service.
 #
-# Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
-#   GCP_SA_KEY              — GCP service account JSON (Cloud Run + Cloud Build)
-#   MOYASAR_SECRET_KEY      — sk_test_* while MIRAS_DEPLOY_ENV=staging
-#   MOYASAR_WEBHOOK_SECRET  — webhook HMAC secret (staging may fall back)
+# Required GitHub Actions secret (repo or "production" environment):
+#   GCP_SA_KEY                 — GCP service account JSON (Cloud Run Admin + Cloud Build)
+#   or FIREBASE_SERVICE_ACCOUNT — same JSON shape; used by Deploy Hosting
 #
-# Optional repository variables:
-#   MIRAS_DEPLOY_ENV        — staging (default, matches the PowerShell script) or production
-#   CLOUD_RUN_APP_URL       — https://hamula-cfc6c.web.app
-#   APP_CHECK_ENFORCE       — false (default)
+# Optional (keep existing Cloud Run values when omitted):
+#   MOYASAR_SECRET_KEY         — sk_test_* while MIRAS_DEPLOY_ENV=staging
+#   MOYASAR_WEBHOOK_SECRET     — webhook HMAC secret
+#
+# Optional repository / environment variables:
+#   MIRAS_DEPLOY_ENV           — staging (default) or production
+#   CLOUD_RUN_APP_URL          — https://hamula-cfc6c.web.app
+#   APP_CHECK_ENFORCE          — false (default)
 
 on:
   push:
@@ -34,50 +36,64 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Hosting secrets (FIREBASE_SERVICE_ACCOUNT, Moyasar keys) live here.
+    environment: production
     permissions:
       contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate deploy env and Moyasar keys
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build API bundle
+        run: npm run build:server
+
+      - name: Validate deploy env and credentials
         env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
           MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
+          if [[ -z "${GCP_SA_KEY}" && -z "${FIREBASE_SERVICE_ACCOUNT}" ]]; then
+            echo "::error::Missing GCP_SA_KEY or FIREBASE_SERVICE_ACCOUNT. Add a GCP service account JSON (Cloud Run Admin + Cloud Build Editor) on hamula-cfc6c to the production environment or repo Actions secrets."
+            exit 1
+          fi
           if [[ -z "${MOYASAR_SECRET_KEY}" ]]; then
-            echo "Missing GitHub secret MOYASAR_SECRET_KEY (see scripts/deploy-cloud-run.ps1)."
+            echo "MOYASAR_SECRET_KEY is not in GitHub secrets — keeping the key already set on Cloud Run."
+          elif [[ "${DEPLOY_ENV}" == "staging" && "${MOYASAR_SECRET_KEY}" != sk_test_* ]]; then
+            echo "Staging Cloud Run requires Moyasar TEST key (sk_test_*)."
+            exit 1
+          elif [[ "${DEPLOY_ENV}" == "production" && "${MOYASAR_SECRET_KEY}" != sk_live_* ]]; then
+            echo "Production Cloud Run requires Moyasar LIVE key (sk_live_*)."
             exit 1
           fi
           if [[ -z "${MOYASAR_WEBHOOK_SECRET}" ]]; then
             if [[ "${DEPLOY_ENV}" == "staging" ]]; then
-              echo "MOYASAR_WEBHOOK_SECRET unset — using staging fallback whsec_test_dummy"
-              echo "MOYASAR_WEBHOOK_SECRET=whsec_test_dummy" >> "$GITHUB_ENV"
+              echo "MOYASAR_WEBHOOK_SECRET unset — Cloud Run keeps its current value (or staging can use whsec_test_dummy)."
             else
-              echo "Missing GitHub secret MOYASAR_WEBHOOK_SECRET (required for production)."
-              exit 1
+              echo "MOYASAR_WEBHOOK_SECRET unset — keeping the secret already set on Cloud Run."
             fi
-          else
-            echo "MOYASAR_WEBHOOK_SECRET=${MOYASAR_WEBHOOK_SECRET}" >> "$GITHUB_ENV"
           fi
           if [[ "${APP_URL}" != https://* ]]; then
             echo "APP_URL must be HTTPS for Moyasar callbacks (got: ${APP_URL})"
-            exit 1
-          fi
-          if [[ "${DEPLOY_ENV}" == "staging" && "${MOYASAR_SECRET_KEY}" != sk_test_* ]]; then
-            echo "Staging Cloud Run requires Moyasar TEST key (sk_test_*)."
-            exit 1
-          fi
-          if [[ "${DEPLOY_ENV}" == "production" && "${MOYASAR_SECRET_KEY}" != sk_live_* ]]; then
-            echo "Production Cloud Run requires Moyasar LIVE key (sk_live_*)."
             exit 1
           fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          credentials_json: ${{ secrets.GCP_SA_KEY || secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
@@ -92,27 +108,39 @@ jobs:
             artifactregistry.googleapis.com \
             --project="${PROJECT_ID}"
 
-      - name: Write Cloud Run env file
+      - name: Deploy hamula-api
         env:
           MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
+          MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
         run: |
-          cat > /tmp/hamula-api.env.yaml <<EOF
-          NODE_ENV: production
-          MIRAS_PROCESS_ROLE: api
-          MIRAS_DEPLOY_ENV: ${DEPLOY_ENV}
-          HAMOULA_DEPLOY_ENV: ${DEPLOY_ENV}
-          FIREBASE_PROJECT_ID: ${PROJECT_ID}
-          MIRAS_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}
-          HAMOULA_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}
-          APP_URL: ${APP_URL}
-          APP_CHECK_ENFORCE: ${APP_CHECK_ENFORCE}
-          APP_STORE_APPLE_ID: "6807503584"
-          MOYASAR_SECRET_KEY: ${MOYASAR_SECRET_KEY}
-          MOYASAR_WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET}
-          EOF
-
-      - name: Deploy hamula-api
-        run: |
+          set -euo pipefail
+          UPDATE_VARS="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=${DEPLOY_ENV},HAMOULA_DEPLOY_ENV=${DEPLOY_ENV},FIREBASE_PROJECT_ID=${PROJECT_ID},MIRAS_EXPECTED_FIREBASE_PROJECT=${PROJECT_ID},HAMOULA_EXPECTED_FIREBASE_PROJECT=${PROJECT_ID},APP_URL=${APP_URL},APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE},APP_STORE_APPLE_ID=6807503584"
+          EXTRA=()
+          if [[ -n "${MOYASAR_SECRET_KEY}" || -n "${MOYASAR_WEBHOOK_SECRET}" ]]; then
+            {
+              echo "NODE_ENV: production"
+              echo "MIRAS_PROCESS_ROLE: api"
+              echo "MIRAS_DEPLOY_ENV: ${DEPLOY_ENV}"
+              echo "HAMOULA_DEPLOY_ENV: ${DEPLOY_ENV}"
+              echo "FIREBASE_PROJECT_ID: ${PROJECT_ID}"
+              echo "MIRAS_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}"
+              echo "HAMOULA_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}"
+              echo "APP_URL: ${APP_URL}"
+              echo "APP_CHECK_ENFORCE: ${APP_CHECK_ENFORCE}"
+              echo "APP_STORE_APPLE_ID: \"6807503584\""
+              if [[ -n "${MOYASAR_SECRET_KEY}" ]]; then
+                echo "MOYASAR_SECRET_KEY: ${MOYASAR_SECRET_KEY}"
+              fi
+              if [[ -n "${MOYASAR_WEBHOOK_SECRET}" ]]; then
+                echo "MOYASAR_WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET}"
+              else
+                echo "MOYASAR_WEBHOOK_SECRET: whsec_test_dummy"
+              fi
+            } > /tmp/hamula-api.env.yaml
+            EXTRA+=(--env-vars-file=/tmp/hamula-api.env.yaml)
+          else
+            EXTRA+=(--update-env-vars="${UPDATE_VARS}")
+          fi
           gcloud run deploy "${SERVICE_NAME}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
@@ -125,7 +153,7 @@ jobs:
             --min-instances=0 \
             --max-instances=10 \
             --quiet \
-            --env-vars-file=/tmp/hamula-api.env.yaml
+            "${EXTRA[@]}"
 
       - name: Smoke-test /health
         run: |
