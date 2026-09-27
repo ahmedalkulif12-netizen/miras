@@ -3,9 +3,9 @@ name: Deploy Cloud Run API
 # Builds and deploys hamula-api on every push to main.
 # Firebase Hosting rewrites /api/**, /health, /qr, and /download to this service.
 #
-# Required GitHub Actions secret (repo or "production" environment):
-#   GCP_SA_KEY                 — GCP service account JSON (Cloud Run Admin + Cloud Build)
-#   or FIREBASE_SERVICE_ACCOUNT — same JSON shape; used by Deploy Hosting
+# Required: GitHub Actions authenticates via Workload Identity Federation
+# (pool github-actions / provider github → github-actions-cloudrun@hamula-cfc6c).
+# Optional JSON fallback: GCP_SA_KEY or FIREBASE_SERVICE_ACCOUNT.
 #
 # Optional (keep existing Cloud Run values when omitted):
 #   MOYASAR_SECRET_KEY         — sk_test_* while MIRAS_DEPLOY_ENV=staging
@@ -57,18 +57,12 @@ jobs:
       - name: Build API bundle
         run: npm run build:server
 
-      - name: Validate deploy env and credentials
+      - name: Validate deploy env
         env:
-          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
           MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
-          if [[ -z "${GCP_SA_KEY}" && -z "${FIREBASE_SERVICE_ACCOUNT}" ]]; then
-            echo "::error::Missing GCP_SA_KEY or FIREBASE_SERVICE_ACCOUNT. Add a GCP service account JSON (Cloud Run Admin + Cloud Build Editor) on hamula-cfc6c to the production environment or repo Actions secrets."
-            exit 1
-          fi
           if [[ -z "${MOYASAR_SECRET_KEY}" ]]; then
             echo "MOYASAR_SECRET_KEY is not in GitHub secrets — keeping the key already set on Cloud Run."
           elif [[ "${DEPLOY_ENV}" == "staging" && "${MOYASAR_SECRET_KEY}" != sk_test_* ]]; then
@@ -79,18 +73,23 @@ jobs:
             exit 1
           fi
           if [[ -z "${MOYASAR_WEBHOOK_SECRET}" ]]; then
-            if [[ "${DEPLOY_ENV}" == "staging" ]]; then
-              echo "MOYASAR_WEBHOOK_SECRET unset — Cloud Run keeps its current value (or staging can use whsec_test_dummy)."
-            else
-              echo "MOYASAR_WEBHOOK_SECRET unset — keeping the secret already set on Cloud Run."
-            fi
+            echo "MOYASAR_WEBHOOK_SECRET unset — keeping the secret already set on Cloud Run."
           fi
           if [[ "${APP_URL}" != https://* ]]; then
             echo "APP_URL must be HTTPS for Moyasar callbacks (got: ${APP_URL})"
             exit 1
           fi
 
-      - name: Authenticate to Google Cloud
+      - name: Authenticate to Google Cloud (Workload Identity)
+        id: auth_wif
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/191963635866/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-actions-cloudrun@hamula-cfc6c.iam.gserviceaccount.com
+
+      - name: Authenticate to Google Cloud (JSON fallback)
+        if: steps.auth_wif.outcome == 'failure'
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY || secrets.FIREBASE_SERVICE_ACCOUNT }}
