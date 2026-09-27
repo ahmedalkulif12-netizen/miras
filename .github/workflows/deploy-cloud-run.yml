@@ -99,14 +99,6 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Enable Cloud Run APIs
-        run: |
-          gcloud services enable \
-            run.googleapis.com \
-            cloudbuild.googleapis.com \
-            artifactregistry.googleapis.com \
-            --project="${PROJECT_ID}"
-
       - name: Deploy hamula-api
         env:
           MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
