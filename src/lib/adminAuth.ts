@@ -8,7 +8,7 @@ import type { RegistrableRole } from '@/domain/user-schema';
 import { APP_ROLES } from '@/domain/user-schema';
 
 /**
- * Sole authorized Miras Admin phone (E.164).
+ * Sole authorized JZ Logistics Admin phone (E.164).
  * Must match server AUTHORIZED_ADMIN_PHONES (0541330720 → +966541330720).
  * This number is an unconditional super-admin — no Firestore ACL lookup required.
  */
@@ -48,7 +48,7 @@ export function buildSuperAdminProfile(
   return {
     uid,
     role: APP_ROLES.ADMIN,
-    name: 'Miras Admin',
+    name: 'JZ Logistics Admin',
     phone: e164,
   };
 }
@@ -76,7 +76,7 @@ export async function establishAdminSession(): Promise<AdminSessionResponse> {
         return {
           role: 'admin',
           uid: user.uid,
-          name: data.name || 'Miras Admin',
+          name: data.name || 'JZ Logistics Admin',
           phone: data.phone || authPhone,
         };
       }
@@ -95,7 +95,7 @@ export async function establishAdminSession(): Promise<AdminSessionResponse> {
     return {
       role: 'admin',
       uid: user.uid,
-      name: 'Miras Admin',
+      name: 'JZ Logistics Admin',
       phone: authPhone,
     };
   }
@@ -138,7 +138,7 @@ export async function probeAdminAccess(): Promise<AdminSessionResponse> {
     return {
       role: 'admin',
       uid: user.uid,
-      name: 'Miras Admin',
+      name: 'JZ Logistics Admin',
       phone: authPhone,
     };
   }

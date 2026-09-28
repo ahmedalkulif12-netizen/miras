@@ -1,5 +1,5 @@
 const HTML_RESPONSE_HINT =
-  'The API returned HTML instead of JSON. Firebase Hosting is serving the SPA for /api/** — deploy a healthy Miras API Cloud Run service (hamula-api) and keep /api/** + /health rewrites in firebase.json, or set VITE_API_ORIGIN to the Cloud Run URL. Locally use `npm run dev`.';
+  'The API returned HTML instead of JSON. Firebase Hosting is serving the SPA for /api/** — deploy a healthy JZ Logistics API Cloud Run service (hamula-api) and keep /api/** + /health rewrites in firebase.json, or set VITE_API_ORIGIN to the Cloud Run URL. Locally use `npm run dev`.';
 
 export async function readApiJson<T>(res: Response): Promise<T> {
   const contentType = res.headers.get('content-type') ?? '';

@@ -522,7 +522,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await assertCanRequestOtp();
     // Reject before SMS so unauthorized numbers never receive an admin OTP.
     if (!isAuthorizedAdminPhone(phone)) {
-      throw new AdminAccessDeniedError('This phone number is not authorized for Miras Admin');
+      throw new AdminAccessDeniedError('This phone number is not authorized for JZ Logistics Admin');
     }
     const phoneE164 = await sendPhoneOtp(phone, recaptchaContainerId);
     setPendingAdminLogin({ phone, phoneE164 });
@@ -762,7 +762,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Super-admin phone: grant immediately — never block on /api or Firestore ACL.
     if (isAuthorizedAdminPhone(authPhone)) {
-      let sessionName = 'Miras Admin';
+      let sessionName = 'JZ Logistics Admin';
       let sessionPhone = normalizePhoneE164(authPhone);
       try {
         const session = await establishAdminSession();

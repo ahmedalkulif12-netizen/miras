@@ -740,7 +740,7 @@ async function startServer() {
       if (!isAuthorizedAdminPhone(authPhone)) {
         await clearAdminCustomClaims(admin.auth(), uid).catch(() => undefined);
         return res.status(403).json({
-          error: 'Not authorized for Miras Admin — access is restricted to the designated admin phone',
+          error: 'Not authorized for JZ Logistics Admin — access is restricted to the designated admin phone',
         });
       }
 
@@ -748,7 +748,7 @@ async function startServer() {
         (await resolveAdminRecordForSession(db, uid, authPhone)) ||
         ({
           uid,
-          name: 'Miras Admin',
+          name: 'JZ Logistics Admin',
           phone: authPhone!,
           active: true,
         } as const);
@@ -1774,8 +1774,8 @@ async function startServer() {
       ].filter(Boolean);
       const moyasarDescription =
         waterBits.length > 0
-          ? `Miras Order - ${serviceType} (${waterBits.join('/')})`
-          : `Miras Order - ${serviceType}`;
+          ? `JZ Logistics Order - ${serviceType} (${waterBits.join('/')})`
+          : `JZ Logistics Order - ${serviceType}`;
 
       const moyasarPayload = {
         amount: amountInHalalas,

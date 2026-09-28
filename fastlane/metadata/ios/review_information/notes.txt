@@ -1,4 +1,4 @@
-Miras uses location only while a trip is active so the customer can track the driver. Camera and photo library are used for driver documents and delivery photos.
+JZ Logistics uses location only while a trip is active so the customer can track the driver. Camera and photo library are used for driver documents and delivery photos.
 
 Sign-in is live Saudi mobile OTP via Firebase Phone Auth. There is no static demo account and no mock OTP.
 
@@ -13,4 +13,4 @@ Payments go through Moyasar hosted checkout. Callback: https://hamula-cfc6c.web.
 
 Privacy: https://ahmedalkulif12-netizen.github.io/miras-privacy/
 Terms: https://hamula-cfc6c.web.app/terms
-Support: support@miras.com
+Support: support@jzlogistics.com

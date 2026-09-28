@@ -74,12 +74,12 @@ async function main() {
   if (!nativeMaps.includes('https://www.google.com/maps/dir/?api=1&destination=')) {
     failures.push('nativeMaps.ts must use the Google Maps dir URL (api=1&destination=)');
   }
-  if (!pbxproj.includes('MARKETING_VERSION = 1.0.1;')) {
-    failures.push('Xcode MARKETING_VERSION must be 1.0.1 for this App Store submission');
+  if (!pbxproj.includes('MARKETING_VERSION = 1.0.2;')) {
+    failures.push('Xcode MARKETING_VERSION must be 1.0.2 for this App Store submission');
   }
   const iosBuild = Number((pbxproj.match(/CURRENT_PROJECT_VERSION = (\d+);/) || [])[1] || 0);
-  if (!Number.isFinite(iosBuild) || iosBuild < 63) {
-    failures.push('Xcode CURRENT_PROJECT_VERSION must be >= 63 for this App Store / TestFlight train');
+  if (!Number.isFinite(iosBuild) || iosBuild < 64) {
+    failures.push('Xcode CURRENT_PROJECT_VERSION must be >= 64 for this App Store / TestFlight train');
   }
   if (!infoPlist.includes('<key>ITSAppUsesNonExemptEncryption</key>') || !infoPlist.includes('<false/>')) {
     failures.push('Info.plist must set ITSAppUsesNonExemptEncryption to false');

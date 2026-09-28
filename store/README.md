@@ -1,4 +1,4 @@
-# Miras store listing assets
+# JZ Logistics store listing assets
 
 Generated from the 29 Aug 2026 phone captures. Safari chrome and the local IP bar are cropped. Arabic UI is used for both `ar` and `en-US` listing folders until English screenshots exist.
 
@@ -24,7 +24,7 @@ Fastlane copies: `fastlane/metadata/android/ar/images/` and `en-US/images/`.
 
 Fastlane copies: `fastlane/screenshots/ar-SA/` and `en-US/` (6.7" set).
 
-Listing copy (name, subtitle, description, keywords, review notes) lives in `fastlane/metadata/ios/`. Privacy URL: https://ahmedalkulif12-netizen.github.io/miras-privacy/. Support email: support@miras.com.
+Listing copy (name, subtitle, description, keywords, review notes) lives in `fastlane/metadata/ios/`. Privacy URL: https://ahmedalkulif12-netizen.github.io/miras-privacy/. Support email: support@jzlogistics.com.
 
 ## iOS App Store Connect checklist
 
@@ -50,7 +50,7 @@ Play Data safety answers: `store/play-console/data-safety.json`
 Play listing copy: `fastlane/metadata/android/{en-US,ar}/`
 App Links: set `VITE_ANDROID_SHA256_CERT_FINGERPRINTS` then `npm run deploy:hosting:store`
 Terms (SPA): https://hamula-cfc6c.web.app/terms
-Support: support@miras.com
+Support: support@jzlogistics.com
 
 Archive/upload cannot be done from Windows.
 

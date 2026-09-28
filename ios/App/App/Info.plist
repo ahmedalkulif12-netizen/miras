@@ -12,7 +12,7 @@
 		<string>en</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-        <string>مَرَاس</string>
+        <string>JZ Logistics</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CFBundleExecutable</key>
@@ -22,7 +22,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>JZ Logistics</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -70,13 +70,13 @@
 		</dict>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>تستخدم مَرَاس موقعك أثناء استخدام التطبيق لتحديد مواقع الاستلام والتوصيل ولعرض موقع السائق للعميل أثناء الرحلات النشطة. Miras uses your location while you use the app to set pickup and drop-off points and to share a driver's live position with the customer during an active delivery.</string>
+	<string>تستخدم JZ Logistics موقعك أثناء استخدام التطبيق لتحديد مواقع الاستلام والتوصيل ولعرض موقع السائق للعميل أثناء الرحلات النشطة. JZ Logistics uses your location while you use the app to set pickup and drop-off points and to share a driver's live position with the customer during an active delivery.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>تستخدم مَرَاس الكاميرا لرفع مستندات السائق وصور التسليم. Miras may use the camera to upload driver documents and delivery photos.</string>
+	<string>تستخدم JZ Logistics الكاميرا لرفع مستندات السائق وصور التسليم. JZ Logistics may use the camera to upload driver documents and delivery photos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>تستخدم مَرَاس مكتبة الصور لإرفاق المستندات وصور التسليم. Miras may access your photo library to attach documents and delivery photos.</string>
+	<string>تستخدم JZ Logistics مكتبة الصور لإرفاق المستندات وصور التسليم. JZ Logistics may access your photo library to attach documents and delivery photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>قد تحفظ مَرَاس صور التسليم في مكتبة الصور. Miras may save delivery photos to your photo library.</string>
+	<string>قد تحفظ JZ Logistics صور التسليم في مكتبة الصور. JZ Logistics may save delivery photos to your photo library.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>

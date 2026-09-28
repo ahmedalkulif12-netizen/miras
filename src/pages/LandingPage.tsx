@@ -26,18 +26,18 @@ const LandingPage: React.FC = () => {
   const registerPath = resolveRegisterEntryPath(loading ? null : profile);
 
   return (
-    <div className="flex flex-col min-h-dvh bg-blue-50/50">
+    <div className="flex flex-col min-h-dvh bg-[#F6F6F4]">
       {/* Header */}
-      <header className="sticky top-0 w-full z-50 bg-blue-50/90 backdrop-blur-xl border-b border-stone-200/50 app-header-safe">
+      <header className="sticky top-0 w-full z-50 bg-black text-white border-b border-black app-header-safe">
         <div className="max-w-7xl mx-auto px-4 py-4 md:py-5 flex justify-between items-center gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <BrandLogo size={32} withChip withWordmark />
+            <BrandLogo size={32} withWordmark onDark />
           </div>
-          <nav className="hidden md:flex gap-10 text-sm font-semibold text-neutral-600">
+          <nav className="hidden md:flex gap-10 text-sm font-semibold text-white/80">
             <a href="#services" className="hover:text-primary transition-colors">{t('services')}</a>
             <a href="#features" className="hover:text-primary transition-colors">{t('features')}</a>
             <a href="#contact" className="hover:text-primary transition-colors">{t('contact')}</a>
-            <Link to="/admin/login" className="flex items-center gap-2 text-neutral-400 hover:text-neutral-900 transition-all group" title="إدارة المنصة">
+            <Link to="/admin/login" className="flex items-center gap-2 text-white/50 hover:text-[#FFCC00] transition-all group" title="إدارة المنصة">
               <Shield size={18} className="group-hover:fill-primary/20 group-hover:text-primary transition-all" />
               <span className="text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-all">للمدير</span>
             </Link>
@@ -46,20 +46,20 @@ const LandingPage: React.FC = () => {
             <LanguageToggle className="hidden sm:inline-flex" />
             <Link
               to={loginPath}
-              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full border border-neutral-200 text-xs sm:text-sm font-bold text-neutral-800 hover:bg-neutral-900 hover:text-white hover:border-neutral-900 transition-all shadow-sm text-center leading-tight"
+              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full border border-white/25 text-xs sm:text-sm font-bold text-white hover:bg-white hover:text-black transition-all text-center leading-tight"
             >
               {t('auth_login')}
             </Link>
             <Link
               to={registerPath}
-              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full bg-neutral-900 text-white text-xs sm:text-sm font-bold hover:bg-neutral-800 transition-all shadow-sm text-center leading-tight"
+              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full bg-[#FFCC00] text-black text-xs sm:text-sm font-bold hover:bg-[#ffe14d] transition-all text-center leading-tight"
             >
               {t('auth_register')}
             </Link>
             <LanguageToggle compact className="sm:hidden" />
             <button
               type="button"
-              className="md:hidden w-11 h-11 rounded-2xl border border-neutral-200 bg-white flex items-center justify-center text-neutral-800"
+              className="md:hidden w-11 h-11 rounded-2xl border border-white/20 bg-black flex items-center justify-center text-white"
               aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
               aria-expanded={mobileNavOpen}
               onClick={() => setMobileNavOpen((open) => !open)}
@@ -69,27 +69,27 @@ const LandingPage: React.FC = () => {
           </div>
         </div>
         {mobileNavOpen && (
-          <div className="md:hidden border-t border-stone-200/70 bg-white/95 backdrop-blur-xl px-4 py-4 space-y-2">
-            <a href="#services" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-neutral-800 hover:bg-stone-50">
+          <div className="md:hidden border-t border-white/10 bg-black px-4 py-4 space-y-2">
+            <a href="#services" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-white hover:bg-white/10">
               {t('services')}
             </a>
-            <a href="#features" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-neutral-800 hover:bg-stone-50">
+            <a href="#features" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-white hover:bg-white/10">
               {t('features')}
             </a>
-            <a href="#contact" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-neutral-800 hover:bg-stone-50">
+            <a href="#contact" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-white hover:bg-white/10">
               {t('contact')}
             </a>
             <Link
               to={loginPath}
               onClick={closeMobileNav}
-              className="block px-4 py-3 rounded-2xl font-bold text-center border border-neutral-200 text-neutral-800"
+              className="block px-4 py-3 rounded-2xl font-bold text-center border border-white/25 text-white"
             >
               {t('auth_login')}
             </Link>
             <Link
               to={registerPath}
               onClick={closeMobileNav}
-              className="block px-4 py-3 rounded-2xl font-bold text-center bg-neutral-900 text-white"
+              className="block px-4 py-3 rounded-2xl font-bold text-center bg-[#FFCC00] text-black"
             >
               {t('auth_register')}
             </Link>

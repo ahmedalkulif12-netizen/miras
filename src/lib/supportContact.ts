@@ -5,7 +5,7 @@
  */
 
 /** Canonical public support inbox — never fall back to a personal address. */
-export const OFFICIAL_SUPPORT_EMAIL = 'support@miras.com';
+export const OFFICIAL_SUPPORT_EMAIL = 'support@jzlogistics.com';
 
 function readEnv(name: string): string {
   try {

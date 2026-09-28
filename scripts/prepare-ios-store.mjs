@@ -25,7 +25,7 @@ iOS store prep finished (icon + in-repo checks).
 
 Still manual (cannot be done in this repo):
   1. Copy .env.store.example → .env.production and fill Moyasar live keys, webhook secret, App Check.
-  2. Create support@miras.com mailbox (or Gmail forward) and set SMTP_PASS / IMAP_PASS (App Password).
+  2. Create support@jzlogistics.com mailbox (or Gmail forward) and set SMTP_PASS / IMAP_PASS (App Password).
   3. Firebase Console → Phone numbers for testing → paste into fastlane/metadata/ios/review_information/
   4. npm run generate:store-screenshots (needs store/incoming captures) then upload 6.7" shots in App Store Connect.
   5. On a Mac: npm run cap:sync:ios → Xcode team 4TRJXRYK8A, bundle com.ahmed.miras → Archive → TestFlight.

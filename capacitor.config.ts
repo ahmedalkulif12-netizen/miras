@@ -2,19 +2,20 @@ import type { CapacitorConfig } from '@capacitor/cli';
 import { KeyboardResize } from '@capacitor/keyboard';
 
 /**
- * Miras Capacitor config — Android + iOS.
+ * JZ Logistics Capacitor config — Android + iOS.
  * webDir must match Vite `dist` output from `npm run build`.
  *
  * Branding:
- * - Web UI uses `BrandLogo` (`miras-badge.png` + مَرَاس / Miras wordmark).
+ * - Display name is JZ Logistics. Launcher art comes from app_icon.png
+ *   (fallback: src/components/jz-logo.svg) via scripts/generate-native-assets.mjs.
  * - Native splash drawable name remains `splash` (androidSplashResourceName).
- *   Replace android/ios splash & launcher assets from miras-badge.png when shipping.
  */
 const config: CapacitorConfig = {
-  // Android applicationId stays com.miras.app in Gradle.
-  // iOS App Store / TestFlight bundle ID is com.ahmed.miras (Xcode project).
+  // Registered store / Firebase identities. Do not rename without new
+  // google-services.json, GoogleService-Info.plist, and store listings.
+  // Android applicationId: com.miras.app. iOS bundle ID: com.ahmed.miras.
   appId: 'com.miras.app',
-  appName: 'مَرَاس',
+  appName: 'JZ Logistics',
   webDir: 'dist',
   // Serve the SPA from the local Capacitor host (bundled assets).
   server: {
@@ -43,7 +44,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 0,
       launchAutoHide: false,
-      backgroundColor: '#F8F9FB',
+      backgroundColor: '#000000',
       showSpinner: false,
       androidSplashResourceName: 'splash',
       androidScaleType: 'CENTER_CROP',

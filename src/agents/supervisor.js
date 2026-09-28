@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * Supervisor Agent — LangGraph coordinator for Miras.
+ * Supervisor Agent — LangGraph coordinator for JZ Logistics.
  * Routes admin tasks to specialized workers, then pauses on the
  * `approval` node until the admin replies OK by email (Nodemailer).
  */
@@ -84,7 +84,7 @@ async function llmRoute(task) {
     const response = await ai.models.generateContent({
       model: process.env.MIRAS_AGENT_MODEL || 'gemini-2.0-flash',
       contents:
-        'Classify this Miras admin task into exactly one label: developer, firebase, email, payouts, chat.\n' +
+        'Classify this JZ Logistics admin task into exactly one label: developer, firebase, email, payouts, chat.\n' +
         'developer = local code/files. firebase = Firestore/backend. email = customer support mail. ' +
         'payouts = driver withdrawals. chat = greeting/help/unknown.\n' +
         `Task: ${String(task).slice(0, 2000)}\nLabel:`,
@@ -102,9 +102,9 @@ async function llmRoute(task) {
 
 function helpText() {
   return [
-    'Miras Supervisor',
+    'JZ Logistics Supervisor',
     'Email is the admin channel. Sensitive actions pause until you reply OK.',
-    `Support mailbox: ${process.env.MIRAS_SUPPORT_EMAIL || 'support@miras.com'}`,
+    `Support mailbox: ${process.env.MIRAS_SUPPORT_EMAIL || 'support@jzlogistics.com'}`,
     '',
     'Workers:',
     '• developer — `read src/lib/foo.ts` / `write path.ts ```code````',
@@ -381,7 +381,7 @@ export async function resumeWithAdminReply(threadId, reply) {
 export function formatApprovalMessage(interruptValue, threadId) {
   const payload = interruptValue || {};
   return [
-    'Miras — approval required',
+    'JZ Logistics — approval required',
     `Worker: ${payload.worker || 'unknown'}`,
     `Action: ${payload.summary || 'sensitive operation'}`,
     payload.payloadPreview && payload.payloadPreview !== payload.summary
@@ -396,7 +396,7 @@ export function formatApprovalMessage(interruptValue, threadId) {
 }
 
 /**
- * Notify the admin via Nodemailer from support@miras.com.
+ * Notify the admin via Nodemailer from support@jzlogistics.com.
  */
 export async function notifyAdminByEmail(text, options = {}) {
   return sendToAdmin(text, options);
@@ -410,7 +410,7 @@ export async function requestEmailApproval(interruptValue, threadId) {
 }
 
 /**
- * Support Agent → Supervisor: evaluate a customer email to support@miras.com,
+ * Support Agent → Supervisor: evaluate a customer email to support@jzlogistics.com,
  * draft a reply, and email the admin a summary + action items from the support mailbox.
  */
 export async function handleInboundCustomerEmail(mail) {
@@ -421,7 +421,7 @@ export async function handleInboundCustomerEmail(mail) {
   const evaluation = await evaluateSupportIssue(mail);
   const threadId = `support-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const customer = mail?.from || evaluation.from || '';
-  const subject = mail?.subject || evaluation.subject || 'Miras support';
+  const subject = mail?.subject || evaluation.subject || 'JZ Logistics support';
   console.log(
     `[imap] evaluated from=${customer} urgency=${evaluation.urgency} subject=${subject}`
   );

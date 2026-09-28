@@ -1,7 +1,7 @@
 // @ts-nocheck
 /**
- * Email HITL runtime — sole admin interface for the Miras supervisor.
- * The Support Agent watches support@miras.com; the Supervisor emails
+ * Email HITL runtime — sole admin interface for the JZ Logistics supervisor.
+ * The Support Agent watches support@jzlogistics.com; the Supervisor emails
  * MIRAS_ADMIN_EMAIL from that mailbox so the admin never needs the support inbox.
  */
 import http from 'node:http';
@@ -55,7 +55,7 @@ async function deliverRunResult(result) {
   }
   pendingApproval = null;
   const text = result.text || result.values?.finalResponse || 'Done.';
-  await notifyAdminByEmail(text, { subject: 'Miras supervisor — result' });
+  await notifyAdminByEmail(text, { subject: 'JZ Logistics supervisor — result' });
 }
 
 export async function handleAdminText(text, options = {}) {
@@ -71,7 +71,7 @@ export async function handleAdminText(text, options = {}) {
     }
     await notifyAdminByEmail(
       'A sensitive action is waiting. Reply OK to execute or NO to reject before sending a new task.',
-      { subject: 'Miras supervisor — approval pending' }
+      { subject: 'JZ Logistics supervisor — approval pending' }
     );
     return null;
   }
@@ -173,7 +173,7 @@ function startOperationalDigestTimer() {
 }
 
 /**
- * Boot env, verify SMTP/IMAP, notify admin, watch support@miras.com, payouts.
+ * Boot env, verify SMTP/IMAP, notify admin, watch support@jzlogistics.com, payouts.
  */
 export async function startAgentRuntime() {
   process.on('unhandledRejection', (reason) => {
@@ -238,7 +238,7 @@ export async function startAgentRuntime() {
     try {
       if (pendingApproval) {
         await notifyAdminByEmail(`New payout activity while approval is pending:\n${task}`, {
-          subject: 'Miras supervisor — payout activity',
+          subject: 'JZ Logistics supervisor — payout activity',
         });
         return;
       }
@@ -250,7 +250,7 @@ export async function startAgentRuntime() {
 
   startOperationalDigestTimer();
   startTerminalApprovalListener();
-  console.log('[agents] Miras multi-agent supervisor is online (email HITL)');
+  console.log('[agents] JZ Logistics multi-agent supervisor is online (email HITL)');
   await new Promise(() => {});
 }
 

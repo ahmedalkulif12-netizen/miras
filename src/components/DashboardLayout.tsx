@@ -105,12 +105,12 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
               : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="p-5 md:p-6 border-b flex items-center justify-between">
-          <BrandLogo size={28} withChip withWordmark />
+        <div className="p-5 md:p-6 border-b border-black bg-black flex items-center justify-between">
+          <BrandLogo size={28} withWordmark onDark />
           <button
             type="button"
             onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+            className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
             aria-label={isRtl ? 'إغلاق القائمة' : 'Close menu'}
           >
             {isRtl ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
@@ -194,17 +194,17 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="min-h-16 md:h-20 bg-white border-b flex items-center justify-between gap-3 px-4 md:px-6 lg:px-8 app-header-safe">
+        <header className="min-h-16 md:h-20 bg-black text-white border-b border-black flex items-center justify-between gap-3 px-4 md:px-6 lg:px-8 app-header-safe">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+              className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
               aria-label={isRtl ? 'فتح القائمة' : 'Open menu'}
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-lg md:text-xl font-bold truncate">{title}</h1>
+            <h1 className="text-lg md:text-xl font-bold truncate text-white">{title}</h1>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
@@ -217,7 +217,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
                 className={`relative p-2.5 rounded-xl transition-all ${
                   tripChat.unreadCount > 0
                     ? 'bg-rose-50 text-rose-700'
-                    : 'hover:bg-gray-100 text-gray-600'
+                    : 'hover:bg-white/10 text-white'
                 }`}
                 aria-label={tripChat.label || t('trip_chat')}
               >
@@ -234,19 +234,19 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
 
             <Link
               to="/profile"
-              className="flex items-center gap-3 rounded-xl hover:bg-gray-50 p-1 pr-2 transition-colors"
+              className="flex items-center gap-3 rounded-xl hover:bg-white/10 p-1 pr-2 transition-colors"
               aria-label={t('profile')}
             >
               <div className="hidden sm:flex flex-col items-end">
-                <span className="text-sm font-bold leading-tight">{profile?.name}</span>
-                <span className="text-[10px] text-muted-foreground uppercase">
+                <span className="text-sm font-bold leading-tight text-white">{profile?.name}</span>
+                <span className="text-[10px] text-white/60 uppercase">
                   {(() => {
                     const role = normalizeAppRole(profile?.role) ?? APP_ROLES.B2C_CLIENT;
                     return getRoleLabel(role, isRtl ? 'ar' : 'en');
                   })()}
                 </span>
               </div>
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-black font-bold">
+              <div className="w-10 h-10 rounded-full bg-[#FFCC00] flex items-center justify-center text-black font-bold">
                 {profile?.name?.[0]?.toUpperCase()}
               </div>
             </Link>

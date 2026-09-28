@@ -17,7 +17,7 @@ function mailLog(channel, event, details = {}) {
 
 export function supportEmail() {
   return String(
-    process.env.MIRAS_SUPPORT_EMAIL || SUPPORT_EMAIL || 'support@miras.com'
+    process.env.MIRAS_SUPPORT_EMAIL || SUPPORT_EMAIL || 'support@jzlogistics.com'
   ).trim();
 }
 
@@ -94,12 +94,12 @@ export async function sendMail(mail) {
   mailLog(kind === 'auto-ack' ? 'ack' : kind.startsWith('admin') ? 'admin' : 'smtp', 'DISPATCH', {
     kind,
     to,
-    subject: mail.subject || 'Miras',
+    subject: mail.subject || 'JZ Logistics',
   });
   const info = await transport.sendMail({
-    from: `"Miras Support" <${fromAddress}>`,
+    from: `"JZ Logistics Support" <${fromAddress}>`,
     to,
-    subject: mail.subject || 'Miras',
+    subject: mail.subject || 'JZ Logistics',
     text: mail.text || '',
     html: mail.html,
     replyTo,
@@ -129,7 +129,7 @@ export async function sendToAdmin(text, options = {}) {
   if (!to) throw new Error('MIRAS_ADMIN_EMAIL is not set');
   return sendMail({
     to,
-    subject: options.subject || 'Miras supervisor',
+    subject: options.subject || 'JZ Logistics supervisor',
     text: String(text || ''),
     html: options.html,
     kind: options.kind || 'admin-alert',
@@ -139,7 +139,7 @@ export async function sendToAdmin(text, options = {}) {
 export async function sendApprovalEmail(interruptValue, threadId) {
   const payload = interruptValue || {};
   const text = [
-    'Miras — approval required',
+    'JZ Logistics — approval required',
     '',
     `Worker: ${payload.worker || 'unknown'}`,
     `Action: ${payload.summary || 'sensitive operation'}`,
@@ -156,7 +156,7 @@ export async function sendApprovalEmail(interruptValue, threadId) {
     .join('\n');
 
   return sendToAdmin(text, {
-    subject: `[Miras approval] ${payload.worker || 'agent'} — ${threadId}`,
+    subject: `[JZ Logistics approval] ${payload.worker || 'agent'} — ${threadId}`,
   });
 }
 
@@ -301,15 +301,15 @@ export async function sendCustomerAcknowledgement(mail) {
     return null;
   }
   const subject = String(mail?.subject || '').trim();
-  const re = !subject ? 'Re: Miras Support' : subject.startsWith('Re:') ? subject : `Re: ${subject}`;
+  const re = !subject ? 'Re: JZ Logistics Support' : subject.startsWith('Re:') ? subject : `Re: ${subject}`;
   const text = [
     'مرحباً / Hello,',
     '',
-    'تم استلام رسالتك لدى دعم مِراس وسنراجعها قريباً.',
-    'Miras Support received your message. Our team is reviewing it and will follow up if needed.',
+    'تم استلام رسالتك لدى دعم JZ Logistics وسنراجعها قريباً.',
+    'JZ Logistics Support received your message. Our team is reviewing it and will follow up if needed.',
     subject ? `\nRegarding: ${subject}` : '',
     '',
-    `مع التحية،\nفريق دعم مِراس\n${supportEmail()}`,
+    `مع التحية،\nفريق دعم JZ Logistics\n${supportEmail()}`,
   ]
     .filter((line) => line !== '')
     .join('\n');
@@ -352,7 +352,7 @@ export async function sendOperationalDigestEmail(options = {}) {
       })
     : ['(no customer tickets in this process yet)'];
   const text = [
-    `Miras Supervisor — operational ${reason === 'boot' ? 'startup' : 'digest'} report`,
+    `JZ Logistics Supervisor — operational ${reason === 'boot' ? 'startup' : 'digest'} report`,
     '',
     `Admin: ${to}`,
     `Public support: ${supportEmail()}`,
@@ -368,7 +368,7 @@ export async function sendOperationalDigestEmail(options = {}) {
     '--------------',
     ...ticketLines,
     '',
-    'Customer mail to support@miras.com should be forwarded to the Gmail transport inbox.',
+    'Customer mail to support@jzlogistics.com should be forwarded to the Gmail transport inbox.',
     'Reply OK / NO on approval emails to send the drafted follow-up from support.',
   ]
     .filter((line) => line !== '')
@@ -376,7 +376,7 @@ export async function sendOperationalDigestEmail(options = {}) {
 
   const result = await sendMail({
     to,
-    subject: `[Miras] Operational ${reason === 'boot' ? 'startup' : 'digest'} — ${stats.ticketsHandled} ticket(s)`,
+    subject: `[JZ Logistics] Operational ${reason === 'boot' ? 'startup' : 'digest'} — ${stats.ticketsHandled} ticket(s)`,
     text,
     kind: 'admin-report',
   });
@@ -413,7 +413,7 @@ function heuristicEvaluation({ from, subject, text }) {
     actions.unshift('Check the related payout / withdrawal in Firebase');
   }
   const draftBody =
-    `Thank you for contacting Miras Support. We received your message` +
+    `Thank you for contacting JZ Logistics Support. We received your message` +
     (subject ? ` about "${subject}"` : '') +
     `. Our team is reviewing it and will follow up shortly.\n\n` +
     (snippet ? `We understood your request as: ${snippet}` : '');
@@ -441,7 +441,7 @@ export async function evaluateSupportIssue(mail) {
     const response = await ai.models.generateContent({
       model: process.env.MIRAS_AGENT_MODEL || 'gemini-2.0-flash',
       contents:
-        'You are the Miras logistics support agent. Read the customer email and reply with ONLY JSON:\n' +
+        'You are the JZ Logistics logistics support agent. Read the customer email and reply with ONLY JSON:\n' +
         '{"summary":"2-4 sentence issue summary","urgency":"low|normal|high","actions":["admin action 1","admin action 2"],"draft":"customer-facing reply body in the customer language, no JSON"}\n\n' +
         `From: ${from}\nSubject: ${subject}\n\n${text.slice(0, 6000)}`,
     });
@@ -466,7 +466,7 @@ export function formatAdminSupportBrief({ mail, evaluation, threadId }) {
   const evaln = evaluation || {};
   const actions = (evaln.actions || []).map((item, i) => `${i + 1}. ${item}`);
   return [
-    'Miras Supervisor — customer support ticket (you do not need to open the support inbox)',
+    'JZ Logistics Supervisor — customer support ticket (you do not need to open the support inbox)',
     '',
     `From (customer): ${mail?.from || evaln.from || 'unknown'}`,
     `Subject: ${mail?.subject || evaln.subject || '(no subject)'}`,
@@ -486,7 +486,7 @@ export function formatAdminSupportBrief({ mail, evaluation, threadId }) {
     '-------------------------------',
     evaln.draftBody || '',
     '',
-    'Reply OK to send the draft from support@miras.com, or NO to reject it.',
+    'Reply OK to send the draft from support@jzlogistics.com, or NO to reject it.',
   ]
     .filter((line) => line !== undefined)
     .join('\n');
@@ -494,7 +494,7 @@ export function formatAdminSupportBrief({ mail, evaluation, threadId }) {
 
 export async function sendAdminSupportBrief(payload) {
   const evaluation = payload.evaluation || {};
-  const subject = `[Miras support] ${evaluation.urgency === 'high' ? 'HIGH — ' : ''}${payload.mail?.subject || 'Customer ticket'}`;
+  const subject = `[JZ Logistics support] ${evaluation.urgency === 'high' ? 'HIGH — ' : ''}${payload.mail?.subject || 'Customer ticket'}`;
   mailLog('admin', 'ALERT DISPATCH', {
     to: adminEmail(),
     from: payload.mail?.from,
@@ -517,7 +517,7 @@ function shouldSkipInboundMail(mail) {
     return 'support-self';
   }
   if (sameMailbox(mail.from, getMailConfig().from)) {
-    const hitlSubject = /\[Miras /i.test(mail.subject || '');
+    const hitlSubject = /\[JZ Logistics /i.test(mail.subject || '');
     const hitlBody = /^\s*(ok|yes|approve|no|reject|قبول|رفض)\b/i.test(mail.text || '');
     if (!hitlSubject && !hitlBody) return 'outbound-echo';
     return '';
@@ -667,7 +667,7 @@ export async function sendUnreadCatchupReport(processed = []) {
     : ['(inbox had no processable unread customer messages)'];
 
   const text = [
-    'Miras Supervisor — unread inbox catch-up report',
+    'JZ Logistics Supervisor — unread inbox catch-up report',
     '',
     `Admin: ${to}`,
     `Support: ${supportEmail()}`,
@@ -681,12 +681,12 @@ export async function sendUnreadCatchupReport(processed = []) {
     '',
     'Only genuine customer or personal messages receive an automated acknowledgement.',
     'Promotional, marketing, and newsletter mail is ignored and is not listed above.',
-    'Reply OK / NO on individual [Miras support] emails to send the drafted follow-up.',
+    'Reply OK / NO on individual [JZ Logistics support] emails to send the drafted follow-up.',
   ].join('\n');
 
   const result = await sendMail({
     to,
-    subject: `[Miras] Unread catch-up — ${ok.length} processed, ${failed.length} failed`,
+    subject: `[JZ Logistics] Unread catch-up — ${ok.length} processed, ${failed.length} failed`,
     text,
     kind: 'admin-report',
   });
@@ -772,7 +772,7 @@ async function parseImapMessage(message) {
 }
 
 /**
- * Continuously watch the support@miras.com inbox for customer mail.
+ * Continuously watch the support@jzlogistics.com inbox for customer mail.
  * @param {(mail: { from: string, subject: string, text: string, messageId: string }) => void | Promise<void>} onMail
  */
 export async function startSupportInboxWatcher(onMail) {
@@ -892,7 +892,7 @@ function parseEmailTask(task) {
   const to = (raw.match(/\bto=(\S+)/i) || [])[1] || '';
   const subject =
     (raw.match(/\bsubject=([^\n]+)/i) || [])[1]?.trim() ||
-    'Miras support';
+    'JZ Logistics support';
   const bodyMatch = raw.match(/\bbody=([\s\S]+)/i);
   const body = bodyMatch ? bodyMatch[1].trim() : raw.replace(/^email:\s*/i, '').trim();
   return { to, subject, body };
@@ -901,7 +901,7 @@ function parseEmailTask(task) {
 function draftReply({ to, subject, body }) {
   const greeting = 'مرحباً / Hello,';
   const closing =
-    `\n\nمع التحية،\nفريق دعم مِراس\n${supportEmail()}\n\nBest regards,\nMiras Support`;
+    `\n\nمع التحية،\nفريق دعم JZ Logistics\n${supportEmail()}\n\nBest regards,\nJZ Logistics Support`;
   return {
     to,
     from: supportEmail(),

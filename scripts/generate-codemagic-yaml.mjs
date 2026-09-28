@@ -157,8 +157,8 @@ workflows:
         XCODE_SCHEME: ${yamlQuote('App')}
         BUNDLE_ID: ${yamlQuote(canon.iosBundleId)}
         DEVELOPMENT_TEAM: ${yamlQuote('4TRJXRYK8A')}
-        IOS_MARKETING_VERSION: ${yamlQuote('1.0.1')}
-        IOS_MIN_BUILD_NUMBER: ${yamlQuote('63')}
+        IOS_MARKETING_VERSION: ${yamlQuote('1.0.2')}
+        IOS_MIN_BUILD_NUMBER: ${yamlQuote('64')}
         APP_STORE_APPLE_ID: ${yamlQuote(prod.APP_STORE_APPLE_ID || '6807503584')}
         VITE_APP_STORE_APPLE_ID: ${yamlQuote(prod.VITE_APP_STORE_APPLE_ID || prod.APP_STORE_APPLE_ID || '6807503584')}
         NODE_ENV: ${yamlQuote('production')}
@@ -181,7 +181,7 @@ workflows:
         VITE_APP_URL: ${yamlQuote(canon.publicAppOrigin)}
         VITE_API_ORIGIN: ${yamlQuote(canon.publicAppOrigin)}
         VITE_IOS_TEAM_ID: ${yamlQuote('4TRJXRYK8A')}
-        VITE_SUPPORT_EMAIL: ${yamlQuote('support@miras.com')}
+        VITE_SUPPORT_EMAIL: ${yamlQuote('support@jzlogistics.com')}
         FIREBASE_IOS_GOOGLE_APP_ID: ${yamlQuote(iosGoogleAppId)}
         FIREBASE_IOS_API_KEY: ${yamlQuote(iosApiKey)}
         FIREBASE_IOS_CLIENT_ID: ${yamlQuote(iosClientId, 'DISABLED_USE_BUNDLED_PLIST')}
@@ -272,10 +272,10 @@ workflows:
           if [ "$NEW_BUILD" -lt "\${BUILD_NUMBER:-1}" ]; then
             NEW_BUILD=$BUILD_NUMBER
           fi
-          if [ "$NEW_BUILD" -lt "\${IOS_MIN_BUILD_NUMBER:-63}" ]; then
-            NEW_BUILD="\${IOS_MIN_BUILD_NUMBER:-63}"
+          if [ "$NEW_BUILD" -lt "\${IOS_MIN_BUILD_NUMBER:-64}" ]; then
+            NEW_BUILD="\${IOS_MIN_BUILD_NUMBER:-64}"
           fi
-          MARKETING="\${IOS_MARKETING_VERSION:-1.0.1}"
+          MARKETING="\${IOS_MARKETING_VERSION:-1.0.2}"
           agvtool new-version -all "$NEW_BUILD"
           agvtool new-marketing-version "$MARKETING"
           echo "Using CFBundleShortVersionString=$MARKETING CFBundleVersion=$NEW_BUILD"
@@ -342,7 +342,7 @@ workflows:
     publishing:
       email:
         recipients:
-          - support@miras.com
+          - support@jzlogistics.com
         notify:
           success: true
           failure: true

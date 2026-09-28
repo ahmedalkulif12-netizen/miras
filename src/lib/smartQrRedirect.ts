@@ -11,7 +11,7 @@ export type SmartQrPlatform = 'ios' | 'android' | 'other';
 
 export const DEFAULT_PLAY_STORE_URL = `https://play.google.com/store/apps/details?id=${MIRAS_ANDROID_PACKAGE}`;
 /** Used until App Store Connect numeric Apple ID is set in env. */
-export const DEFAULT_IOS_APP_STORE_URL = 'https://apps.apple.com/sa/search?term=Miras';
+export const DEFAULT_IOS_APP_STORE_URL = 'https://apps.apple.com/sa/search?term=JZ%20Logistics';
 
 function readEnv(name: string, env?: Record<string, string | undefined>): string {
   const fromBag = env?.[name];

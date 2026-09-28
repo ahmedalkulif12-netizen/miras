@@ -12,8 +12,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const src = path.join(root, 'resources', 'icon.png');
 const outDir = path.join(root, 'store', 'play-developer');
 
-const YELLOW = { r: 252, g: 198, b: 25 };
-const CREAM = { r: 248, g: 249, b: 251 };
+const YELLOW = { r: 255, g: 204, b: 0 };
+const CREAM = { r: 255, g: 204, b: 0 };
 
 function circleMask(size) {
   const r = size / 2 - Math.max(2, Math.round(size * 0.012));
@@ -57,11 +57,10 @@ async function writeHeader(width, height, filename) {
   const textWidth = width - textLeft - Math.round(width * 0.08);
 
   const svg = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-    <rect width="${width}" height="${height}" fill="#F8F9FB"/>
-    <rect width="${Math.round(width * 0.42)}" height="${height}" fill="#FCC619"/>
-    <text x="${textLeft}" y="${Math.round(height * 0.46)}" fill="#111111" font-size="${Math.round(height * 0.16)}" font-family="Arial, Helvetica, sans-serif" font-weight="800">مَرَاس</text>
-    <text x="${textLeft}" y="${Math.round(height * 0.58)}" fill="#111111" font-size="${Math.round(height * 0.08)}" font-family="Arial, Helvetica, sans-serif" font-weight="700">Miras</text>
-    <text x="${textLeft}" y="${Math.round(height * 0.68)}" fill="#5C5346" font-size="${Math.round(height * 0.038)}" font-family="Arial, Helvetica, sans-serif" font-weight="600">Logistics &amp; transport — Saudi Arabia</text>
+    <rect width="${width}" height="${height}" fill="#FFCC00"/>
+    <rect width="${Math.round(width * 0.42)}" height="${height}" fill="#000000"/>
+    <text x="${textLeft}" y="${Math.round(height * 0.48)}" fill="#000000" font-size="${Math.round(height * 0.14)}" font-family="Arial, Helvetica, sans-serif" font-weight="800">JZ Logistics</text>
+    <text x="${textLeft}" y="${Math.round(height * 0.62)}" fill="#000000" font-size="${Math.round(height * 0.04)}" font-family="Arial, Helvetica, sans-serif" font-weight="600">Logistics &amp; transport — Saudi Arabia</text>
   </svg>`);
 
   const file = path.join(outDir, filename);

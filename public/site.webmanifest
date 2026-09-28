@@ -1,28 +1,22 @@
 {
-  "name": "مَرَاس | Miras",
-  "short_name": "مَرَاس",
-  "description": "منصة مَرَاس للخدمات اللوجستية والنقل — Miras logistics platform",
+  "name": "JZ Logistics",
+  "short_name": "JZ Logistics",
+  "description": "JZ Logistics — منصة الخدمات اللوجستية والنقل",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F8F9FB",
-  "theme_color": "#F8C31E",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "lang": "ar",
   "dir": "rtl",
   "icons": [
     {
-      "src": "/miras-logo.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "any"
-    },
-    {
-      "src": "/miras-badge.png",
+      "src": "/jz-app-icon.png",
       "type": "image/png",
       "sizes": "1024x1024",
       "purpose": "any"
     },
     {
-      "src": "/miras-app-icon.png",
+      "src": "/jz-app-icon.png",
       "type": "image/png",
       "sizes": "1024x1024",
       "purpose": "maskable"

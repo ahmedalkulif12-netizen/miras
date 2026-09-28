@@ -28,7 +28,7 @@ function resolveProjectPath(relativePath) {
     ? PROJECT_ROOT
     : PROJECT_ROOT + path.sep;
   if (resolved !== PROJECT_ROOT && !resolved.startsWith(rootWithSep)) {
-    throw new Error('Path is outside the Miras project');
+    throw new Error('Path is outside the JZ Logistics project');
   }
   if (BLOCKED_PATH_RE.test(resolved) || BLOCKED_PATH_RE.test(cleaned)) {
     throw new Error('Blocked path (secrets, vendor, or VCS)');

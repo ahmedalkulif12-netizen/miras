@@ -222,7 +222,7 @@ node dist/server.cjs
 - [ ] App ID `com.ahmed.miras` matches the App Store profile capabilities (Associated Domains is **off** until the profile includes it)
 - [ ] App Store Connect app created; bundle ID `com.ahmed.miras`; iPhone only
 - [ ] Privacy policy URL: https://ahmedalkulif12-netizen.github.io/miras-privacy/
-- [ ] Support URL + email `support@miras.com`; listing copy in `fastlane/metadata/ios/`
+- [ ] Support URL + email `support@jzlogistics.com`; listing copy in `fastlane/metadata/ios/`
 - [ ] 6.7" screenshots uploaded from `store/ios/iphone-6.7/`
 - [ ] App Privacy nutrition labels + content rating
 - [ ] Firebase Phone Auth **test number** for App Review (production has no demo login)

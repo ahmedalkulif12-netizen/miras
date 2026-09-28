@@ -1,6 +1,6 @@
 /**
- * Live "Miras App" Firebase project — same GCP project as production web
- * (Firebase Console display name Miras App, project id hamula-cfc6c).
+ * Live JZ Logistics Firebase project — same GCP project as production web
+ * (project id hamula-cfc6c). Package ids stay registered as com.miras.app / com.ahmed.miras.
  */
 export const MIRAS_PRODUCTION_FIREBASE_PROJECT_ID = 'hamula-cfc6c';
 export const MIRAS_PRODUCTION_STORAGE_BUCKET = 'hamula-cfc6c.firebasestorage.app';

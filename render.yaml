@@ -37,7 +37,7 @@ services:
       - key: APP_URL
         value: https://hamula-cfc6c.web.app
       - key: MIRAS_SUPPORT_EMAIL
-        value: support@miras.com
+        value: support@jzlogistics.com
       - key: MIRAS_ADMIN_EMAIL
         sync: false
       - key: SMTP_HOST
@@ -51,7 +51,7 @@ services:
       - key: SMTP_PASS
         sync: false
       - key: SMTP_FROM
-        value: support@miras.com
+        value: support@jzlogistics.com
       - key: IMAP_HOST
         value: imap.gmail.com
       - key: IMAP_PORT

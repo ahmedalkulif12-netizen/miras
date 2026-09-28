@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #F8C31E; /* Miras brand yellow (approved badge) */
-  --color-dark: #0A0A0A;
+  --color-primary: #FFCC00; /* JZ Logistics industrial yellow */
+  --color-dark: #000000; /* pitch black */
   --color-background: #F8F9FB;
   --color-success: #10B981;
   --font-sans: 'DM Sans', 'Inter', system-ui, sans-serif;

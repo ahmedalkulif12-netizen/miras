@@ -4,8 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Miras "M" mark — safe zone centered -->
+    <!-- JZ Logistics monogram — adaptive icons use the generated mipmap foreground. -->
     <path
-        android:fillColor="#1E1E2F"
-        android:pathData="M34,78V38h11.2l10.8 26.4L66.8,38H78v40H69.4V54.4L59.8,78H48.2L38.6,54.4V78H34z" />
+        android:fillColor="#000000"
+        android:pathData="M30,34h18v8h-10v14c0,4 -2,6 -6,6h-1v-7h1c1,0 2,0 2,-2v-11h-4zM52,34h26v7h-14l14,16v-5l-14,-16h14v-2zM52,62h26v7h-26z" />
 </vector>

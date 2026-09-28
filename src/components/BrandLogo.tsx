@@ -1,9 +1,12 @@
 import React from 'react';
-/** Raster badge matches approved artwork exactly (yellow circle, M, white diagonal road). */
-import badgeUrl from '@/components/miras-badge.png';
+/** Industrial yellow mark — generated from app_icon.png, or jz-logo.svg until that file is present. */
+import badgeUrl from '@/components/jz-badge.png';
 
-export const MIRAS_ARABIC_NAME = 'مَرَاس';
-export const MIRAS_ENGLISH_NAME = 'Miras';
+export const BRAND_NAME = 'JZ Logistics';
+/** @deprecated Use BRAND_NAME. Kept so older imports keep resolving. */
+export const MIRAS_ARABIC_NAME = BRAND_NAME;
+/** @deprecated Use BRAND_NAME. Kept so older imports keep resolving. */
+export const MIRAS_ENGLISH_NAME = BRAND_NAME;
 
 type BrandLogoProps = {
   /** Display size in pixels (width & height of the circular mark). */
@@ -11,18 +14,17 @@ type BrandLogoProps = {
   className?: string;
   /** Soft circular frame behind the badge (headers / loading). */
   withChip?: boolean;
-  /**
-   * Show brand wordmark: Arabic مَرَاس (Ruq'ah) above English Miras (bold sans).
-   * Stacked below/beside the icon per brand lockup.
-   */
+  /** Show the JZ Logistics wordmark beside or below the mark. */
   withWordmark?: boolean;
   /** Stack wordmark under the icon (marketing/loading). Default: beside. */
   wordmarkBelow?: boolean;
+  /** White wordmark for pitch-black headers. */
+  onDark?: boolean;
   alt?: string;
 };
 
 /**
- * Miras brand lockup — circular yellow badge + مَرَاس / Miras wordmark.
+ * JZ Logistics lockup — industrial yellow mark + wordmark.
  */
 export const BrandLogo: React.FC<BrandLogoProps> = ({
   size = 32,
@@ -30,7 +32,8 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   withChip = false,
   withWordmark = false,
   wordmarkBelow = false,
-  alt = `${MIRAS_ARABIC_NAME} ${MIRAS_ENGLISH_NAME}`,
+  onDark = false,
+  alt = BRAND_NAME,
 }) => {
   const image = (
     <img
@@ -60,23 +63,14 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   const wordmark = (
     <span
-      className={`flex flex-col min-w-0 ${wordmarkBelow ? 'items-center text-center mt-2' : 'items-start'}`}
-      style={{ fontSize: size * 0.52 }}
+      className={`font-brand-en font-black leading-none tracking-tight whitespace-nowrap ${
+        onDark ? 'text-white' : 'text-black'
+      } ${wordmarkBelow ? 'text-center mt-2' : ''}`}
+      style={{ fontSize: Math.max(13, size * 0.42) }}
+      dir="ltr"
+      lang="en"
     >
-      <span
-        className="font-brand-ar text-[1.35em] leading-none text-neutral-950"
-        dir="rtl"
-        lang="ar"
-      >
-        {MIRAS_ARABIC_NAME}
-      </span>
-      <span
-        className="font-brand-en text-[0.72em] font-bold leading-none text-neutral-950 mt-1.5 tracking-wide"
-        dir="ltr"
-        lang="en"
-      >
-        {MIRAS_ENGLISH_NAME}
-      </span>
+      {BRAND_NAME}
     </span>
   );
 

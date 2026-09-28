@@ -1,6 +1,6 @@
-Miras (مَرَاس) is a logistics platform for booking trucks and cargo across Saudi Arabia.
+JZ Logistics is a logistics platform for booking trucks and cargo across Saudi Arabia.
 
-Whether you are moving home furniture, heavy equipment on a flatbed, refrigerated goods, or water tankers — inside the city or between cities — Miras gives you a fleet at the push of a button.
+Whether you are moving home furniture, heavy equipment on a flatbed, refrigerated goods, or water tankers — inside the city or between cities — JZ Logistics gives you a fleet at the push of a button.
 
 Customers
 • Choose a service and see an instant distance-based quote in Saudi Riyal
@@ -16,4 +16,4 @@ Drivers and fleet partners
 
 Privacy and support
 Privacy policy: https://ahmedalkulif12-netizen.github.io/miras-privacy/
-Support: support@miras.com
+Support: support@jzlogistics.com

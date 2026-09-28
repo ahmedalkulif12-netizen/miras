@@ -1183,7 +1183,7 @@ const CustomerDashboard: React.FC = () => {
     setTimeout(() => setTrackingStatus('arrived'), 20000);
     setTimeout(() => {
       setTrackingStatus('completed');
-      toast.success(t('tracking_completed_msg') || (isRtl ? 'وصلت الشحنة بسلام! شكراً لاستخدامكم Miras' : 'Shipment arrived safely! Thank you for using Miras'));
+      toast.success(t('tracking_completed_msg') || (isRtl ? 'وصلت الشحنة بسلام! شكراً لاستخدامكم JZ Logistics' : 'Shipment arrived safely! Thank you for using JZ Logistics'));
       setTimeout(() => setStep('rating'), 2000);
     }, 40000);
   };
@@ -1844,8 +1844,8 @@ const CustomerDashboard: React.FC = () => {
                      </p>
                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
                        {isRtl
-                         ? 'لا نجمع بيانات البطاقة داخل Miras — المعالجة تتم عبر بوابة الدفع.'
-                         : 'Card details are never entered in Miras — processing happens on the payment gateway.'}
+                         ? 'لا نجمع بيانات البطاقة داخل JZ Logistics — المعالجة تتم عبر بوابة الدفع.'
+                         : 'Card details are never entered in JZ Logistics — processing happens on the payment gateway.'}
                      </p>
                    </div>
 

@@ -182,7 +182,7 @@ const PaymentCheckoutPage: React.FC = () => {
               <p className="text-[10px] uppercase tracking-wide text-white/60 font-bold">
                 {isRtl ? 'بوابة الدفع الآمنة' : 'Secure payment gateway'}
               </p>
-              <p className="text-sm font-bold">Miras Checkout</p>
+              <p className="text-sm font-bold">JZ Logistics Checkout</p>
             </div>
           </div>
           <BrandLogo size={28} />

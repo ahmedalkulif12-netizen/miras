@@ -89,7 +89,7 @@ const AdminLoginPage: React.FC = () => {
       const phoneE164 = toFirebasePhoneE164(phone);
       logPhoneAuth('E164 Formatted', phoneE164);
       if (!isAuthorizedAdminPhone(phoneE164)) {
-        toast.error('This phone number is not authorized for Miras Admin');
+        toast.error('This phone number is not authorized for JZ Logistics Admin');
         return;
       }
       await loginAdminWithPhone(phoneE164);
@@ -100,7 +100,7 @@ const AdminLoginPage: React.FC = () => {
       toast.success('Verification code sent');
     } catch (error) {
       if (error instanceof AdminAccessDeniedError) {
-        toast.error(error.message || 'This phone number is not authorized for Miras Admin');
+        toast.error(error.message || 'This phone number is not authorized for JZ Logistics Admin');
         return;
       }
       console.error('[AdminLogin] OTP send failed:', getPhoneAuthErrorCode(error), error);

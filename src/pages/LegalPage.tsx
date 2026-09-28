@@ -122,7 +122,7 @@ const LegalPage: React.FC = () => {
               </Section>
 
               <Section title={isRtl ? '12. الرسوم والعمولات' : '12. Fees and Commissions'} isRtl={isRtl}>
-                <p>تعتمد منصة Miras نموذج تسعير شفاف يضمن استدامة الخدمة:</p>
+                <p>تعتمد منصة JZ Logistics نموذج تسعير شفاف يضمن استدامة الخدمة:</p>
                 <ul className="list-disc list-inside mt-4 space-y-2 text-stone-600 font-medium">
                   <li><strong>رسوم الخدمة (العميل):</strong> تفرض المنصة رسوم خدمة بنسبة 5% من قيمة الرحلة الأساسية لتغطية التكاليف التقنية.</li>
                   <li><strong>عمولة المنصة (السائق):</strong> يتم استقطاع نسبة 15% من إجمالي قيمة الطلب كعمولة للمنصة.</li>
@@ -152,12 +152,12 @@ const LegalPage: React.FC = () => {
             <>
               <div className="space-y-6 border-b border-stone-100 pb-8">
                 <p className="text-lg font-medium text-neutral-700">
-                  تحكم هذه الشروط والأحكام علاقتكم بمنصة "Miras". يرجى قراءتها بعناية قبل البدء في استخدام الخدمات.
+                  تحكم هذه الشروط والأحكام علاقتكم بمنصة "JZ Logistics". يرجى قراءتها بعناية قبل البدء في استخدام الخدمات.
                 </p>
               </div>
 
               <Section title={isRtl ? '1. طبيعة الخدمة (الوساطة التقنية)' : '1. Nature of Service'} isRtl={isRtl}>
-                <p>{isRtl ? 'منصة "Miras" هي وسيط تقني يعمل على ربط العملاء بمزودي خدمات النقل (السائقين) المستقلين. بصفتنا مقدم منصة، نحن لا نملك الشاحنات ولا نقوم بعمليات النقل بأنفسنا.' : 'Miras is a technical intermediary that connects customers with independent transport service providers (drivers). As a platform provider, we do not own trucks or conduct transport operations ourselves.'}</p>
+                <p>{isRtl ? 'منصة "JZ Logistics" هي وسيط تقني يعمل على ربط العملاء بمزودي خدمات النقل (السائقين) المستقلين. بصفتنا مقدم منصة، نحن لا نملك الشاحنات ولا نقوم بعمليات النقل بأنفسنا.' : 'JZ Logistics is a technical intermediary that connects customers with independent transport service providers (drivers). As a platform provider, we do not own trucks or conduct transport operations ourselves.'}</p>
                 <div className={`mt-4 p-4 bg-orange-50 border border-orange-100 rounded-2xl text-orange-800 text-sm font-medium ${isRtl ? '' : 'text-left border-l-4'}`}>
                    {t('mediation_service_note')}
                 </div>
@@ -212,7 +212,7 @@ const LegalPage: React.FC = () => {
         </div>
 
         <footer className="text-center text-stone-400 text-sm font-medium pb-20">
-           &copy; {new Date().getFullYear()} شركة Miras للخدمات اللوجستية. جميع الحقوق محفوظة لعملائنا وشركائنا.
+           &copy; {new Date().getFullYear()} شركة JZ Logistics للخدمات اللوجستية. جميع الحقوق محفوظة لعملائنا وشركائنا.
         </footer>
       </div>
     </div>

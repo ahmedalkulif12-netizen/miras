@@ -9,7 +9,7 @@ export interface AdminRecord {
 }
 
 /**
- * Sole authorized Miras Admin phone numbers (E.164).
+ * Sole authorized JZ Logistics Admin phone numbers (E.164).
  * Local form `0541330720` normalizes to `+966541330720`.
  * This phone is an unconditional super-admin — no ACL document required.
  */
@@ -42,7 +42,7 @@ export function normalizeAdminPhoneE164(phone: string | null | undefined): strin
   return trimmed.startsWith('+') ? trimmed : null;
 }
 
-/** True when the phone is the sole authorized Miras Admin number. */
+/** True when the phone is the sole authorized JZ Logistics Admin number. */
 export function isAuthorizedAdminPhone(phone: string | null | undefined): boolean {
   const e164 = normalizeAdminPhoneE164(phone);
   if (!e164) return false;
@@ -69,7 +69,7 @@ function superAdminRecord(
 ): AdminRecord {
   return {
     uid,
-    name: extras?.name || 'Miras Admin',
+    name: extras?.name || 'JZ Logistics Admin',
     phone,
     email: extras?.email,
     active: true,
@@ -87,7 +87,7 @@ export async function ensureAuthorizedAdminRecord(
 ): Promise<AdminRecord> {
   const phone = normalizeAdminPhoneE164(authPhone);
   if (!phone || !isAuthorizedAdminPhone(phone)) {
-    throw Object.assign(new Error('Phone is not authorized for Miras Admin'), {
+    throw Object.assign(new Error('Phone is not authorized for JZ Logistics Admin'), {
       statusCode: 403,
       code: 'ADMIN_PHONE_NOT_AUTHORIZED',
     });
@@ -97,7 +97,7 @@ export async function ensureAuthorizedAdminRecord(
     const ref = db.collection('admins').doc(uid);
     const snap = await ref.get();
     const existing = snap.exists ? (snap.data() as Record<string, unknown>) : null;
-    const name = existing?.name ? String(existing.name) : 'Miras Admin';
+    const name = existing?.name ? String(existing.name) : 'JZ Logistics Admin';
     const email = existing?.email ? String(existing.email) : undefined;
 
     await ref.set(
@@ -156,7 +156,7 @@ export async function loadAdminRecord(
 
     return {
       uid,
-      name: String(data.name || 'Miras Admin'),
+      name: String(data.name || 'JZ Logistics Admin'),
       phone,
       email: data.email ? String(data.email) : undefined,
       active: true,
@@ -191,7 +191,7 @@ export function assertAdminPhoneMatches(
   const authE164 = normalizeAdminPhoneE164(authPhone);
   if (!isAuthorizedAdminPhone(authE164)) {
     throw Object.assign(
-      new Error('Admin phone is not authorized for Miras Admin'),
+      new Error('Admin phone is not authorized for JZ Logistics Admin'),
       { statusCode: 403, code: 'ADMIN_PHONE_NOT_AUTHORIZED' }
     );
   }
@@ -312,7 +312,7 @@ export async function verifyAdminAccess(
 
   if (!isAuthorizedAdminPhone(authPhone) && !hasAdminPrivileges(decodedToken)) {
     throw Object.assign(
-      new Error('Admin access restricted to the authorized Miras Admin phone only'),
+      new Error('Admin access restricted to the authorized JZ Logistics Admin phone only'),
       { statusCode: 403, code: 'ADMIN_PHONE_NOT_AUTHORIZED' }
     );
   }
