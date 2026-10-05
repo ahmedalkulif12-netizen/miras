@@ -355,6 +355,14 @@ workflows:
     name: Miras Android Play internal
     max_build_duration: 90
     instance_type: linux_x2
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
     environment:
       groups:
         - miras_client
