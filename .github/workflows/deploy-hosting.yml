@@ -17,6 +17,23 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    env:
+      NODE_ENV: production
+      VITE_MIRAS_DEPLOY_ENV: production
+      VITE_APP_CHECK_DISABLED: "false"
+      VITE_FIREBASE_API_KEY: AIzaSyAfJ_BXR_EL3jJK1t9Ud-vVzmIQQFBD9Cs
+      VITE_FIREBASE_AUTH_DOMAIN: hamula-cfc6c.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: hamula-cfc6c
+      VITE_FIREBASE_STORAGE_BUCKET: hamula-cfc6c.firebasestorage.app
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "191963635866"
+      VITE_FIREBASE_APP_ID: "1:191963635866:web:b9813435125d467d34bf23"
+      VITE_FIREBASE_MEASUREMENT_ID: G-04GKH516ND
+      VITE_GOOGLE_MAPS_PLATFORM_KEY: AIzaSyAFZLw-5D58K6_eTTxohsY7hNjzh8K2Rlw
+      VITE_APP_CHECK_RECAPTCHA_SITE_KEY: 6Lf0czctAAAAAF7EECTuyfcTMJpA7HCTBlLp7Syb
+      VITE_APP_URL: https://hamula-cfc6c.web.app
+      VITE_API_ORIGIN: https://hamula-cfc6c.web.app
+      VITE_IOS_TEAM_ID: 4TRJXRYK8A
+      VITE_SUPPORT_EMAIL: support@jzlogistics.com
     steps:
       - name: Checkout
         uses: actions/checkout@v4
