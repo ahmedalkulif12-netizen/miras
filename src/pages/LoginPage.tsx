@@ -835,16 +835,23 @@ const LoginPage: React.FC<{
                   </div>
                 </div>
                 )}
+                {authMode === 'login' && (
+                  <p className={`text-sm font-bold text-neutral-800 leading-relaxed ${isRtl ? 'text-right' : 'text-left'}`}>
+                    {isRtl
+                      ? 'تسجيل الدخول برقم الجوال ورمز التحقق فقط.'
+                      : 'Sign-in uses your mobile number and a one-time code only.'}
+                  </p>
+                )}
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-neutral-700">{t('phone_number')}</label>
+                  <label className="text-base font-black text-neutral-900">{t('phone_number')}</label>
                   <div className="relative">
-                    <Phone className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 text-stone-300`} size={18} />
+                    <Phone className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 text-black`} size={20} />
                     <input
                       type="tel"
                       value={phone}
                       onChange={(e) => setPhone(sanitizeSaudiPhoneInput(e.target.value))}
                       placeholder={t('phone_placeholder')}
-                      className={`w-full ${isRtl ? 'pr-12 pl-4' : 'pl-12 pr-4'} py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800`}
+                      className={`w-full min-h-14 ${isRtl ? 'pr-12 pl-4' : 'pl-12 pr-4'} py-4 rounded-2xl border-2 border-black focus:ring-4 focus:ring-primary/30 focus:border-black outline-none transition-all font-bold text-lg text-neutral-900`}
                     />
                   </div>
                   {isDevAuthBypassEnabled() && (

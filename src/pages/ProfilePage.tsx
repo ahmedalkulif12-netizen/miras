@@ -3,6 +3,8 @@ import DashboardLayout from '@/components/DashboardLayout';
 import ProfileAvatar from '@/components/ProfileAvatar';
 import { useAuth } from '@/hooks/useAuth';
 import { User, Phone, Save, ShieldCheck, Truck } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ServiceFeedbackForm } from '@/components/ServiceFeedbackForm';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { OPTION_LABELS } from '@/constants';
@@ -162,6 +164,16 @@ const ProfilePage: React.FC = () => {
               {isSaving ? t('saving') : t('save_changes')}
             </button>
           </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-[40px] border-2 border-black shadow-sm space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-black">{isRtl ? 'تقييم الخدمة' : 'Service feedback'}</h2>
+            <Link to="/support" className="text-sm font-black underline underline-offset-4">
+              {isRtl ? 'المساعدة' : 'Help'}
+            </Link>
+          </div>
+          <ServiceFeedbackForm isRtl={isRtl} />
         </div>
       </div>
     </DashboardLayout>

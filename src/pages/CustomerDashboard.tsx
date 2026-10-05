@@ -36,6 +36,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { formatFirestoreErrorDetails } from '@/lib/firestoreWriteError';
 import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
+import { submitServiceFeedback } from '@/lib/feedbackService';
 import {
   persistPendingCheckoutDraftId,
   clearPendingCheckoutDraftId,
@@ -178,6 +179,10 @@ const CustomerDashboard: React.FC = () => {
   const [dropoffCity, setDropoffCity] = useState('');
   const [destinationCoords, setDestinationCoords] = useState<google.maps.LatLngLiteral | null>(null);
   const [activeMapPin, setActiveMapPin] = useState<BookingPinTarget>('pickup');
+  const [locationPhase, setLocationPhase] = useState<'pickup' | 'dropoff' | 'summary'>('pickup');
+  const [mapFocusNonce, setMapFocusNonce] = useState(0);
+  const locationPhaseRef = useRef<'pickup' | 'dropoff' | 'summary'>('pickup');
+  locationPhaseRef.current = locationPhase;
   const [userLocation, setUserLocation] = useState<google.maps.LatLngLiteral | null>(null);
   const [locatingGps, setLocatingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -298,24 +303,27 @@ const CustomerDashboard: React.FC = () => {
     setUserLocation(coords);
     setGpsError(null);
 
-    if (isDeliveryOnlyService(serviceType)) {
-      // Delivery-only: customer sets drop-off only — never require a pickup pin.
-      if (options?.force || !destinationCoords) {
+    const phase = locationPhaseRef.current;
+    if (isDeliveryOnlyService(serviceType) || phase === 'dropoff') {
+      if (options?.force || phase === 'dropoff' || !destinationCoords) {
         setDestinationCoords(coords);
         setDestination(address);
         if (city) setDropoffCity(city);
       }
-      setPickupCoords(null);
-      setPickup('');
+      if (isDeliveryOnlyService(serviceType)) {
+        setPickupCoords(null);
+        setPickup('');
+      }
       setActiveMapPin('destination');
     } else {
-      if (options?.force || !pickupCoords) {
+      if (options?.force || phase === 'pickup' || !pickupCoords) {
         setPickupCoords(coords);
         setPickup(address);
         if (city) setPickupCity(city);
       }
-      setActiveMapPin('destination');
+      setActiveMapPin('pickup');
     }
+    setMapFocusNonce((n) => n + 1);
     setIsCalculated(false);
   };
 
@@ -393,11 +401,13 @@ const CustomerDashboard: React.FC = () => {
   useEffect(() => {
     if (deliveryOnly) {
       setActiveMapPin('destination');
+      setLocationPhase('dropoff');
       // Clear any leftover pickup from a previous transport booking.
       setPickupCoords(null);
       setPickup('');
     } else if (!pickupCoords) {
       setActiveMapPin('pickup');
+      setLocationPhase('pickup');
     }
   }, [deliveryOnly]); // eslint-disable-line react-hooks/exhaustive-deps -- only on mode switch
 
@@ -1189,7 +1199,14 @@ const CustomerDashboard: React.FC = () => {
   };
 
   const submitRating = () => {
-    toast.success(isRtl ? 'شكراً لتقييمك! يساعدنا هذا في تحسين جودة الخدمة' : 'Thank you for your rating! This helps us improve our service');
+    if (rating < 1) return;
+    void submitServiceFeedback({
+      rating,
+      comment: feedback,
+      orderId: activeOrder?.id,
+    }).then(() => {
+      toast.success(isRtl ? 'شكراً لتقييمك! يساعدنا هذا في تحسين جودة الخدمة' : 'Thank you for your rating! This helps us improve our service');
+    });
     setStep('booking');
     setActiveOrder(null);
     setRating(0);
@@ -1479,103 +1496,108 @@ const CustomerDashboard: React.FC = () => {
                     )}
 
 
-                    {/* Route Selection — GPS-seeded pickup/delivery by service */}
-                    <div className="space-y-6">
+                    {/* Two-step location: pickup, then drop-off, then route + price */}
+                    <div className="space-y-5">
                        <div className={`flex flex-wrap items-center justify-between gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
-                         <p className="text-sm font-bold text-gray-500">{t('route_plan')}</p>
+                         <p className="text-base font-black text-black">
+                           {deliveryOnly
+                             ? isRtl ? 'موقع التنزيل' : 'Drop-off location'
+                             : locationPhase === 'pickup'
+                               ? isRtl ? 'الخطوة ١ — موقع التحميل' : 'Step 1 — Pickup location'
+                               : locationPhase === 'dropoff'
+                                 ? isRtl ? 'الخطوة ٢ — موقع التنزيل' : 'Step 2 — Drop-off location'
+                                 : isRtl ? 'المسار والتكلفة' : 'Route and cost'}
+                         </p>
                          {gpsError && (
-                           <p className="text-[11px] font-bold text-amber-600">{gpsError}</p>
+                           <p className="text-sm font-bold text-amber-700">{gpsError}</p>
                          )}
                        </div>
+                       {!deliveryOnly && (
+                         <div className="grid grid-cols-2 gap-2">
+                           <button
+                             type="button"
+                             onClick={() => {
+                               setLocationPhase('pickup');
+                               setActiveMapPin('pickup');
+                               setIsCalculated(false);
+                             }}
+                             className={`min-h-14 rounded-2xl px-3 text-sm font-black border-2 ${
+                               locationPhase === 'pickup'
+                                 ? 'bg-black text-[#FFCC00] border-black'
+                                 : 'bg-white text-black border-stone-200'
+                             }`}
+                           >
+                             {isRtl ? '١ موقع التحميل' : '1 Pickup'}
+                           </button>
+                           <button
+                             type="button"
+                             disabled={!pickupCoords}
+                             onClick={() => {
+                               setLocationPhase('dropoff');
+                               setActiveMapPin('destination');
+                               setIsCalculated(false);
+                               setMapFocusNonce((n) => n + 1);
+                             }}
+                             className={`min-h-14 rounded-2xl px-3 text-sm font-black border-2 disabled:opacity-40 ${
+                               locationPhase === 'dropoff' || locationPhase === 'summary'
+                                 ? 'bg-black text-[#FFCC00] border-black'
+                                 : 'bg-white text-black border-stone-200'
+                             }`}
+                           >
+                             {isRtl ? '٢ موقع التنزيل' : '2 Drop-off'}
+                           </button>
+                         </div>
+                       )}
                        <div className="space-y-4 relative">
-                          {!deliveryOnly && (
-                            <div className={`absolute ${isRtl ? 'right-7' : 'left-7'} top-10 bottom-10 w-0.5 border-r-2 border-dashed border-gray-100`}></div>
-                          )}
-
-                          {!deliveryOnly && (
-                          <div className={`flex items-center gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100 relative z-10 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white shrink-0">
-                              <MapPin size={16} />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <p className={`text-[10px] font-bold text-blue-600 ${isRtl ? 'text-right' : 'text-left'}`}>
-                                {isRtl ? 'نقطة التحميل (موقعك الحالي)' : 'Pickup (your current location)'}
-                              </p>
+                          {locationPhase !== 'summary' && (
+                          <div className="rounded-[28px] border-2 border-black bg-white p-3 shadow-sm">
+                            <p className={`text-sm font-black text-black mb-2 ${isRtl ? 'text-right' : 'text-left'}`}>
+                              {locationPhase === 'dropoff' || deliveryOnly
+                                ? isRtl ? 'ابحث عن موقع التنزيل' : 'Search drop-off'
+                                : isRtl ? 'ابحث عن موقع التحميل' : 'Search pickup'}
+                            </p>
+                            <div className="flex items-center gap-3 min-h-14 rounded-2xl bg-[#FFCC00]/20 border border-black/10 px-4">
+                              <Search size={22} className="text-black shrink-0" />
                               <LocationAutocomplete
+                                key={deliveryOnly ? 'dropoff' : locationPhase}
                                 placeholder={
                                   locatingGps
-                                    ? isRtl
-                                      ? 'جاري تحديد موقعك...'
-                                      : 'Detecting your location...'
-                                    : t('pickup_placeholder')
+                                    ? isRtl ? 'جاري تحديد موقعك...' : 'Detecting your location...'
+                                    : isRtl
+                                      ? 'عنوان، حي، ورشة، أو معلم'
+                                      : 'Address, neighborhood, workshop, or landmark'
                                 }
                                 isRtl={isRtl}
-                                value={pickup}
+                                value={locationPhase === 'dropoff' || deliveryOnly ? destination : pickup}
                                 onPlaceSelect={(place) => {
-                                  setPickupCoords(place.location);
-                                  setPickup(place.formattedAddress || place.displayName || '');
-                                  setPickupCity(
-                                    place.city ||
-                                      cityLabelFromAddress(place.formattedAddress || place.displayName)
-                                  );
-                                  setActiveMapPin('destination');
+                                  const label = place.formattedAddress || place.displayName || '';
+                                  const city = place.city || cityLabelFromAddress(label);
+                                  if (locationPhase === 'dropoff' || deliveryOnly) {
+                                    setDestinationCoords(place.location);
+                                    setDestination(label);
+                                    setDropoffCity(city);
+                                    setActiveMapPin('destination');
+                                    if (deliveryOnly) {
+                                      setPickupCoords(null);
+                                      setPickup('');
+                                      setNearestDriver(null);
+                                    }
+                                  } else {
+                                    setPickupCoords(place.location);
+                                    setPickup(label);
+                                    setPickupCity(city);
+                                    setActiveMapPin('pickup');
+                                  }
+                                  setUserLocation((prev) => prev || place.location);
+                                  setMapFocusNonce((n) => n + 1);
                                   setIsCalculated(false);
                                 }}
-                                className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}
+                                className="text-base min-h-12 py-3"
                               />
                             </div>
                           </div>
                           )}
 
-                          <div className={`flex items-center gap-4 p-4 bg-primary/5 rounded-2xl border border-primary/10 relative z-10 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-black shrink-0">
-                              <Navigation2 size={16} />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                              <p className={`text-[10px] font-bold text-amber-700 ${isRtl ? 'text-right' : 'text-left'}`}>
-                                {deliveryOnly
-                                  ? isRtl
-                                    ? 'موقع التنزيل (نقطة التوصيل الوحيدة)'
-                                    : 'Drop-off location (only point required)'
-                                  : isRtl
-                                    ? 'الوجهة (اختر على الخريطة أو ابحث)'
-                                    : 'Destination (search or pick on map)'}
-                              </p>
-                              <LocationAutocomplete
-                                placeholder={
-                                  deliveryOnly
-                                    ? locatingGps
-                                      ? isRtl
-                                        ? 'جاري تحديد موقع التنزيل...'
-                                        : 'Detecting drop-off location...'
-                                      : isRtl
-                                        ? 'موقع التنزيل'
-                                        : 'Drop-off location'
-                                    : t('destination_placeholder')
-                                }
-                                isRtl={isRtl}
-                                value={destination}
-                                onPlaceSelect={(place) => {
-                                  setDestinationCoords(place.location);
-                                  setDestination(place.formattedAddress || place.displayName || '');
-                                  setDropoffCity(
-                                    place.city ||
-                                      cityLabelFromAddress(place.formattedAddress || place.displayName)
-                                  );
-                                  // Water tanker: never invent a customer pickup from drop-off.
-                                  if (deliveryOnly) {
-                                    setPickupCoords(null);
-                                    setPickup('');
-                                    setNearestDriver(null);
-                                  }
-                                  setIsCalculated(false);
-                                }}
-                                className={`flex-1 ${isRtl ? 'text-right' : 'text-left'}`}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Interactive Google Map — GPS-centered */}
                           <BookingLocationMap
                             pickupCoords={deliveryOnly ? null : pickupCoords}
                             destinationCoords={destinationCoords}
@@ -1586,9 +1608,11 @@ const CustomerDashboard: React.FC = () => {
                             userLocation={userLocation}
                             locating={locatingGps}
                             onRequestUserLocation={() => void locateUser(true)}
+                            centerPin={locationPhase !== 'summary'}
+                            focusNonce={mapFocusNonce}
                             showRoute={
+                              locationPhase === 'summary' &&
                               !deliveryOnly &&
-                              isCalculated &&
                               Boolean(pickupCoords && destinationCoords)
                             }
                             onLocationPicked={(target, coords, address, city) => {
@@ -1605,14 +1629,70 @@ const CustomerDashboard: React.FC = () => {
                                 setPickupCoords(coords);
                                 setPickup(address);
                                 setPickupCity(city || cityLabelFromAddress(address));
-                                setActiveMapPin('destination');
                               }
                               setUserLocation((prev) => prev || coords);
-                              setIsCalculated(false);
+                              if (locationPhase === 'summary') setIsCalculated(false);
                             }}
                           />
 
-                          {/* Automatic Distance Display */}
+                          {locationPhase !== 'summary' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const choosingDropoff = deliveryOnly || locationPhase === 'dropoff';
+                                if (choosingDropoff) {
+                                  if (!destinationCoords) {
+                                    toast.error(isRtl ? 'حرّك الخريطة أو ابحث لتحديد موقع التنزيل' : 'Move the map or search to set the drop-off');
+                                    return;
+                                  }
+                                  setLocationPhase('summary');
+                                  void handleCalculate();
+                                  return;
+                                }
+                                if (!pickupCoords) {
+                                  toast.error(isRtl ? 'حرّك الخريطة أو ابحث لتحديد موقع التحميل' : 'Move the map or search to set the pickup');
+                                  return;
+                                }
+                                setLocationPhase('dropoff');
+                                setActiveMapPin('destination');
+                                setMapFocusNonce((n) => n + 1);
+                              }}
+                              className="w-full min-h-16 py-5 bg-[#FFCC00] text-black rounded-3xl font-black text-lg border-2 border-black shadow-lg"
+                            >
+                              {deliveryOnly || locationPhase === 'dropoff'
+                                ? isRtl ? 'تأكيد موقع التنزيل' : 'Confirm drop-off'
+                                : isRtl ? 'تأكيد موقع التحميل' : 'Confirm pickup'}
+                            </button>
+                          )}
+
+                          {locationPhase === 'summary' && (pickup || destination) && (
+                            <div className={`space-y-2 text-sm font-bold text-neutral-800 ${isRtl ? 'text-right' : 'text-left'}`}>
+                              {!deliveryOnly && pickup && (
+                                <p><span className="text-neutral-500">{isRtl ? 'التحميل: ' : 'Pickup: '}</span>{pickup}</p>
+                              )}
+                              {destination && (
+                                <p><span className="text-neutral-500">{isRtl ? 'التنزيل: ' : 'Drop-off: '}</span>{destination}</p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsCalculated(false);
+                                  if (deliveryOnly) {
+                                    setLocationPhase('dropoff');
+                                    setActiveMapPin('destination');
+                                  } else {
+                                    setLocationPhase('pickup');
+                                    setActiveMapPin('pickup');
+                                  }
+                                }}
+                                className="text-sm font-black underline underline-offset-4"
+                              >
+                                {isRtl ? 'تعديل المواقع' : 'Edit locations'}
+                              </button>
+                            </div>
+                          )}
+
+                          {locationPhase === 'summary' && (
                           <div className="space-y-4 pt-4 border-t border-gray-50 relative z-10">
                             <div className={`flex justify-between items-center bg-gray-50 p-4 rounded-2xl border border-gray-100 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                                <div className={`flex items-center gap-3 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
@@ -1665,16 +1745,17 @@ const CustomerDashboard: React.FC = () => {
                                )}
                             </div>
                           </div>
+                          )}
 
-                          {!isCalculated && (
+                          {locationPhase === 'summary' && !isCalculated && (
                             <button
                               onClick={handleCalculate}
                               disabled={isLoadingPricing || locatingGps}
-                              className={`w-full py-4 bg-primary text-black rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-all relative z-10 border-2 border-primary shadow-lg shadow-primary/10 ${
+                              className={`w-full min-h-16 py-5 bg-[#FFCC00] text-black rounded-3xl font-black text-lg flex items-center justify-center gap-2 relative z-10 border-2 border-black shadow-lg ${
                                 isLoadingPricing || locatingGps ? 'opacity-50 cursor-not-allowed' : ''
                               }`}
                             >
-                              <Navigation size={18} className={isLoadingPricing ? 'animate-spin' : ''} />
+                              <Navigation size={22} className={isLoadingPricing ? 'animate-spin' : ''} />
                               {isLoadingPricing ? t('waiting_calc') : t('calculate_price')}
                             </button>
                           )}
@@ -1703,7 +1784,7 @@ const CustomerDashboard: React.FC = () => {
                           <button 
                             onClick={handleBooking}
                             disabled={!isCalculated || !!pricingError || isLoadingPricing || isProcessing}
-                            className={`w-full py-5 bg-black text-white rounded-3xl font-bold shadow-xl shadow-black/10 hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2 text-lg ${
+                            className={`w-full min-h-16 py-5 bg-black text-[#FFCC00] rounded-3xl font-black shadow-xl shadow-black/10 hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2 text-xl ${
                               !isCalculated || !!pricingError || isLoadingPricing || isProcessing ? 'opacity-50 cursor-not-allowed' : ''
                             } ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}
                           >
@@ -2166,7 +2247,7 @@ const CustomerDashboard: React.FC = () => {
                       <button
                         key={star}
                         onClick={() => setRating(star)}
-                        className={`text-4xl transition-all ${rating >= star ? 'text-primary scale-110' : 'text-stone-200 hover:text-primary/40'}`}
+                        className={`min-w-14 min-h-14 text-4xl rounded-2xl border-2 ${rating >= star ? 'border-black bg-[#FFCC00] text-black' : 'border-stone-200 text-stone-300'}`}
                       >
                         ★
                       </button>

@@ -19,6 +19,7 @@ import LegalPage from '@/pages/LegalPage';
 import AboutPage from '@/pages/AboutPage';
 import PaymentCallbackPage from '@/pages/PaymentCallbackPage';
 import ProfilePage from '@/pages/ProfilePage';
+import SupportPage from '@/pages/SupportPage';
 
 const CustomerDashboard = React.lazy(() => import('@/pages/CustomerDashboard'));
 const DriverDashboard = React.lazy(() => import('@/pages/DriverDashboard'));
@@ -81,6 +82,7 @@ const App: React.FC = () => {
                 </AuthGuestRoute>
               }
             />
+            <Route path="/support" element={<SupportPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/legal" element={<LegalPage />} />
             <Route path="/terms" element={<LegalPage />} />

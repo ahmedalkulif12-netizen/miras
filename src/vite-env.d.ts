@@ -36,8 +36,6 @@ interface ImportMetaEnv {
   readonly VITE_CORPORATE_EMAIL?: string;
   readonly VITE_SUPPORT_PHONE_DISPLAY?: string;
   readonly VITE_SUPPORT_PHONE_TEL?: string;
-  readonly VITE_SUPPORT_WHATSAPP?: string;
-  readonly VITE_SUPPORT_WHATSAPP_DISPLAY?: string;
   /** Full App Store URL for Smart QR (/qr). */
   readonly VITE_IOS_APP_STORE_URL?: string;
   /** Full Play Store URL for Smart QR (/qr). */

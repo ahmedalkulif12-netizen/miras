@@ -307,7 +307,11 @@ const LandingPage: React.FC = () => {
           <div className="space-y-6">
             <h4 className="font-bold text-neutral-900 text-lg">{t('support')}</h4>
             <ul className="text-neutral-500 font-medium flex flex-col gap-3">
-              <li className="text-neutral-400 text-sm">{t('faq')} — {isRtl ? 'قريباً' : 'coming soon'}</li>
+              <li>
+                <Link to="/support" className="hover:text-primary transition-colors">
+                  {t('faq')}
+                </Link>
+              </li>
               <li>
                 <a href="#contact" className="hover:text-primary transition-colors">
                   {t('contact')}

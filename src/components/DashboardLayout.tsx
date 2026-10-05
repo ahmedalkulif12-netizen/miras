@@ -21,6 +21,7 @@ import {
   Warehouse,
   DollarSign,
   MessageSquare,
+  CircleHelp,
 } from 'lucide-react';
 import { ChatUnreadBadge } from '@/components/TripChatNotifyButton';
 import { BrandLogo } from '@/components/BrandLogo';
@@ -167,6 +168,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
           </div>
 
           <div className="mt-auto flex flex-col gap-1">
+            <SidebarLink to="/support" icon={<CircleHelp size={20} />} label={isRtl ? 'المساعدة والدعم' : 'Help and support'} />
             <SidebarLink to="/about" icon={<Settings size={20} />} label={t('about')} />
             <SidebarLink to="/terms" icon={<ShieldAlert size={20} />} label={t('legal_support')} />
           </div>

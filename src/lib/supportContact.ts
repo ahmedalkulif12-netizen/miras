@@ -1,6 +1,6 @@
 /**
  * Public support contacts — client-safe VITE_* values.
- * Phone / WhatsApp stay unset until a real business line is provided
+ * The public phone line stays unset until a real business number is provided
  * (do not ship fake +966 5X XXX XXXX placeholders).
  */
 
@@ -25,16 +25,9 @@ export const CORPORATE_EMAIL = readEnv('VITE_CORPORATE_EMAIL') || SUPPORT_EMAIL;
 
 export const SUPPORT_PHONE_DISPLAY = readEnv('VITE_SUPPORT_PHONE_DISPLAY');
 export const SUPPORT_PHONE_TEL = readEnv('VITE_SUPPORT_PHONE_TEL');
-export const SUPPORT_WHATSAPP_NUMBER = readEnv('VITE_SUPPORT_WHATSAPP');
-export const SUPPORT_WHATSAPP_DISPLAY =
-  readEnv('VITE_SUPPORT_WHATSAPP_DISPLAY') || SUPPORT_PHONE_DISPLAY;
 
 export const HAS_SUPPORT_PHONE = Boolean(SUPPORT_PHONE_TEL);
-export const HAS_SUPPORT_WHATSAPP = Boolean(SUPPORT_WHATSAPP_NUMBER);
 
 export const supportMailto = `mailto:${SUPPORT_EMAIL}`;
 export const corporateMailto = `mailto:${CORPORATE_EMAIL}`;
 export const supportTelHref = HAS_SUPPORT_PHONE ? `tel:${SUPPORT_PHONE_TEL}` : '';
-export const supportWhatsAppHref = HAS_SUPPORT_WHATSAPP
-  ? `https://wa.me/${SUPPORT_WHATSAPP_NUMBER.replace(/^\+/, '')}`
-  : '';

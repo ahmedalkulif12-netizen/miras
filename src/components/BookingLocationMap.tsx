@@ -5,7 +5,7 @@ import {
   useMap,
   useMapsLibrary,
 } from '@vis.gl/react-google-maps';
-import { Crosshair, MapPin, Navigation2 } from 'lucide-react';
+import { Crosshair, MapPin } from 'lucide-react';
 import { RouteDisplay } from '@/components/RouteDisplay';
 import { cityFromAddressComponents } from '@/lib/saudiGeo';
 
@@ -32,6 +32,10 @@ interface BookingLocationMapProps {
   mode?: BookingMapMode;
   onRequestUserLocation?: () => void;
   locating?: boolean;
+  /** Fixed center pin: dragging the map moves the active point. */
+  centerPin?: boolean;
+  /** Bump to pan the camera to the current GPS / active pin once. */
+  focusNonce?: number;
 }
 
 const RIYADH_CENTER: google.maps.LatLngLiteral = { lat: 24.7136, lng: 46.6753 };
@@ -58,11 +62,21 @@ const MapCameraController: React.FC<{
   destination: google.maps.LatLngLiteral | null;
   userLocation: google.maps.LatLngLiteral | null;
   mode: BookingMapMode;
-}> = ({ pickup, destination, userLocation, mode }) => {
+  centerPin: boolean;
+  focusNonce: number;
+}> = ({ pickup, destination, userLocation, mode, centerPin, focusNonce }) => {
   const map = useMap();
 
   useEffect(() => {
-    if (!map) return;
+    if (!map || !centerPin || focusNonce < 1) return;
+    const focus = userLocation || pickup || destination;
+    if (!focus) return;
+    map.panTo(focus);
+    map.setZoom(16);
+  }, [map, centerPin, focusNonce]);
+
+  useEffect(() => {
+    if (!map || centerPin) return;
 
     if (mode === 'pickup_destination' && pickup && destination) {
       const samePoint =
@@ -86,7 +100,48 @@ const MapCameraController: React.FC<{
       map.panTo(focus);
       map.setZoom(15);
     }
-  }, [map, pickup, destination, userLocation, mode]);
+  }, [map, pickup, destination, userLocation, mode, centerPin]);
+
+  return null;
+};
+
+/** Reads the map center after the user stops dragging and writes it to the active step. */
+const CenterPinPicker: React.FC<{
+  activePin: BookingPinTarget;
+  onPick: (target: BookingPinTarget, coords: google.maps.LatLngLiteral) => void;
+}> = ({ activePin, onPick }) => {
+  const map = useMap();
+  const pinRef = React.useRef(activePin);
+  const pickRef = React.useRef(onPick);
+  pinRef.current = activePin;
+  pickRef.current = onPick;
+
+  useEffect(() => {
+    if (!map) return;
+    let moved = false;
+    let timer = 0;
+    const markMoved = () => {
+      moved = true;
+    };
+    const drag = map.addListener('dragstart', markMoved);
+    const zoom = map.addListener('zoom_changed', markMoved);
+    const idle = map.addListener('idle', () => {
+      if (!moved) return;
+      moved = false;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const center = map.getCenter();
+        if (!center) return;
+        pickRef.current(pinRef.current, { lat: center.lat(), lng: center.lng() });
+      }, 220);
+    });
+    return () => {
+      window.clearTimeout(timer);
+      drag.remove();
+      zoom.remove();
+      idle.remove();
+    };
+  }, [map, activePin]);
 
   return null;
 };
@@ -99,7 +154,6 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
   pickupCoords,
   destinationCoords,
   activePin,
-  onActivePinChange,
   onLocationPicked,
   isRtl = false,
   showRoute = false,
@@ -107,6 +161,8 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
   mode = 'pickup_destination',
   onRequestUserLocation,
   locating = false,
+  centerPin = false,
+  focusNonce = 0,
 }) => {
   const geocodingLib = useMapsLibrary('geocoding');
   const geocoder = useMemo(
@@ -149,76 +205,34 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {!deliveryOnly && (
-          <button
-            type="button"
-            onClick={() => onActivePinChange('pickup')}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-              activePin === 'pickup'
-                ? 'bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-500/20'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
-            }`}
-          >
-            <MapPin size={14} />
-            {isRtl ? 'تعيين نقطة التحميل على الخريطة' : 'Set pickup on map'}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => onActivePinChange('destination')}
-          className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
-            deliveryOnly || activePin === 'destination'
-              ? 'bg-amber-400 text-black border-amber-400 shadow-md shadow-amber-400/20'
-              : 'bg-white text-slate-600 border-slate-200 hover:border-amber-300'
-          }`}
-        >
-          <Navigation2 size={14} />
-          {deliveryOnly
-            ? isRtl
-              ? 'تعيين موقع التنزيل على الخريطة'
-              : 'Set drop-off on map'
-            : isRtl
-              ? 'تعيين نقطة التسليم على الخريطة'
-              : 'Set delivery on map'}
-        </button>
-        {onRequestUserLocation && (
-          <button
-            type="button"
-            onClick={onRequestUserLocation}
-            disabled={locating}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400 transition-all disabled:opacity-60"
-          >
-            <Crosshair size={14} className={locating ? 'animate-spin' : ''} />
-            {locating
-              ? isRtl
-                ? 'جاري تحديد الموقع...'
-                : 'Locating...'
-              : isRtl
-                ? 'موقعي الحالي'
-                : 'My current location'}
-          </button>
-        )}
-      </div>
-
-      <div className="rounded-[32px] overflow-hidden border border-slate-200 shadow-inner relative h-[280px] sm:h-[320px] md:h-[360px] bg-slate-100">
+      <div className="rounded-[32px] overflow-hidden border-2 border-black shadow-inner relative h-[320px] sm:h-[380px] md:h-[440px] bg-slate-100">
         <Map
           defaultCenter={defaultCenter}
           defaultZoom={userLocation ? 15 : 11}
           gestureHandling="greedy"
           disableDefaultUI={false}
           style={{ width: '100%', height: '100%' }}
-          onClick={handleMapClick}
+          onClick={centerPin ? undefined : handleMapClick}
           onTilesLoaded={() => setMapReady(true)}
           reuseMaps
         >
           {mapReady && (
+            <>
             <MapCameraController
               pickup={pickupCoords}
               destination={destinationCoords}
               userLocation={userLocation}
               mode={mode}
+              centerPin={centerPin}
+              focusNonce={focusNonce}
             />
+            {centerPin && (
+              <CenterPinPicker
+                activePin={effectiveActivePin}
+                onPick={(target, coords) => void applyCoords(target, coords)}
+              />
+            )}
+            </>
           )}
 
           {userLocation && (
@@ -229,7 +243,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
             />
           )}
 
-          {!deliveryOnly && pickupCoords && (
+          {!centerPin && !deliveryOnly && pickupCoords && (
             <Marker
               position={pickupCoords}
               draggable
@@ -238,7 +252,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
             />
           )}
 
-          {destinationCoords && (
+          {!centerPin && destinationCoords && (
             <Marker
               position={destinationCoords}
               draggable
@@ -262,6 +276,41 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
               <RouteDisplay origin={pickupCoords} destination={destinationCoords} />
             )}
         </Map>
+
+        {centerPin && (
+          <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full z-10">
+            <div className="flex flex-col items-center">
+              <div className="px-3 py-1.5 rounded-full bg-black text-[#FFCC00] text-xs font-black shadow-lg mb-1">
+                {effectiveActivePin === 'pickup'
+                  ? isRtl
+                    ? 'موقع التحميل'
+                    : 'Pickup'
+                  : isRtl
+                    ? 'موقع التنزيل'
+                    : 'Drop-off'}
+              </div>
+              <MapPin size={42} className="text-black drop-shadow-md" fill="#FFCC00" />
+            </div>
+          </div>
+        )}
+
+        {onRequestUserLocation && (
+          <button
+            type="button"
+            onClick={onRequestUserLocation}
+            disabled={locating}
+            className={`absolute z-10 bottom-16 ${isRtl ? 'left-3' : 'right-3'} min-h-14 px-4 rounded-2xl bg-[#FFCC00] text-black font-black text-sm shadow-xl border-2 border-black flex items-center gap-2 disabled:opacity-60`}
+          >
+            <Crosshair size={22} className={locating ? 'animate-spin' : ''} />
+            {locating
+              ? isRtl
+                ? 'جاري التحديد...'
+                : 'Locating...'
+              : isRtl
+                ? 'موقعي الحالي'
+                : 'My location'}
+          </button>
+        )}
 
         <div
           className={`absolute bottom-3 inset-x-3 pointer-events-none rounded-xl bg-white/90 backdrop-blur-sm border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-600 shadow-sm ${

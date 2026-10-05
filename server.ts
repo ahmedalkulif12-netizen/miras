@@ -520,6 +520,30 @@ async function startServer() {
     }
   });
 
+  app.post('/api/feedback', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const uid = req.firebaseUid;
+      if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+      const rating = Math.round(Number(req.body?.rating));
+      const comment = String(req.body?.comment || '').trim().slice(0, 1000);
+      const orderId = req.body?.orderId ? String(req.body.orderId).slice(0, 80) : null;
+      if (!(rating >= 1 && rating <= 5)) {
+        return res.status(400).json({ error: 'Rating must be from 1 to 5', code: 'RATING_REQUIRED' });
+      }
+      await db.collection('feedback').add({
+        uid,
+        rating,
+        comment,
+        orderId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      return res.status(201).json({ ok: true });
+    } catch (error: any) {
+      console.error('[feedback] save failed:', error?.code, error?.message || error);
+      return res.status(500).json({ error: 'Failed to save feedback', code: 'FEEDBACK_FAILED' });
+    }
+  });
+
   // Pre-payment checkout draft — NOT written to `orders` (drivers never see it).
   app.post('/api/checkout-draft', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
