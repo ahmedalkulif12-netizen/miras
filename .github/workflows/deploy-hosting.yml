@@ -1,10 +1,12 @@
 name: Deploy Hosting
 
-# Production SPA → Firebase Hosting (hamula-cfc6c).
+# Production SPA → Firebase Hosting (hamula-cfc6c) on every push to main.
 # Required repo secrets: FIREBASE_TOKEN (firebase login:ci) or GOOGLE_APPLICATION_CREDENTIALS JSON
 # in FIREBASE_SERVICE_ACCOUNT. Client VITE_* values must live in GitHub Environment "production".
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
