@@ -10,6 +10,8 @@ export const DISPATCH_STAGES = [
 ] as const;
 
 export const DISPATCH_MAX_RADIUS_KM = 35;
+/** Furthest a driver may be from the pickup (or water drop-off) even after the search expands. */
+export const DISPATCH_EXPANDED_RADIUS_KM = 80;
 
 export interface OrderDispatchMeta {
   startedAt: string;
@@ -188,11 +190,67 @@ export function orderPickupPoint(order: {
   return { lat, lng };
 }
 
+function finitePoint(lat: unknown, lng: unknown): { lat: number; lng: number } | null {
+  const la = Number(lat);
+  const ln = Number(lng);
+  if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
+  return { lat: la, lng: ln };
+}
+
+/** Water / single-destination jobs match drivers to the delivery pin. Everything else uses pickup only. */
+export function isDeliveryOnlyDispatch(order: {
+  serviceType?: string;
+  deliveryOnly?: boolean;
+  locationMode?: string;
+}): boolean {
+  return (
+    order.deliveryOnly === true ||
+    order.locationMode === 'delivery_only' ||
+    order.serviceType === 'water_tanker'
+  );
+}
+
+/**
+ * Point drivers are measured against.
+ * Transport: pickup (موقع التحميل), never the customer's phone and never the drop-off.
+ * Water tanker: the drop-off, because that is the only place the driver must reach.
+ */
+export function orderDispatchPoint(order: {
+  serviceType?: string;
+  deliveryOnly?: boolean;
+  locationMode?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  pickupCoords?: { lat?: number; lng?: number };
+  pickup?: { lat?: number; lng?: number };
+  dropoffLat?: number;
+  dropoffLng?: number;
+  dropoffCoords?: { lat?: number; lng?: number };
+  destinationCoords?: { lat?: number; lng?: number };
+}): { lat: number; lng: number } | null {
+  if (isDeliveryOnlyDispatch(order)) {
+    return (
+      finitePoint(order.dropoffLat, order.dropoffLng) ||
+      finitePoint(order.dropoffCoords?.lat, order.dropoffCoords?.lng) ||
+      finitePoint(order.destinationCoords?.lat, order.destinationCoords?.lng) ||
+      orderPickupPoint(order)
+    );
+  }
+  return orderPickupPoint(order);
+}
+
 export function orderDispatchCity(order: {
+  serviceType?: string;
+  deliveryOnly?: boolean;
+  locationMode?: string;
   pickupCity?: string;
+  dropoffCity?: string;
   dispatch?: { city?: string; cityKey?: string };
   pickup?: { city?: string };
 }): string {
+  if (isDeliveryOnlyDispatch(order)) {
+    return String(order.dropoffCity || order.dispatch?.city || order.dispatch?.cityKey || '');
+  }
   return String(
     order.dispatch?.city ||
       order.dispatch?.cityKey ||

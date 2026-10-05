@@ -656,7 +656,7 @@ const DriverDashboard: React.FC = () => {
             lng: driverCoords?.lng,
             vehicleType: profile?.vehicleType,
           },
-          relaxMissingGps: true,
+          relaxMissingGps: import.meta.env.DEV,
           relaxRadius: import.meta.env.DEV,
         }),
       }));

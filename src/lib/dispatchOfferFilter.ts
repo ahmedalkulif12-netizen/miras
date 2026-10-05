@@ -1,10 +1,11 @@
 import { haversineKm } from '@/lib/tripDistance';
 import { driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
 import {
+  DISPATCH_EXPANDED_RADIUS_KM,
   DISPATCH_MAX_RADIUS_KM,
   orderDispatchCity,
+  orderDispatchPoint,
   orderDispatchStartedAt,
-  orderPickupPoint,
   resolveDispatchWindow,
   sameDispatchCity,
   type DispatchWindow,
@@ -27,7 +28,14 @@ export function evaluateDispatchOffer(input: {
     pickupLat?: number;
     pickupLng?: number;
     pickupCity?: string;
+    dropoffLat?: number;
+    dropoffLng?: number;
+    dropoffCity?: string;
+    deliveryOnly?: boolean;
+    locationMode?: string;
     pickupCoords?: { lat?: number; lng?: number };
+    dropoffCoords?: { lat?: number; lng?: number };
+    destinationCoords?: { lat?: number; lng?: number };
     pickup?: { lat?: number; lng?: number; city?: string };
     dispatch?: { startedAt?: unknown; city?: string; cityKey?: string };
     createdAt?: unknown;
@@ -46,7 +54,7 @@ export function evaluateDispatchOffer(input: {
   relaxRadius?: boolean;
 }): DispatchOfferDecision {
   const window = resolveDispatchWindow(orderDispatchStartedAt(input.order), input.nowMs);
-  const pickup = orderPickupPoint(input.order);
+  const pickup = orderDispatchPoint(input.order);
   const driverLat = Number(input.driver.lat);
   const driverLng = Number(input.driver.lng);
   const hasDriverGps = Number.isFinite(driverLat) && Number.isFinite(driverLng);
@@ -81,9 +89,13 @@ export function evaluateDispatchOffer(input: {
   const distanceKm = haversineKm(pickup, { lat: driverLat, lng: driverLng });
   const cap = Math.min(window.radiusKm, DISPATCH_MAX_RADIUS_KM);
   if (distanceKm > cap) {
-    // Intercity jobs and fully-expanded same-city search must not vanish from the feed
-    // (Al-Ahsa metro is larger than the 35 km cap).
-    if (input.relaxRadius || window.atMax || tripType === 'outside_city') {
+    // Expanded search may cover a wide metro (Al-Ahsa) but never another city.
+    // A driver in Riyadh must not see a pickup in Dammam.
+    const expandedCap =
+      input.relaxRadius || window.atMax || tripType === 'outside_city'
+        ? DISPATCH_EXPANDED_RADIUS_KM
+        : cap;
+    if (distanceKm <= expandedCap && expandedCap > cap) {
       return {
         visible: true,
         distanceKm,

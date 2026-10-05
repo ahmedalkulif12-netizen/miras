@@ -203,6 +203,39 @@ async function run(): Promise<void> {
   });
   assert(intercity.visible, 'outside_city offers stay visible to pickup-city drivers');
 
+  const riyadhSeesDammam = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'furniture_moving',
+      requiredVehicleType: 'furniture_moving',
+      tripType: 'outside_city',
+      pickupLat: 26.4207,
+      pickupLng: 50.0888,
+      pickupCity: 'الدمام',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    },
+    driver: { lat: 24.7136, lng: 46.6753, city: 'الرياض', vehicleType: 'furniture_moving' },
+    nowMs: Date.parse('2026-01-01T00:10:00.000Z'),
+  });
+  assert(!riyadhSeesDammam.visible, 'a Riyadh driver is not offered a Dammam pickup');
+
+  const tankerNearDropoff = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'water_tanker',
+      requiredVehicleType: 'water_tanker',
+      deliveryOnly: true,
+      pickupLat: 24.7136,
+      pickupLng: 46.6753,
+      dropoffLat: 26.4207,
+      dropoffLng: 50.0888,
+      dropoffCity: 'الدمام',
+      createdAt: new Date().toISOString(),
+    },
+    driver: { lat: 26.43, lng: 50.09, city: 'الدمام', vehicleType: 'water_tanker' },
+  });
+  assert(tankerNearDropoff.visible, 'water tanker drivers match the drop-off, not a distant quote origin');
+
   const first = applyLocalWalletCredit(
     'driver-1',
     { tripFare: 100, platformFee: 15, driverNet: 85 },

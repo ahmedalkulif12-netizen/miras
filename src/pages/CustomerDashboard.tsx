@@ -48,6 +48,7 @@ import {
 } from '@/lib/customerOrderMemory';
 import { openNativeMapsNavigation } from '@/lib/nativeMaps';
 import { subscribeToDriverLocation, parseLiveDriverPosition, type LiveDriverPosition } from '@/lib/liveTracking';
+import { estimateArrivalMinutes } from '@/lib/tripDistance';
 import { LiveTrackingMap } from '@/components/LiveTrackingMap';
 import { coerceLatLng, getOrderTripCoordinates } from '@/lib/orderGeo';
 import { OrderDriverCallModal } from '@/components/OrderDriverCallModal';
@@ -2015,6 +2016,15 @@ const CustomerDashboard: React.FC = () => {
                       const navPhase = getDriverNavPhase(activeOrder.status, activeOrder);
                       const followDriver =
                         Boolean(liveDriver) && canOpenLiveTracking(activeOrder.status);
+                      const stageTarget =
+                        navPhase === 'to_dropoff' || isWaterTankerService(activeOrder.serviceType)
+                          ? mapDropoff
+                          : mapPickup;
+                      const etaMinutes =
+                        followDriver && liveDriver && stageTarget
+                          ? estimateArrivalMinutes(liveDriver, stageTarget, liveDriver.speed)
+                          : null;
+                      const searchingDropoff = isWaterTankerService(activeOrder.serviceType);
                       return (
                         <>
                     <LiveTrackingMap
@@ -2051,27 +2061,44 @@ const CustomerDashboard: React.FC = () => {
                             void dispatchTick;
                             return window.atMax
                               ? isRtl
-                                ? `جاري البحث في نطاق ${window.radiusKm} كم داخل مدينتك`
-                                : `Searching within ${window.radiusKm} km in your city`
+                                ? searchingDropoff
+                                  ? `جاري البحث ضمن ${window.radiusKm} كم من موقع التنزيل`
+                                  : `جاري البحث ضمن ${window.radiusKm} كم من موقع التحميل`
+                                : searchingDropoff
+                                  ? `Searching within ${window.radiusKm} km of the drop-off`
+                                  : `Searching within ${window.radiusKm} km of the pickup`
                               : isRtl
-                                ? `البحث عن سائق قريب · نطاق ${window.radiusKm} كم`
-                                : `Searching nearby drivers · ${window.radiusKm} km radius`;
+                                ? searchingDropoff
+                                  ? `البحث عن سائق قرب موقع التنزيل · ${window.radiusKm} كم`
+                                  : `البحث عن سائق قرب موقع التحميل · ${window.radiusKm} كم`
+                                : searchingDropoff
+                                  ? `Searching drivers near the drop-off · ${window.radiusKm} km`
+                                  : `Searching drivers near the pickup · ${window.radiusKm} km`;
                           })()}
                         </div>
                       </div>
                     )}
 
                     {followDriver && liveDriver && (
-                      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none">
-                        <div className="bg-black/90 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg flex items-center gap-2">
-                          <Truck size={14} />
-                          {navPhase === 'to_dropoff'
-                            ? isRtl
-                              ? 'في الطريق إلى موقع التسليم'
-                              : 'En route to drop-off'
-                            : isRtl
-                              ? 'السائق متوجه إلى موقع الاستلام'
-                              : 'Driver heading to pickup'}
+                      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none max-w-[90%]">
+                        <div className="bg-black text-[#FFCC00] px-5 py-3 rounded-2xl text-sm font-black shadow-lg flex flex-col items-center gap-1 text-center">
+                          <span className="flex items-center gap-2">
+                            <Truck size={18} />
+                            {navPhase === 'to_dropoff' || isWaterTankerService(activeOrder.serviceType)
+                              ? isRtl
+                                ? 'السائق في الطريق إلى موقع التنزيل'
+                                : 'Driver heading to the drop-off'
+                              : isRtl
+                                ? 'السائق في الطريق إلى موقع التحميل'
+                                : 'Driver heading to the pickup'}
+                          </span>
+                          {etaMinutes != null && (
+                            <span className="text-white text-base">
+                              {isRtl
+                                ? `الوصول المتوقع خلال ${etaMinutes} دقيقة`
+                                : `Estimated arrival in ${etaMinutes} min`}
+                            </span>
+                          )}
                         </div>
                       </div>
                     )}

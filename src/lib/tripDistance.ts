@@ -32,6 +32,19 @@ export function roundKm(km: number): number {
   return Math.round(km * 10) / 10;
 }
 
+/** Minutes until the driver reaches the current stage pin (pickup, then drop-off). */
+export function estimateArrivalMinutes(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+  speedMps?: number
+): number {
+  const straightKm = haversineKm(from, to);
+  const roadKm = straightKm * 1.3;
+  const liveKmh = speedMps != null && speedMps > 1.5 ? speedMps * 3.6 : 0;
+  const speedKmh = liveKmh >= 12 && liveKmh <= 110 ? liveKmh : 35;
+  return Math.max(1, Math.round((roadKm / speedKmh) * 60));
+}
+
 /**
  * Billable trip distance between pickup and dropoff.
  * Uses road meters when provided; otherwise haversine on exact coords.
