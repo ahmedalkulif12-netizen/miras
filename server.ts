@@ -1024,19 +1024,23 @@ async function startServer() {
         });
 
         const uploadedAt = new Date().toISOString();
-        await db
-          .collection('users')
-          .doc(uid)
-          .set(
-            {
-              uid,
-              photoURL,
-              photoStoragePath: storagePath,
-              photoUpdatedAt: uploadedAt,
-              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
+        const photoPatch = {
+          photoURL,
+          photoStoragePath: storagePath,
+          photoUpdatedAt: uploadedAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await db.collection('users').doc(uid).set({ uid, ...photoPatch }, { merge: true });
+        await Promise.all([
+          db.collection('drivers').doc(uid).get().then((snap) => {
+            if (!snap.exists) return;
+            return snap.ref.set(photoPatch, { merge: true });
+          }),
+          db.collection('customers').doc(uid).get().then((snap) => {
+            if (!snap.exists) return;
+            return snap.ref.set(photoPatch, { merge: true });
+          }),
+        ]);
 
         res.json({
           photoURL,

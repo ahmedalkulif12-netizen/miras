@@ -1,5 +1,6 @@
 import admin from 'firebase-admin';
 import { isTestOrGhostRecord } from './testDataPatterns.ts';
+import { readHttpsPhoto } from './photoUrl.ts';
 
 export type AdminCustomerStatus = 'active' | 'blocked' | 'banned' | 'pending' | 'suspended';
 
@@ -10,6 +11,7 @@ export interface AdminCustomerRow {
   status: AdminCustomerStatus;
   ordersCount: number;
   totalSpentSar: number;
+  photoURL?: string;
 }
 
 const ALLOWED = new Set<AdminCustomerStatus>([
@@ -88,6 +90,9 @@ export async function listAdminCustomers(
         status: mapStatus(customer?.accountStatus ?? user.accountStatus),
         ordersCount: ordersSnap.size,
         totalSpentSar: Math.round(totalSpentSar),
+        ...(readHttpsPhoto(user.photoURL, customer?.photoURL)
+          ? { photoURL: readHttpsPhoto(user.photoURL, customer?.photoURL) }
+          : {}),
       } satisfies AdminCustomerRow;
     })
   );

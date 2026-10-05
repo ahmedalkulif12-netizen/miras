@@ -102,6 +102,7 @@ export interface AdminDriverApiRow {
   docsComplete?: boolean;
   rejectionReason?: string | null;
   complaints: number;
+  photoURL?: string;
   createdAt?: string | null;
   documents: {
     license: AdminDriverDocumentMeta;
@@ -118,6 +119,7 @@ export interface AdminCustomerApiRow {
   status: CustomerAccountStatus;
   ordersCount: number;
   totalSpentSar: number;
+  photoURL?: string;
 }
 
 export type AdminDirectoryKind =
@@ -145,6 +147,7 @@ export interface AdminDirectoryEntry {
   registrationSerial?: string;
   operatorId?: string;
   operatorName?: string;
+  photoURL?: string;
   createdAt?: string | null;
 }
 

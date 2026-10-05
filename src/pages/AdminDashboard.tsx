@@ -35,6 +35,7 @@ import AdminCorporateContractsPanel from '@/components/admin/AdminCorporateContr
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
+import { AdminUserAvatar } from '@/components/AdminUserAvatar';
 import { isReviewQueueDriverStatus } from '@/domain/driver-review';
 import {
   CORE_SERVICE_TYPES,
@@ -61,6 +62,7 @@ interface Driver {
   docsComplete?: boolean;
   rejectionReason?: string | null;
   complaints: number;
+  photoURL?: string;
   documents: {
     id: AdminDriverDocumentMeta;
     license: AdminDriverDocumentMeta;
@@ -533,8 +535,8 @@ const AdminDashboard: React.FC = () => {
                 {/* Modal Header */}
                 <div className="p-8 border-b flex justify-between items-center sticky top-0 bg-white z-10">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                      <Truck size={24} />
+                    <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center">
+                      <AdminUserAvatar name={selectedDriver.name} photoURL={selectedDriver.photoURL} size={48} />
                     </div>
                     <div>
                       <h3 className="text-xl font-bold">{t('driver_details')}</h3>
@@ -1049,7 +1051,9 @@ const AdminDashboard: React.FC = () => {
                       filteredDrivers.map((driver) => (
                         <tr key={driver.id} className="hover:bg-gray-50/50 transition-colors group">
                           <td className="px-8 py-5">
-                            <div className={`flex flex-col ${isRtl ? 'items-start' : 'items-start'}`}>
+                            <div className="flex items-center gap-3">
+                              <AdminUserAvatar name={driver.name} photoURL={driver.photoURL} />
+                              <div className="flex flex-col items-start">
                               <span className="font-bold text-sm">{driver.name}</span>
                               <span className="text-[10px] text-gray-400">{driver.phone}</span>
                               <span className="text-[10px] font-bold text-stone-400 mt-0.5">
@@ -1061,6 +1065,7 @@ const AdminDashboard: React.FC = () => {
                                     ? 'فردي'
                                     : 'Individual'}
                               </span>
+                              </div>
                             </div>
                           </td>
                           <td className="px-8 py-5 text-sm">{driver.truck}</td>
@@ -1266,9 +1271,12 @@ const AdminDashboard: React.FC = () => {
                       customers.map((customer) => (
                         <tr key={customer.id} className="hover:bg-gray-50/50">
                           <td className="px-8 py-5">
-                            <div className="flex flex-col">
+                            <div className="flex items-center gap-3">
+                              <AdminUserAvatar name={customer.name} photoURL={customer.photoURL} />
+                              <div className="flex flex-col">
                               <span className="font-bold text-sm">{customer.name}</span>
                               <span className="text-[10px] text-gray-400 font-mono">{customer.phone}</span>
+                              </div>
                             </div>
                           </td>
                           <td className="px-8 py-5 text-sm font-bold">{customer.ordersCount}</td>

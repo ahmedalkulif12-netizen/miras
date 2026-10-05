@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Clock, MapPin, Mail, Menu, X } from 'lucide-react';
 import { BrandLogo } from '@/components/BrandLogo';
 import { LanguageToggle } from '@/components/LanguageToggle';
@@ -11,19 +11,32 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   resolveLoginEntryPath,
   resolveRegisterEntryPath,
+  type AuthEntryMode,
 } from '@/lib/authRouting';
 import { DevBypassPanel } from '@/components/DevBypassPanel';
+import LoginPage from '@/pages/LoginPage';
 
 const LandingPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
   const { profile, loading } = useAuth();
+  const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [authModal, setAuthModal] = useState<AuthEntryMode | null>(null);
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
   const loginPath = resolveLoginEntryPath(loading ? null : profile);
   const registerPath = resolveRegisterEntryPath(loading ? null : profile);
+
+  const openAuth = (mode: AuthEntryMode) => {
+    closeMobileNav();
+    if (!loading && profile) {
+      navigate(mode === 'login' ? loginPath : registerPath);
+      return;
+    }
+    setAuthModal(mode);
+  };
 
   return (
     <div className="flex flex-col min-h-dvh bg-[#F6F6F4]">
@@ -44,18 +57,20 @@ const LandingPage: React.FC = () => {
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
             <LanguageToggle className="hidden sm:inline-flex" />
-            <Link
-              to={loginPath}
+            <button
+              type="button"
+              onClick={() => openAuth('login')}
               className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full border border-white/25 text-xs sm:text-sm font-bold text-white hover:bg-white hover:text-black transition-all text-center leading-tight"
             >
               {t('auth_login')}
-            </Link>
-            <Link
-              to={registerPath}
+            </button>
+            <button
+              type="button"
+              onClick={() => openAuth('register')}
               className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full bg-[#FFCC00] text-black text-xs sm:text-sm font-bold hover:bg-[#ffe14d] transition-all text-center leading-tight"
             >
               {t('auth_register')}
-            </Link>
+            </button>
             <LanguageToggle compact className="sm:hidden" />
             <button
               type="button"
@@ -79,20 +94,20 @@ const LandingPage: React.FC = () => {
             <a href="#contact" onClick={closeMobileNav} className="block px-4 py-3 rounded-2xl font-bold text-white hover:bg-white/10">
               {t('contact')}
             </a>
-            <Link
-              to={loginPath}
-              onClick={closeMobileNav}
-              className="block px-4 py-3 rounded-2xl font-bold text-center border border-white/25 text-white"
+            <button
+              type="button"
+              onClick={() => openAuth('login')}
+              className="block w-full px-4 py-3 rounded-2xl font-bold text-center border border-white/25 text-white"
             >
               {t('auth_login')}
-            </Link>
-            <Link
-              to={registerPath}
-              onClick={closeMobileNav}
-              className="block px-4 py-3 rounded-2xl font-bold text-center bg-[#FFCC00] text-black"
+            </button>
+            <button
+              type="button"
+              onClick={() => openAuth('register')}
+              className="block w-full px-4 py-3 rounded-2xl font-bold text-center bg-[#FFCC00] text-black"
             >
               {t('auth_register')}
-            </Link>
+            </button>
           </div>
         )}
       </header>
@@ -326,6 +341,23 @@ const LandingPage: React.FC = () => {
           &copy; {new Date().getFullYear()} {t('all_rights_reserved')}
         </div>
       </footer>
+      {authModal ? (
+        <div className="fixed inset-0 z-[80] bg-black/70 flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
+            onClick={() => setAuthModal(null)}
+          />
+          <div className="relative z-10 w-full max-w-lg my-4">
+            <LoginPage
+              embedded
+              initialMode={authModal}
+              onClose={() => setAuthModal(null)}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

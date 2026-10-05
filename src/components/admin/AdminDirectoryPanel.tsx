@@ -11,6 +11,7 @@ import {
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 import { useDashboardAutoRefresh } from '@/hooks/useDashboardAutoRefresh';
+import { AdminUserAvatar } from '@/components/AdminUserAvatar';
 
 const KIND_FILTERS: Array<{ id: 'all' | 'drivers' | AdminDirectoryKind; en: string; ar: string }> = [
   { id: 'all', en: 'All registrations', ar: 'كل التسجيلات' },
@@ -223,9 +224,14 @@ export const AdminDirectoryPanel: React.FC<{ isRtl: boolean }> = ({ isRtl }) => 
                 filtered.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50/50">
                     <td className="px-8 py-5">
-                      <div className="font-bold text-sm">{row.name}</div>
-                      <div className="text-[10px] text-gray-400">
-                        {row.segment === 'b2b' ? 'B2B' : 'B2C'}
+                      <div className="flex items-center gap-3">
+                        <AdminUserAvatar name={row.name} photoURL={row.photoURL} />
+                        <div>
+                          <div className="font-bold text-sm">{row.name}</div>
+                          <div className="text-[10px] text-gray-400">
+                            {row.segment === 'b2b' ? 'B2B' : 'B2C'}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-8 py-5">
@@ -266,11 +272,14 @@ export const AdminDirectoryPanel: React.FC<{ isRtl: boolean }> = ({ isRtl }) => 
           />
           <div className="relative bg-white w-full max-w-lg rounded-[32px] shadow-2xl p-8 space-y-6">
             <div className="flex items-start justify-between gap-4">
-              <div className={isRtl ? 'text-right' : 'text-left'}>
+              <div className={`flex items-center gap-4 ${isRtl ? 'text-right' : 'text-left'}`}>
+                <AdminUserAvatar name={selected.name} photoURL={selected.photoURL} size={56} />
+                <div>
                 <p className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold ${kindBadgeClass(selected.kind)}`}>
                   {isRtl ? selected.roleLabelAr : selected.roleLabelEn}
                 </p>
                 <h4 className="text-2xl font-black mt-3">{selected.name}</h4>
+                </div>
               </div>
               <button
                 type="button"

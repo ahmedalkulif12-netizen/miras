@@ -1,5 +1,6 @@
 import admin from 'firebase-admin';
 import { isTestOrGhostRecord } from './testDataPatterns.ts';
+import { readHttpsPhoto } from './photoUrl.ts';
 
 export type DirectoryKind =
   | 'b2c_client'
@@ -28,6 +29,7 @@ export interface AdminDirectoryEntry {
   registrationSerial?: string;
   operatorId?: string;
   operatorName?: string;
+  photoURL?: string;
   createdAt?: string | null;
 }
 
@@ -130,6 +132,7 @@ function entryFromDocs(
     registrationSerial: companion.registrationSerial
       ? String(companion.registrationSerial)
       : undefined,
+    photoURL: readHttpsPhoto(user.photoURL, companion.photoURL),
     createdAt: tsToIso(companion.createdAt || user.createdAt),
   };
 }

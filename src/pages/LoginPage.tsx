@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { auth } from '@/lib/firebase';
 import { useAuth } from '@/hooks/useAuth';
 import { usePostLoginRedirect } from '@/hooks/usePostLoginRedirect';
 import {
@@ -91,7 +92,11 @@ function resolveInitialAuthStep(searchParams: URLSearchParams): 'choose' | 'role
   return 'choose';
 }
 
-const LoginPage: React.FC = () => {
+const LoginPage: React.FC<{
+  embedded?: boolean;
+  initialMode?: AuthEntryMode | null;
+  onClose?: () => void;
+}> = ({ embedded = false, initialMode = null, onClose }) => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
 
@@ -111,11 +116,13 @@ const LoginPage: React.FC = () => {
   const [otp, setOtp] = useState('');
   const [searchParams] = useSearchParams();
   const [authMode, setAuthMode] = useState<AuthEntryMode | null>(() =>
-    resolveInitialAuthMode(searchParams)
+    initialMode ?? resolveInitialAuthMode(searchParams)
   );
-  const [step, setStep] = useState<'choose' | 'role' | 'phone' | 'otp' | 'register'>(() =>
-    resolveInitialAuthStep(searchParams)
-  );
+  const [step, setStep] = useState<'choose' | 'role' | 'phone' | 'otp' | 'register' | 'review'>(() => {
+    if (initialMode === 'login') return 'phone';
+    if (initialMode === 'register') return 'role';
+    return resolveInitialAuthStep(searchParams);
+  });
   const [role, setRole] = useState<LoginRole>(
     () => parseLoginRoleParam(searchParams.get('role')) ?? APP_ROLES.B2C_CLIENT
   );
@@ -153,6 +160,11 @@ const LoginPage: React.FC = () => {
     role === APP_ROLES.B2B_CORPORATE || role === APP_ROLES.B2B_OPERATOR;
 
   usePostLoginRedirect(!needsOnboarding);
+
+  const leaveAuth = () => {
+    if (onClose) onClose();
+    else navigate('/');
+  };
 
   const goToRoleHome = (sessionProfile: UserProfile) => {
     const dest = resolvePostLoginPath(sessionProfile, searchParams.get('next'));
@@ -269,7 +281,7 @@ const LoginPage: React.FC = () => {
       return;
     }
 
-    if (!acceptedTerms) {
+    if (authMode === 'register' && !acceptedTerms) {
       toast.error(isRtl ? 'يرجى الموافقة على الشروط والأحكام' : 'Please accept the Terms & Conditions');
       return;
     }
@@ -370,6 +382,10 @@ const LoginPage: React.FC = () => {
       if (result.isNewUser) {
         applyAuthMode('register');
         if (result.intendedRole) setRole(result.intendedRole);
+        if (name.trim().length >= 3) {
+          const created = await submitRegistration();
+          if (created) return;
+        }
         setStep('register');
         toast.success(
           isRtl
@@ -446,11 +462,10 @@ const LoginPage: React.FC = () => {
     return {};
   };
 
-  const handleRegisterSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitRegistration = async (): Promise<boolean> => {
     if (name.length < 3) {
       toast.error(isRtl ? 'يرجى إدخال الاسم الكامل' : 'Please enter full name');
-      return;
+      return false;
     }
 
     if (isDriverRole) {
@@ -464,12 +479,12 @@ const LoginPage: React.FC = () => {
       });
       if (!driverCheck.ok) {
         toast.error(getDriverValidationMessage(driverCheck, locale));
-        return;
+        return false;
       }
       const docsCheck = await assertRequiredDriverDocumentFiles(documentFiles);
       if (!docsCheck.ok) {
         toast.error(getDriverValidationMessage(docsCheck, locale));
-        return;
+        return false;
       }
       if (!documentExpiries.id || !documentExpiries.registration || !documentExpiries.permit || !documentExpiries.license) {
         toast.error(
@@ -477,28 +492,60 @@ const LoginPage: React.FC = () => {
             ? 'يرجى إدخال تواريخ انتهاء الهوية/الإقامة والاستمارة وكرت التشغيل ورخصة القيادة'
             : 'Enter expiry dates for ID/Iqama, Istimara, operating card, and driver\'s license'
         );
-        return;
+        return false;
       }
     }
 
     if (isB2BRole && companyName.trim().length < 2) {
       toast.error(isRtl ? 'يرجى إدخال اسم الشركة' : 'Please enter company name');
-      return;
+      return false;
     }
 
     if (!acceptedTerms) {
       toast.error(isRtl ? 'يرجى الموافقة على الشروط والأحكام' : 'Please accept terms and conditions');
-      return;
+      return false;
+    }
+
+    if (!isValidSaudiPhoneInput(phone)) {
+      toast.error(isRtl ? 'يرجى إدخال رقم جوال سعودي صحيح (05xxxxxxxx)' : 'Enter a valid Saudi mobile number');
+      return false;
+    }
+
+    if (!user && !pendingOnboarding && !auth.currentUser) {
+      try {
+        setIsSubmitting(true);
+        const formattedPhone = toFirebasePhoneE164(phone);
+        await loginWithPhone(
+          formattedPhone,
+          role,
+          PHONE_AUTH_RECAPTCHA_CONTAINER_ID,
+          'register'
+        );
+        setAuthMode('register');
+        setStep('otp');
+        setResendCooldown(30);
+        toast.success(isRtl ? 'تم إرسال رمز التحقق إلى جوالك' : 'Verification code sent to your phone');
+      } catch (error: unknown) {
+        const code = getPhoneAuthErrorCode(error);
+        if (code === 'NEEDS_ONBOARDING') {
+          setStep('register');
+          return false;
+        }
+        showFirebaseAuthError(error);
+      } finally {
+        setIsSubmitting(false);
+      }
+      return false;
     }
 
     if (isSubmitting) {
-      return;
+      return false;
     }
 
     try {
       setIsSubmitting(true);
       const extraData = buildRegistrationExtraData();
-      const uid = pendingOnboarding?.uid || user?.uid;
+      const uid = pendingOnboarding?.uid || user?.uid || auth.currentUser?.uid;
 
       if (isDriverRole) {
         if (!uid) {
@@ -507,7 +554,7 @@ const LoginPage: React.FC = () => {
               ? 'انتهت جلسة التسجيل. يرجى التحقق من رقم الجوال مرة أخرى.'
               : 'Registration session expired. Please verify your phone number again.'
           );
-          return;
+          return false;
         }
         try {
           const uploaded = await uploadDriverDocumentFiles(uid, documentFiles);
@@ -521,7 +568,7 @@ const LoginPage: React.FC = () => {
               ? 'فشل رفع المستندات. تأكد أن الصور JPEG أو PNG ثم أعد المحاولة.'
               : 'Document upload failed. Use JPEG or PNG images and try again.'
           );
-          return;
+          return false;
         }
       }
 
@@ -532,6 +579,7 @@ const LoginPage: React.FC = () => {
       });
 
       if (role === APP_ROLES.B2C_DRIVER) {
+        setStep('review');
         toast.success(
           isRtl
             ? 'تم إرسال طلبك وهو قيد المراجعة. سيراجع المشرف المستندات خلال 24 ساعة، ولا يمكنك قبول الطلبات حتى الاعتماد.'
@@ -540,13 +588,20 @@ const LoginPage: React.FC = () => {
         );
       } else {
         toast.success(isRtl ? 'تم إنشاء الحساب بنجاح' : 'Account created successfully');
+        goToRoleHome(finalProfile);
       }
-      goToRoleHome(finalProfile);
+      return true;
     } catch (error: unknown) {
       toast.error(getPhoneAuthErrorMessage(error, locale));
+      return false;
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await submitRegistration();
   };
 
   const handleResendOtp = async () => {
@@ -569,22 +624,38 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-dvh grid lg:grid-cols-2 bg-[var(--color-background)]">
+    <div className={embedded ? 'w-full' : 'min-h-dvh grid lg:grid-cols-2 bg-[var(--color-background)]'}>
       <PhoneAuthRecaptcha id={PHONE_AUTH_RECAPTCHA_CONTAINER_ID} />
 
-      <div className="flex items-center justify-center p-8">
-        <div className="max-w-md w-full flex flex-col gap-8 bg-white p-10 rounded-[40px] shadow-xl shadow-stone-200/50 border border-stone-100">
+      <div className={embedded ? 'flex items-center justify-center p-4 sm:p-6' : 'flex items-center justify-center p-8'}>
+        <div className={`max-w-md w-full flex flex-col gap-8 bg-white p-8 sm:p-10 rounded-[40px] shadow-xl shadow-stone-200/50 border border-stone-100 ${embedded ? 'max-h-[85vh] overflow-y-auto' : ''}`}>
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3 mb-4">
               <BrandLogo size={36} withChip withWordmark />
-              <LanguageToggle />
+              <div className="flex items-center gap-2">
+                <LanguageToggle />
+                {onClose ? (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-10 h-10 rounded-full border border-stone-200 text-neutral-500 font-black"
+                    aria-label={isRtl ? 'إغلاق' : 'Close'}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
             </div>
             <h1 className="text-3xl font-black tracking-tight text-neutral-900">
               {step === 'choose'
                 ? t('auth_choose_title')
                 : step === 'role'
                   ? t('auth_register_role_title')
-                : step === 'register'
+                : step === 'review'
+                  ? isRtl
+                    ? 'حالة المراجعة'
+                    : 'Review status'
+                  : step === 'register'
                   ? t('complete_profile')
                   : authMode === 'register'
                     ? t('auth_register')
@@ -649,7 +720,7 @@ const LoginPage: React.FC = () => {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate('/')}
+                  onClick={leaveAuth}
                   className="w-full py-3 text-neutral-400 text-sm font-bold hover:text-neutral-900 transition-colors uppercase tracking-widest"
                 >
                   {t('back_home')}
@@ -675,7 +746,7 @@ const LoginPage: React.FC = () => {
                   >
                     <User size={22} className={role === APP_ROLES.B2C_CLIENT ? 'text-neutral-900' : 'text-stone-400'} />
                     <span className="text-sm font-black text-neutral-900">
-                      {isRtl ? ROLE_META.b2c_client.labelAr : ROLE_META.b2c_client.labelEn}
+                      {isRtl ? 'تسجيل العملاء' : 'Client registration'}
                     </span>
                     <span className="text-[11px] font-bold text-stone-500 leading-relaxed">
                       {t('auth_role_customer_hint')}
@@ -692,7 +763,7 @@ const LoginPage: React.FC = () => {
                   >
                     <Contact size={22} className={role === APP_ROLES.B2C_DRIVER ? 'text-neutral-900' : 'text-stone-400'} />
                     <span className="text-sm font-black text-neutral-900">
-                      {isRtl ? ROLE_META.b2c_driver.labelAr : ROLE_META.b2c_driver.labelEn}
+                      {isRtl ? 'تسجيل السائقين' : 'Driver registration'}
                     </span>
                     <span className="text-[11px] font-bold text-stone-500 leading-relaxed">
                       {t('auth_role_driver_hint')}
@@ -707,7 +778,7 @@ const LoginPage: React.FC = () => {
                     params.set('role', role);
                     navigate(`/login?${params.toString()}`, { replace: true });
                     setAuthMode('register');
-                    setStep('phone');
+                    setStep('register');
                   }}
                   className="w-full py-5 bg-neutral-900 text-white rounded-2xl font-bold hover:bg-neutral-800 transition-all shadow-xl shadow-neutral-900/10 active:scale-[0.98]"
                 >
@@ -749,33 +820,9 @@ const LoginPage: React.FC = () => {
                       {isRtl ? 'تغيير' : 'Change'}
                     </button>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setRole(APP_ROLES.B2C_CLIENT)}
-                      className={`py-3 px-3 rounded-2xl border-2 text-xs font-black transition-all ${
-                        role === APP_ROLES.B2C_CLIENT
-                          ? 'border-primary bg-primary/10 text-neutral-900'
-                          : 'border-stone-100 text-stone-500'
-                      }`}
-                    >
-                      {t('customer')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRole(APP_ROLES.B2C_DRIVER)}
-                      className={`py-3 px-3 rounded-2xl border-2 text-xs font-black transition-all ${
-                        role === APP_ROLES.B2C_DRIVER
-                          ? 'border-primary bg-primary/10 text-neutral-900'
-                          : 'border-stone-100 text-stone-500'
-                      }`}
-                    >
-                      {t('driver')}
-                    </button>
-                  </div>
-                )}
+                ) : null}
                 {isDriverRole && (
+                <div className="space-y-2">
                   <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
                     <p className={`text-[11px] font-bold text-blue-800 leading-relaxed ${isRtl ? 'text-right' : 'text-left'}`}>
                       {t('auth_role_driver_hint')}
@@ -786,6 +833,7 @@ const LoginPage: React.FC = () => {
                         : 'New accounts stay pending review for 24 hours after you upload documents. Existing drivers sign in with OTP only.'}
                     </p>
                   </div>
+                </div>
                 )}
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-neutral-700">{t('phone_number')}</label>
@@ -827,10 +875,12 @@ const LoginPage: React.FC = () => {
                   )}
                 </div>
                 <div className="space-y-4">
-                  <TermsConsent checked={acceptedTerms} onChange={setAcceptedTerms} disabled={isSubmitting} />
+                  {authMode === 'register' ? (
+                    <TermsConsent checked={acceptedTerms} onChange={setAcceptedTerms} disabled={isSubmitting} />
+                  ) : null}
                   <button
                     type="submit"
-                    disabled={isSubmitting || !acceptedTerms}
+                    disabled={isSubmitting || (authMode === 'register' && !acceptedTerms)}
                     className="w-full py-5 bg-neutral-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-neutral-900/10 active:scale-[0.98]"
                   >
                     {isSubmitting ? t('sending') : t('send_otp')}
@@ -850,7 +900,7 @@ const LoginPage: React.FC = () => {
                   </p>
                   <button
                     type="button"
-                    onClick={() => navigate('/')}
+                    onClick={leaveAuth}
                     className="w-full py-3 text-neutral-400 text-sm font-bold hover:text-neutral-900 transition-colors uppercase tracking-widest"
                   >
                     {t('back_home')}
@@ -870,7 +920,7 @@ const LoginPage: React.FC = () => {
                   type="button"
                   onClick={async () => {
                     await cancelPhoneOtpFlow();
-                    setStep('phone');
+                    setStep(authMode === 'register' ? 'register' : 'phone');
                     setOtp('');
                     setResendCooldown(0);
                   }}
@@ -921,6 +971,35 @@ const LoginPage: React.FC = () => {
                     : t('resend_otp')}
                 </button>
               </motion.form>
+            ) : step === 'review' ? (
+              <motion.div
+                key="review-status"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="flex flex-col gap-5"
+              >
+                <div className="rounded-2xl border border-[#FFCC00]/40 bg-[#FFCC00]/15 px-4 py-4 space-y-2">
+                  <p className="text-sm font-black text-neutral-900">
+                    {isRtl ? 'طلبك قيد مراجعة الإدارة' : 'Your application is under admin review'}
+                  </p>
+                  <p className="text-xs font-bold text-neutral-700 leading-relaxed">
+                    {isRtl
+                      ? 'تم استلام الاسم، رقم الهوية، الجوال، بيانات المركبة، والمستندات. لن يُفعّل قبول الطلبات قبل اعتماد المشرف.'
+                      : 'Name, national ID, phone, vehicle details, and documents were received. You cannot accept jobs until an admin approves the account.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (profile) goToRoleHome(profile);
+                    else navigate('/b2c/driver');
+                  }}
+                  className="w-full py-5 bg-neutral-900 text-white rounded-2xl font-bold"
+                >
+                  {isRtl ? 'متابعة إلى لوحة السائق' : 'Continue to the driver dashboard'}
+                </button>
+              </motion.div>
             ) : (
               <motion.form
                 key="register-form"
@@ -948,7 +1027,11 @@ const LoginPage: React.FC = () => {
                   <input
                     type="tel"
                     value={phone}
-                    readOnly
+                    readOnly={Boolean(user)}
+                    onChange={(e) => {
+                      if (user) return;
+                      setPhone(sanitizeSaudiPhoneInput(e.target.value));
+                    }}
                     className="w-full px-4 py-3 rounded-2xl border border-stone-100 bg-stone-50 text-neutral-600 font-medium"
                   />
                 </div>
@@ -1168,7 +1251,11 @@ const LoginPage: React.FC = () => {
                   disabled={isSubmitting || !acceptedTerms}
                   className="w-full py-5 bg-neutral-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-neutral-900/10 active:scale-[0.98]"
                 >
-                  {isSubmitting ? t('creating_account') : t('create_account')}
+                  {isSubmitting
+                    ? t('creating_account')
+                    : !user
+                      ? t('send_otp')
+                      : t('create_account')}
                   <LogIn size={20} className="text-primary" />
                 </button>
               </motion.form>
@@ -1177,20 +1264,22 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      <div className="hidden lg:block relative bg-neutral-900 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-neutral-900/90 z-10"></div>
-        <img
-          src="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&q=80&w=1200"
-          alt="Trucking Logistics"
-          className="w-full h-full object-cover brightness-75 transition-all duration-1000 saturate-[0.8]"
-          referrerPolicy="no-referrer"
-        />
-        <div className={`absolute bottom-16 ${isRtl ? 'right-16' : 'left-16'} z-20 text-white max-w-sm`}>
-          <div className="w-12 h-1 bg-primary mb-6"></div>
-          <h2 className="text-5xl font-black mb-6 leading-tight tracking-tight">{t('logistics_solutions')}</h2>
-          <p className="text-neutral-400 font-medium text-lg leading-relaxed">{t('logistics_desc')}</p>
+      {!embedded ? (
+        <div className="hidden lg:block relative bg-neutral-900 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/30 to-neutral-900/90 z-10"></div>
+          <img
+            src="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&q=80&w=1200"
+            alt="Trucking Logistics"
+            className="w-full h-full object-cover brightness-75 transition-all duration-1000 saturate-[0.8]"
+            referrerPolicy="no-referrer"
+          />
+          <div className={`absolute bottom-16 ${isRtl ? 'right-16' : 'left-16'} z-20 text-white max-w-sm`}>
+            <div className="w-12 h-1 bg-primary mb-6"></div>
+            <h2 className="text-5xl font-black mb-6 leading-tight tracking-tight">{t('logistics_solutions')}</h2>
+            <p className="text-neutral-400 font-medium text-lg leading-relaxed">{t('logistics_desc')}</p>
+          </div>
         </div>
-      </div>
+      ) : null}
       {phoneAuthAlert ? (
         <PhoneAuthErrorAlert
           code={phoneAuthAlert.code}

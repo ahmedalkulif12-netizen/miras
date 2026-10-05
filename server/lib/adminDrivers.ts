@@ -1,5 +1,6 @@
 import admin from 'firebase-admin';
 import { isTestOrGhostRecord } from './testDataPatterns.ts';
+import { readHttpsPhoto } from './photoUrl.ts';
 import { hasCompleteKycDocuments } from './kycDocumentStorage.ts';
 import { timestampToIso } from './timestamps.ts';
 import { B2B_MODULES_ENABLED } from '../../src/lib/launchFlags.ts';
@@ -48,6 +49,7 @@ export interface AdminDriverRow {
   docsComplete: boolean;
   rejectionReason?: string | null;
   complaints: number;
+  photoURL?: string;
   createdAt?: string | null;
   documents: {
     license: DriverDocumentMeta;
@@ -281,6 +283,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
       docsComplete,
       rejectionReason,
       complaints: Number(driver.complaints ?? 0) || 0,
+      photoURL: readHttpsPhoto(user.photoURL, driver.photoURL),
       createdAt: timestampToIso(
         driver.submittedAt || driver.createdAt || driver.updatedAt || user.createdAt
       ),
@@ -339,6 +342,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
             docsComplete,
             rejectionReason: vehicle.rejectionReason ? String(vehicle.rejectionReason) : null,
             complaints: 0,
+            photoURL: readHttpsPhoto(vehicle.photoURL, operator.photoURL),
             createdAt: timestampToIso(vehicle.createdAt || vehicle.updatedAt || operator.createdAt),
             documents: {
               license: readDocMeta(documents, 'license', {}),
