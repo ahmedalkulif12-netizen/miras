@@ -14,6 +14,7 @@ const config: CapacitorConfig = {
   // Registered store / Firebase identities. Do not rename without new
   // google-services.json, GoogleService-Info.plist, and store listings.
   // Android applicationId: com.miras.app. iOS bundle ID: com.ahmed.miras.
+  // iOS CFBundleShortVersionString 1.0.4, CFBundleVersion 66 (Info.plist / Xcode).
   appId: 'com.miras.app',
   appName: 'JZ Logistics',
   webDir: 'dist',
