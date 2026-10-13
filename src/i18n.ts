@@ -73,6 +73,8 @@ const resources = {
       "creating_account": "جاري إنشاء الحساب...",
       "customer": "عميل",
       "driver": "سائق",
+      "wallet": "المحفظة",
+      "my_orders": "طلباتي",
       "full_name": "الاسم الكامل",
       "full_name_placeholder": "اسمك الثلاثي",
       "phone_number": "رقم الجوال",

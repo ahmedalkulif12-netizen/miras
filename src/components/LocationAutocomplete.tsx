@@ -36,6 +36,111 @@ function placeFromGeocode(
   };
 }
 
+function readLatLng(
+  loc: google.maps.LatLng | google.maps.LatLngLiteral | null | undefined
+): google.maps.LatLngLiteral | null {
+  if (!loc) return null;
+  const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+  const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) < 1e-8 && Math.abs(lng) < 1e-8) return null;
+  return { lat, lng };
+}
+
+function displayText(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && 'text' in value) {
+    return String((value as { text?: string }).text || '').trim();
+  }
+  return '';
+}
+
+function selectedFromPlaceResult(place: google.maps.places.PlaceResult): SelectedPlace | null {
+  const coords = readLatLng(place.geometry?.location ?? null);
+  if (!coords) return null;
+  const formatted = place.formatted_address || place.name || '';
+  return {
+    location: coords,
+    formattedAddress: formatted,
+    displayName: place.name || formatted,
+    city: cityFromAddressComponents(place.address_components) || formatted.split(',')[0]?.trim(),
+    addressComponents: place.address_components,
+  };
+}
+
+/** Place Details when Autocomplete returns a prediction without geometry. */
+async function fetchPlaceDetails(placeId: string): Promise<SelectedPlace | null> {
+  const placesNs = google.maps.places as typeof google.maps.places & {
+    Place?: new (opts: { id: string }) => {
+      fetchFields: (request: { fields: string[] }) => Promise<unknown>;
+      location?: google.maps.LatLng | google.maps.LatLngLiteral | null;
+      formattedAddress?: string | null;
+      displayName?: string | { text?: string } | null;
+      addressComponents?: google.maps.GeocoderAddressComponent[] | null;
+    };
+  };
+
+  if (placesNs.Place) {
+    try {
+      const detailed = new placesNs.Place({ id: placeId });
+      await detailed.fetchFields({
+        fields: ['location', 'formattedAddress', 'displayName', 'addressComponents'],
+      });
+      const coords = readLatLng(detailed.location ?? null);
+      if (coords) {
+        const formatted = detailed.formattedAddress || '';
+        const name = displayText(detailed.displayName) || formatted;
+        return {
+          location: coords,
+          formattedAddress: formatted || name,
+          displayName: name,
+          city:
+            cityFromAddressComponents(detailed.addressComponents) ||
+            formatted.split(',')[0]?.trim(),
+        };
+      }
+    } catch (error) {
+      console.warn('[places] Place.fetchFields failed:', placeId, error);
+    }
+  }
+
+  return new Promise((resolve) => {
+    const service = new google.maps.places.PlacesService(document.createElement('div'));
+    service.getDetails(
+      {
+        placeId,
+        fields: ['geometry', 'formatted_address', 'name', 'address_components'],
+      },
+      (result, status) => {
+        if (status !== google.maps.places.PlacesServiceStatus.OK || !result) {
+          resolve(null);
+          return;
+        }
+        resolve(selectedFromPlaceResult(result));
+      }
+    );
+  });
+}
+
+async function resolveSelectedPlace(
+  place: google.maps.places.PlaceResult,
+  typedFallback: string
+): Promise<SelectedPlace | null> {
+  const direct = selectedFromPlaceResult(place);
+  if (direct) return direct;
+
+  const placeId = place.place_id;
+  if (placeId) {
+    const detailed = await fetchPlaceDetails(placeId);
+    if (detailed) return detailed;
+  }
+
+  const typed = (typedFallback || place.name || place.formatted_address || '').trim();
+  if (!typed) return null;
+  const hit = await geocodeSaudiQuery(typed);
+  return hit ? placeFromGeocode(hit) : null;
+}
+
 /**
  * Classic Places Autocomplete input, with Geocoder fallback when the user
  * types a city (الأحساء / مكة) and presses Enter without picking a suggestion.
@@ -71,24 +176,13 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     const listener = autocomplete.addListener('place_changed', () => {
       pickedRef.current = true;
       const place = autocomplete.getPlace();
-      const loc = place.geometry?.location;
-      if (!loc) {
-        const typed = (inputRef.current?.value || place.name || '').trim();
-        if (typed) {
-          void geocodeSaudiQuery(typed).then((hit) => {
-            if (hit) onSelectRef.current(placeFromGeocode(hit));
-          });
+      const typed = (inputRef.current?.value || place.name || place.formatted_address || '').trim();
+      void resolveSelectedPlace(place, typed).then((selected) => {
+        if (!selected) {
+          console.warn('[places] selection has no coordinates:', place.place_id || typed);
+          return;
         }
-        return;
-      }
-
-      const formatted = place.formatted_address || place.name || '';
-      onSelectRef.current({
-        location: { lat: loc.lat(), lng: loc.lng() },
-        formattedAddress: formatted,
-        displayName: place.name || formatted,
-        city: cityFromAddressComponents(place.address_components) || formatted.split(',')[0]?.trim(),
-        addressComponents: place.address_components,
+        onSelectRef.current(selected);
       });
     });
 

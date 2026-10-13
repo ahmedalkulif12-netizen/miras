@@ -1,12 +1,21 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, Phone, Save, Truck, User } from 'lucide-react';
+import { ArrowRight, Camera, ImagePlus, Phone, Save, Truck, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import ProfileAvatar from '@/components/ProfileAvatar';
+import { RequiredDriverDocumentsFields } from '@/components/RequiredDriverDocumentsFields';
 import { SERVICE_OPTIONS, OPTION_LABELS, SERVICE_KEY_MAP } from '@/constants';
-import { normalizePlateNumber } from '@/lib/driverDocumentValidation';
+import { normalizePlateNumber, REQUIRED_DRIVER_DOCS } from '@/lib/driverDocumentValidation';
+import {
+  documentFilesToUploadStatuses,
+  uploadDriverDocumentFiles,
+} from '@/lib/driverDocumentUpload';
+import { uploadVehiclePhoto } from '@/lib/profilePhotoUpload';
+import { submitDriverRegistrationToApi } from '@/lib/submitDriverRegistration';
+import { describeUploadSaveError } from '@/lib/uploadErrorMessage';
+import type { DriverDocumentKey } from '@/lib/userProfile';
 
 const VEHICLE_TYPES = [
   { id: 'furniture_moving', ar: 'نقل عفش', en: 'Furniture Moving' },
@@ -36,7 +45,34 @@ const DriverProfilePage: React.FC = () => {
   const [vehicleType, setVehicleType] = useState(profile?.vehicleType || 'flatbed');
   const [vehicleOption, setVehicleOption] = useState(profile?.vehicleOption || 'normal');
   const [plateNumber, setPlateNumber] = useState(profile?.plateNumber || '');
+  const [docFiles, setDocFiles] = useState<Partial<Record<DriverDocumentKey, File>>>({});
+  const [vehiclePreview, setVehiclePreview] = useState<string | null>(null);
+  const [uploadingVehicle, setUploadingVehicle] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const vehicleCameraRef = useRef<HTMLInputElement>(null);
+  const vehicleGalleryRef = useRef<HTMLInputElement>(null);
+
+  const onVehiclePhoto = async (file: File | null) => {
+    if (!file || !profile) return;
+    const localPreview = URL.createObjectURL(file);
+    setVehiclePreview(localPreview);
+    setUploadingVehicle(true);
+    try {
+      const { vehiclePhotoURL } = await uploadVehiclePhoto(file);
+      await updateProfile({ vehiclePhotoURL }, { strict: true });
+      setVehiclePreview(vehiclePhotoURL);
+      toast.success(isRtl ? 'تم حفظ صورة المركبة' : 'Vehicle photo saved');
+    } catch (error) {
+      const code = String((error as { code?: string })?.code || '');
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[DriverProfilePage] vehicle photo failed:', code, message, error);
+      setVehiclePreview(profile.vehiclePhotoURL || null);
+      toast.error(describeUploadSaveError(error, isRtl));
+    } finally {
+      setUploadingVehicle(false);
+      URL.revokeObjectURL(localPreview);
+    }
+  };
 
   useEffect(() => {
     if (!profile) return;
@@ -67,19 +103,75 @@ const DriverProfilePage: React.FC = () => {
       return;
     }
 
+    const existingFiles = profile.documentFiles || {};
+    const missingDocs = REQUIRED_DRIVER_DOCS.filter(
+      (key) => !docFiles[key] && !existingFiles[key]?.storagePath
+    );
+    if (missingDocs.length) {
+      toast.error(
+        isRtl
+          ? 'يرجى رفع الهوية، الاستمارة، الرخصة، وكارت التشغيل'
+          : 'Upload National ID, registration, license, and operating card'
+      );
+      return;
+    }
+
+    if (uploadingVehicle) {
+      toast.error(
+        isRtl
+          ? 'انتظر اكتمال رفع صورة المركبة قبل الحفظ'
+          : 'Wait until the vehicle photo finishes uploading'
+      );
+      return;
+    }
+
     setIsSaving(true);
     try {
-      await updateProfile({
+      const uploaded = Object.values(docFiles).some(Boolean)
+        ? await uploadDriverDocumentFiles(profile.uid, docFiles)
+        : {};
+      const documentFiles = { ...existingFiles, ...uploaded };
+      const unresolved = (Object.keys(uploaded) as DriverDocumentKey[]).filter(
+        (key) => !uploaded[key]?.storagePath || !uploaded[key]?.url
+      );
+      if (unresolved.length) {
+        throw new Error('UPLOAD_URL_MISSING');
+      }
+      const documentUploadStatuses = documentFilesToUploadStatuses(documentFiles);
+      const nextProfile = {
+        ...profile,
         name: trimmedName,
         vehicleType,
         vehicleOption,
         plateNumber: normalizedPlate,
-      });
+        documentFiles,
+        documentUploadStatuses,
+        accountStatus:
+          profile.accountStatus === 'approved' ? 'approved' : 'pending_approval',
+      };
+      await updateProfile(
+        {
+          name: trimmedName,
+          vehicleType,
+          vehicleOption,
+          plateNumber: normalizedPlate,
+          documentFiles,
+          documentUploadStatuses,
+          accountStatus: nextProfile.accountStatus,
+        },
+        { strict: true }
+      );
+      if (nextProfile.accountStatus !== 'approved') {
+        await submitDriverRegistrationToApi(nextProfile);
+      }
+      setDocFiles({});
       toast.success(t('profile_updated'));
       navigate('/b2c/driver');
     } catch (error) {
-      console.error('[DriverProfilePage] save failed:', error);
-      toast.error(isRtl ? 'فشل حفظ البيانات' : 'Failed to save profile');
+      const code = String((error as { code?: string })?.code || '');
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[DriverProfilePage] save failed:', code, message, error);
+      toast.error(describeUploadSaveError(error, isRtl));
     } finally {
       setIsSaving(false);
     }
@@ -206,6 +298,89 @@ const DriverProfilePage: React.FC = () => {
               onChange={(e) => setPlateNumber(e.target.value)}
               className="w-full p-4 rounded-2xl bg-stone-50 border border-stone-100 focus:border-primary outline-none font-bold uppercase tracking-widest"
               placeholder={isRtl ? 'مثال: ب ص م 1234' : 'e.g. ABC 1234'}
+            />
+          </div>
+
+          <div className="space-y-3 mt-6">
+            <label className="text-xs font-black text-stone-400 uppercase tracking-widest">
+              {isRtl ? 'صورة المركبة' : 'Vehicle photo'}
+            </label>
+            <div className="rounded-3xl border border-stone-100 bg-stone-50 overflow-hidden">
+              {vehiclePreview || profile?.vehiclePhotoURL ? (
+                <img
+                  src={vehiclePreview || profile?.vehiclePhotoURL}
+                  alt={isRtl ? 'صورة المركبة' : 'Vehicle'}
+                  className="w-full h-48 object-cover"
+                />
+              ) : (
+                <div className="h-40 flex items-center justify-center text-stone-400 text-sm font-bold">
+                  {isRtl ? 'لم تُرفع صورة للمركبة بعد' : 'No vehicle photo yet'}
+                </div>
+              )}
+              <div className="flex gap-2 p-3">
+                <input
+                  ref={vehicleCameraRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    e.target.value = '';
+                    void onVehiclePhoto(file);
+                  }}
+                />
+                <input
+                  ref={vehicleGalleryRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    e.target.value = '';
+                    void onVehiclePhoto(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={uploadingVehicle}
+                  onClick={() => vehicleCameraRef.current?.click()}
+                  className="flex-1 min-h-12 rounded-2xl bg-black text-white text-sm font-black flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Camera size={16} />
+                  {isRtl ? 'الكاميرا' : 'Camera'}
+                </button>
+                <button
+                  type="button"
+                  disabled={uploadingVehicle}
+                  onClick={() => vehicleGalleryRef.current?.click()}
+                  className="flex-1 min-h-12 rounded-2xl bg-[#FFCC00] text-black text-sm font-black flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <ImagePlus size={16} />
+                  {isRtl ? 'المعرض' : 'Gallery'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <RequiredDriverDocumentsFields
+              isRtl={isRtl}
+              files={docFiles}
+              alreadyUploaded={Object.fromEntries(
+                REQUIRED_DRIVER_DOCS.map((key) => [
+                  key,
+                  Boolean(profile?.documentFiles?.[key]?.storagePath),
+                ])
+              )}
+              onSelect={(key, file) => {
+                setDocFiles((prev) => {
+                  const next = { ...prev };
+                  if (file) next[key] = file;
+                  else delete next[key];
+                  return next;
+                });
+              }}
             />
           </div>
         </div>

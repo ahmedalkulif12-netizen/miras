@@ -41,6 +41,8 @@ export interface UserProfile {
   name: string;
   /** Optional profile avatar URL (GCS signed or public download URL). */
   photoURL?: string;
+  /** Optional vehicle photo URL (GCS signed download URL). */
+  vehiclePhotoURL?: string;
   /** B2C driver fields */
   vehicleType?: string;
   vehicleOption?: string;

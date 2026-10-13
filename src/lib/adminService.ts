@@ -103,6 +103,7 @@ export interface AdminDriverApiRow {
   rejectionReason?: string | null;
   complaints: number;
   photoURL?: string;
+  vehiclePhotoURL?: string;
   createdAt?: string | null;
   documents: {
     license: AdminDriverDocumentMeta;

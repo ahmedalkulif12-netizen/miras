@@ -12,6 +12,17 @@ import {
 
 const DRIVER_DOC_KEYS: DriverDocumentKey[] = ['license', 'id', 'registration', 'permit'];
 
+function cleanStringMap(
+  value: Record<string, string | undefined> | undefined
+): Record<string, string> | undefined {
+  if (!value) return undefined;
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (typeof raw === 'string' && raw.trim()) out[key] = raw.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function buildDriverDocumentsPayload(profile: UserProfile): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of DRIVER_DOC_KEYS) {
@@ -78,6 +89,7 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     role: roleForWrite,
     name: profile.name,
     ...(profile.photoURL ? { photoURL: profile.photoURL } : {}),
+    ...(profile.vehiclePhotoURL ? { vehiclePhotoURL: profile.vehiclePhotoURL } : {}),
     ...(profile.vehicleType ? { vehicleType: profile.vehicleType } : {}),
     ...(profile.vehicleOption ? { vehicleOption: profile.vehicleOption } : {}),
     ...(profile.plateNumber ? { plateNumber: profile.plateNumber } : {}),
@@ -93,7 +105,7 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     ...(isNewUser
       ? {
           accountStatus:
-            role === APP_ROLES.B2C_DRIVER ? 'pending' : 'active',
+            role === APP_ROLES.B2C_DRIVER ? 'pending_approval' : 'active',
           createdAt: now,
         }
       : {}),
@@ -125,6 +137,7 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
 
   if (role === APP_ROLES.B2C_DRIVER) {
     const documents = buildDriverDocumentsPayload(profile);
+    const documentExpiries = cleanStringMap(profile.documentExpiries);
     const driverRef = doc(db, 'drivers', profile.uid);
     const existingDriver = await getDoc(driverRef);
 
@@ -139,17 +152,18 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
         vehicleSize: profile.vehicleOption ?? '',
         plateNumber: profile.plateNumber ?? '',
         ...(profile.photoURL ? { photoURL: profile.photoURL } : {}),
+        ...(profile.vehiclePhotoURL ? { vehiclePhotoURL: profile.vehiclePhotoURL } : {}),
         ...(profile.nationalId ? { nationalId: profile.nationalId } : {}),
         ...(profile.registrationSerial
           ? { registrationSerial: profile.registrationSerial }
           : {}),
-        ...(profile.documentExpiries ? { documentExpiries: profile.documentExpiries } : {}),
+        ...(documentExpiries ? { documentExpiries } : {}),
         ...(Object.keys(documents).length ? { documents } : {}),
         reviewSlaHours: DRIVER_REVIEW_SLA_HOURS,
         ...(existingDriver.exists()
           ? {}
           : {
-              accountStatus: 'pending',
+              accountStatus: 'pending_approval',
               submittedAt: now,
               createdAt: now,
               reviewDueAt: new Date(

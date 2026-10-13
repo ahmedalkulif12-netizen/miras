@@ -99,6 +99,7 @@ export const ROLE_META: Record<AppRole, RoleMeta> = {
 export type UserAccountStatus =
   | 'active'
   | 'pending'
+  | 'pending_approval'
   | 'pending_review'
   | 'ready_for_review'
   | 'suspended'
@@ -117,6 +118,8 @@ export interface FirestoreUserDocument {
   /** Profile avatar download URL (GCS signed URL). */
   photoURL?: string;
   photoStoragePath?: string;
+  /** Driver vehicle photo download URL (GCS signed URL). */
+  vehiclePhotoURL?: string;
   accountStatus?: UserAccountStatus;
   /** Optional B2C driver vehicle fields (also mirrored on drivers/{uid}). */
   vehicleType?: string;

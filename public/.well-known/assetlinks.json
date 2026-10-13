@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.miras.app",
+      "sha256_cert_fingerprints": [
+        "3A:47:49:04:53:D5:EA:27:3B:14:64:9A:6D:92:D7:22:C3:45:6F:EB:05:68:CA:92:F5:F4:E5:32:75:F2:92:DF"
+      ]
+    }
+  }
+]

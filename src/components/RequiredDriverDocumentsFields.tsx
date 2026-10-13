@@ -12,6 +12,8 @@ interface RequiredDriverDocumentsFieldsProps {
   files: Partial<Record<DriverDocumentKey, File>>;
   onSelect: (key: DriverDocumentKey, file: File | null) => void;
   keys?: DriverDocumentKey[];
+  /** Documents already stored for this driver — not shown as missing. */
+  alreadyUploaded?: Partial<Record<DriverDocumentKey, boolean>>;
 }
 
 const DEFAULT_KEYS: DriverDocumentKey[] = ['id', 'registration', 'permit', 'license'];
@@ -21,6 +23,7 @@ export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFiel
   files,
   onSelect,
   keys = DEFAULT_KEYS,
+  alreadyUploaded,
 }) => {
   const locale = isRtl ? 'ar' : 'en';
   const previews = useMemo(() => {
@@ -49,21 +52,23 @@ export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFiel
         </p>
         <p className="text-[11px] text-stone-400 font-bold leading-relaxed mt-1">
           {isRtl
-            ? 'ارفع صور JPEG أو PNG للهوية/الإقامة، الاستمارة، كارت التشغيل، ورخصة القيادة. الحد الأقصى 5 م.ب لكل صورة.'
-            : 'Upload JPEG or PNG photos of National ID/Iqama, Istimara, operating card, and driving license. Max 5 MB each.'}
+            ? 'ارفع من الكاميرا أو المعرض صور JPEG أو PNG للهوية/الإقامة، الاستمارة، كارت التشغيل، ورخصة القيادة. الحد الأقصى 5 م.ب لكل صورة.'
+            : 'Use the camera or photo gallery to upload JPEG or PNG photos of National ID/Iqama, Istimara, operating card, and driving license. Max 5 MB each.'}
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {keys.map((key) => {
           const file = files[key];
           const preview = previews[key];
+          const stored = Boolean(alreadyUploaded?.[key]);
+          const ready = Boolean(file) || stored;
           const label = getDriverDocumentLabel(key, locale);
           const hint = getDriverDocumentHint(key, locale);
           return (
             <label
               key={key}
               className={`rounded-2xl border-2 border-dashed p-4 flex flex-col gap-2 cursor-pointer transition-colors ${
-                file
+                ready
                   ? 'border-emerald-400 bg-emerald-50/60'
                   : 'border-stone-200 bg-white hover:border-primary'
               } ${isRtl ? 'text-right' : 'text-left'}`}
@@ -83,7 +88,7 @@ export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFiel
                   <p className="text-sm font-black text-neutral-800">{label}</p>
                   <p className="text-[10px] text-stone-400 font-bold mt-0.5">{hint}</p>
                 </div>
-                {file ? (
+                {ready ? (
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
                 ) : (
                   <ImagePlus size={18} className="text-stone-300 shrink-0" />
@@ -105,6 +110,10 @@ export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFiel
               )}
               {file ? (
                 <p className="text-[10px] font-bold text-emerald-700 truncate">{file.name}</p>
+              ) : stored ? (
+                <p className="text-[10px] font-bold text-emerald-700">
+                  {isRtl ? 'مرفوع — اضغط للاستبدال' : 'Uploaded — tap to replace'}
+                </p>
               ) : (
                 <p className="text-[10px] font-bold text-red-500">
                   {isRtl ? 'مطلوب' : 'Required'}

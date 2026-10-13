@@ -1,51 +1,89 @@
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
+import { prepareImageUpload } from '@/lib/prepareImageUpload';
 
-const MAX_PROFILE_PHOTO_BYTES = 3 * 1024 * 1024;
-const ALLOWED_PHOTO_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('FILE_READ_FAILED'));
-    reader.onload = () => {
-      const result = String(reader.result || '');
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.readAsDataURL(file);
-  });
+async function postJson(path: string, body: unknown, label: string): Promise<Response> {
+  try {
+    return await authFetch(path, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.error(`[upload] ${label} network error`, error);
+    throw new Error('NETWORK_UPLOAD_FAILED');
+  }
 }
 
-export function validateProfilePhotoFile(file: File): { ok: true } | { ok: false; message: string } {
-  if (!ALLOWED_PHOTO_TYPES.has(file.type)) {
-    return { ok: false, message: 'PHOTO_TYPE_INVALID' };
+export async function uploadVehiclePhoto(
+  file: File
+): Promise<{ vehiclePhotoURL: string; storagePath: string }> {
+  try {
+    const prepared = await prepareImageUpload(file);
+    const res = await postJson(
+      '/api/users/vehicle-photo',
+      {
+        contentBase64: prepared.contentBase64,
+        contentType: prepared.contentType,
+        fileName: prepared.fileName,
+      },
+      'vehicle-photo'
+    );
+
+    if (!res.ok) {
+      const message = await readApiErrorMessage(res, 'VEHICLE_PHOTO_UPLOAD_FAILED');
+      console.error('[upload] vehicle photo rejected', { status: res.status, message });
+      throw new Error(message);
+    }
+
+    const data = await readApiJson<{ vehiclePhotoURL: string; storagePath: string }>(res);
+    if (!data.vehiclePhotoURL || !data.storagePath) {
+      console.error('[upload] vehicle photo response missing URL', data);
+      throw new Error('UPLOAD_URL_MISSING');
+    }
+    return data;
+  } catch (error) {
+    console.error('[upload] vehicle photo failed', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      message: error instanceof Error ? error.message : error,
+    });
+    throw error;
   }
-  if (!file.size || file.size > MAX_PROFILE_PHOTO_BYTES) {
-    return { ok: false, message: 'PHOTO_TOO_LARGE' };
-  }
-  return { ok: true };
 }
 
 export async function uploadProfilePhoto(file: File): Promise<{ photoURL: string; storagePath: string }> {
-  const check = validateProfilePhotoFile(file);
-  if (check.ok === false) {
-    throw Object.assign(new Error(check.message), { code: check.message });
+  try {
+    const prepared = await prepareImageUpload(file);
+    const res = await postJson(
+      '/api/users/profile-photo',
+      {
+        contentBase64: prepared.contentBase64,
+        contentType: prepared.contentType,
+        fileName: prepared.fileName,
+      },
+      'profile-photo'
+    );
+
+    if (!res.ok) {
+      const message = await readApiErrorMessage(res, 'PROFILE_PHOTO_UPLOAD_FAILED');
+      console.error('[upload] profile photo rejected', { status: res.status, message });
+      throw new Error(message);
+    }
+
+    const data = await readApiJson<{ photoURL: string; storagePath: string }>(res);
+    if (!data.photoURL || !data.storagePath) {
+      console.error('[upload] profile photo response missing URL', data);
+      throw new Error('UPLOAD_URL_MISSING');
+    }
+    return data;
+  } catch (error) {
+    console.error('[upload] profile photo failed', {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      message: error instanceof Error ? error.message : error,
+    });
+    throw error;
   }
-
-  const contentBase64 = await fileToBase64(file);
-  const res = await authFetch('/api/users/profile-photo', {
-    method: 'POST',
-    body: JSON.stringify({
-      contentBase64,
-      contentType: file.type || 'image/jpeg',
-      fileName: file.name,
-    }),
-  });
-
-  if (!res.ok) {
-    throw new Error(await readApiErrorMessage(res, 'PROFILE_PHOTO_UPLOAD_FAILED'));
-  }
-
-  return readApiJson<{ photoURL: string; storagePath: string }>(res);
 }

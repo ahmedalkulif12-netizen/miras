@@ -34,7 +34,7 @@ export async function upsertPendingDriverRegistration(
   db: admin.firestore.Firestore,
   uid: string,
   payload: DriverRegistrationPayload
-): Promise<{ uid: string; accountStatus: 'pending' | string; created: boolean }> {
+): Promise<{ uid: string; accountStatus: 'pending_approval' | string; created: boolean }> {
   const userRef = db.collection('users').doc(uid);
   const driverRef = db.collection('drivers').doc(uid);
   const [userSnap, driverSnap] = await Promise.all([userRef.get(), driverRef.get()]);
@@ -46,14 +46,18 @@ export async function upsertPendingDriverRegistration(
   const existingUserStatus = userSnap.exists ? String(userSnap.data()?.accountStatus || '') : '';
 
   // Never downgrade an already-moderated account back to review.
+  const driverOpenReview = [
+    '',
+    'pending',
+    'pending_approval',
+    'pending_review',
+    'ready_for_review',
+  ];
+  const userOpenReview = [...driverOpenReview, 'active'];
   const preserveStatus =
-    existingDriverStatus &&
-    !['pending', 'pending_review', 'ready_for_review', ''].includes(existingDriverStatus)
+    existingDriverStatus && !driverOpenReview.includes(existingDriverStatus)
       ? existingDriverStatus
-      : existingUserStatus &&
-          !['pending', 'pending_review', 'ready_for_review', 'active', ''].includes(
-            existingUserStatus
-          )
+      : existingUserStatus && !userOpenReview.includes(existingUserStatus)
         ? existingUserStatus
         : null;
 
@@ -88,9 +92,12 @@ export async function upsertPendingDriverRegistration(
     );
   }
 
-  const accountStatus = preserveStatus || 'pending';
+  const accountStatus = preserveStatus || 'pending_approval';
   const created = !driverSnap.exists;
-  const documentExpiries = payload.documentExpiries || {};
+  const documentExpiries: Record<string, string> = {};
+  for (const [key, value] of Object.entries(payload.documentExpiries || {})) {
+    if (typeof value === 'string' && value.trim()) documentExpiries[key] = value.trim();
+  }
   const reviewDueAt = new Date(
     Date.now() + DRIVER_REVIEW_SLA_HOURS * 60 * 60 * 1000
   ).toISOString();

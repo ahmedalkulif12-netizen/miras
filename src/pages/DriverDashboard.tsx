@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, useLocation, useSearchParams, Navigate, useNavigate } from 'react-router-dom';
 import DashboardLayout from '@/components/DashboardLayout';
-import { ToggleRight, ToggleLeft, MapPin, Package, TrendingUp, Users, Clock, CheckCircle2, Navigation2, Truck, FileText, Upload, AlertCircle, UserCheck, ShieldAlert, Lock, UserX, ArrowRight, Star, DollarSign, CreditCard, ShieldCheck, Navigation, Wallet, Phone } from 'lucide-react';
+import { ToggleRight, ToggleLeft, MapPin, Package, TrendingUp, Users, Clock, CheckCircle2, Navigation2, Truck, FileText, Upload, AlertCircle, UserCheck, Lock, UserX, ArrowRight, Star, DollarSign, CreditCard, ShieldCheck, Navigation, Wallet, Phone } from 'lucide-react';
 import { DriverAccountStatus, Order } from '@/types';
 import { fetchPricing, PricingConfig, auth, db, ensureFirebaseReady, waitForFirebaseAuthUid } from '@/lib/firebase';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
@@ -59,7 +59,6 @@ import {
 } from '@/lib/localDriverWallet';
 import { submitDriverRegistrationToApi } from '@/lib/submitDriverRegistration';
 import {
-  canStartWorkLocally,
   isLocalDevRuntime,
   persistLocalDevWorkEnabled,
   readLocalDevWorkEnabled,
@@ -228,7 +227,13 @@ const DriverDashboard: React.FC = () => {
   const [activatingLocal, setActivatingLocal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [accountStatusLoaded, setAccountStatusLoaded] = useState(false);
-  const canStartWork = canStartWorkLocally(accountStatus);
+  const canStartWork =
+    accountStatus === 'approved' ||
+    (isLocalDevRuntime() &&
+      localDevWorkEnabled &&
+      accountStatus !== 'suspended' &&
+      accountStatus !== 'banned' &&
+      accountStatus !== 'rejected');
   const [hasComplaints, setHasComplaints] = useState(false);
   const [pricingConfig, setPricingConfig] = React.useState<PricingConfig | null>(null);
   const [latestOrder, setLatestOrder] = useState<Order | null>(null);
@@ -291,7 +296,12 @@ const DriverDashboard: React.FC = () => {
           else if (raw === 'rejected') mapped = 'rejected';
           else if (raw === 'suspended') mapped = 'suspended';
           else if (raw === 'banned' || raw === 'blocked') mapped = 'banned';
-          else if (raw === 'pending' || raw === 'pending_review' || raw === 'ready_for_review') {
+          else if (
+            raw === 'pending' ||
+            raw === 'pending_approval' ||
+            raw === 'pending_review' ||
+            raw === 'ready_for_review'
+          ) {
             mapped = 'pending';
           }
           setAccountStatus(mapped);
@@ -1083,6 +1093,14 @@ const DriverDashboard: React.FC = () => {
 
   const handleAcceptTask = async (order: Order) => {
     if (!profile?.uid) return;
+    if (!canStartWork) {
+      toast.warning(
+        isRtl
+          ? 'الحساب قيد المراجعة (خلال 24 ساعة). لا يمكنك قبول الطلبات حتى الاعتماد.'
+          : 'Account under review (within 24 hours). You cannot accept trips until approved.'
+      );
+      return;
+    }
 
     if (
       latestOrder &&
@@ -1400,8 +1418,8 @@ const DriverDashboard: React.FC = () => {
     if (!canStartWork) {
       toast.warning(
         isRtl
-          ? 'حسابك لا يزال قيد المراجعة. لا يمكنك استقبال الطلبات حالياً. سيتم الاعتماد خلال 24 ساعة.'
-          : 'Your account is still pending review. You cannot receive orders yet. Approval is within 24 hours.'
+          ? 'الحساب قيد المراجعة (خلال 24 ساعة). لا يمكنك استقبال الطلبات حتى الاعتماد.'
+          : 'Account under review (within 24 hours). You cannot receive orders until an admin approves your account.'
       );
       return;
     }
@@ -1537,7 +1555,7 @@ const DriverDashboard: React.FC = () => {
         label: t('trip_chat'),
       }}
     >
-      <div className="space-y-6 md:space-y-8" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div className="space-y-4" dir={isRtl ? 'rtl' : 'ltr'}>
         <Routes>
           <Route index element={
             <>
@@ -1550,8 +1568,8 @@ const DriverDashboard: React.FC = () => {
                    <div className={`space-y-1 text-center ${isRtl ? 'md:text-right' : 'md:text-left'} flex-1`}>
                       <h3 className="text-xl font-bold text-blue-900">
                         {isRtl
-                          ? 'حسابك قيد المراجعة'
-                          : 'Your account is pending review'}
+                          ? 'الحساب قيد المراجعة (خلال 24 ساعة)'
+                          : 'Account under review (within 24 hours)'}
                       </h3>
                       <p className="text-blue-700 text-sm">
                         {isLocalDevRuntime()
@@ -1615,155 +1633,77 @@ const DriverDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Complaints Alert */}
-              {hasComplaints && accountStatus === 'approved' && (
-                <div className={`bg-orange-50 ${isRtl ? 'border-r-8' : 'border-l-8'} border-orange-500 p-6 rounded-3xl flex items-center justify-between`}>
-                  <div className="flex items-center gap-4">
-                     <ShieldAlert className="text-orange-500" size={24} />
-                     <div>
-                        <h4 className="font-bold text-orange-900">{t('complaint_alert')}</h4>
-                        <p className={`text-orange-700 text-xs ${isRtl ? 'text-right' : 'text-left'}`}>{t('complaint_alert_sub')}</p>
-                     </div>
+              {/* Above the fold: shift toggle beside the live order feed */}
+              <div className="grid grid-cols-[minmax(7.75rem,16rem)_minmax(0,1fr)] gap-3 items-start">
+              <aside className={`rounded-3xl border-2 p-3 flex flex-col gap-3 sticky top-3 ${
+                isOnline ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
+              } ${
+                !canStartWork ? 'opacity-60' : ''
+              }`}>
+                <div className={`flex items-center gap-2 min-w-0 ${isRtl ? 'flex-row-reverse text-right' : 'text-left'}`}>
+                  <div className={`p-2.5 rounded-2xl shrink-0 ${
+                    isOnline ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {isOnline ? <Truck size={20} /> : <Clock size={20} />}
                   </div>
-                  <button onClick={() => setHasComplaints(false)} className="text-orange-300 hover:text-orange-500 transition-colors">{t('ignore')}</button>
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-black leading-tight truncate">{isOnline ? t('active_shift') : t('not_active')}</h2>
+                    <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{isOnline ? t('search_cargo') : t('change_status_to_start')}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleOnline}
+                  disabled={!canStartWork}
+                  className={`flex items-center justify-center gap-2 px-3 py-3 rounded-2xl font-black text-sm transition-all w-full ${
+                    isOnline ? 'bg-black text-white' : 'bg-primary text-black'
+                  }`}
+                >
+                  {isOnline
+                    ? <>{isRtl ? <ToggleRight size={18} /> : <ToggleLeft size={18} />} {t('end_shift')}</>
+                    : <>{isRtl ? <ToggleLeft size={18} /> : <ToggleRight size={18} />} {t('start_work')}</>
+                  }
+                </button>
+                {isLocalDevRuntime() && accountStatus !== 'approved' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleTestActivate()}
+                    disabled={activatingLocal}
+                    className="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-2 rounded-xl"
+                  >
+                    {localDevWorkEnabled
+                      ? isRtl
+                        ? 'مفعّل محلياً'
+                        : 'Locally active'
+                      : isRtl
+                        ? 'تفعيل تجريبي'
+                        : 'Test Activate'}
+                  </button>
+                )}
+              </aside>
+
+              <div className="min-w-0 space-y-3">
+              {isOnline && isIncomingOffer && (
+                <div className={`rounded-2xl bg-primary text-black px-3 py-2 flex items-center justify-between gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                  <p className="text-xs font-black truncate">
+                    {isRtl ? 'طلب وارد' : 'Incoming order'}
+                  </p>
+                  {offerMetrics && (
+                    <p className="text-xs font-black shrink-0">
+                      {offerMetrics.driverNet.toFixed(2)} {t('sar')}
+                    </p>
+                  )}
+                </div>
+              )}
+              {hasComplaints && accountStatus === 'approved' && (
+                <div className={`bg-orange-50 ${isRtl ? 'border-r-4' : 'border-l-4'} border-orange-500 px-3 py-2 rounded-2xl flex items-center justify-between gap-2`}>
+                  <p className="text-xs font-bold text-orange-900 truncate">{t('complaint_alert')}</p>
+                  <button type="button" onClick={() => setHasComplaints(false)} className="text-[10px] font-bold text-orange-400 shrink-0">{t('ignore')}</button>
                 </div>
               )}
 
-              {/* Status Header */}
-              <div className={`p-8 rounded-[40px] transition-all duration-500 border-2 ${
-                isOnline ? 'bg-green-50 border-green-200 shadow-xl shadow-green-500/5' : 'bg-gray-50 border-gray-200'
-              } ${
-                !import.meta.env.DEV && !canStartWork ? 'opacity-60' : ''
-              }`}>
-                <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-                  <div className={`flex items-center gap-6 ${isRtl ? 'text-right' : 'text-left'} w-full md:w-auto`}>
-                    <div className={`p-5 rounded-3xl transition-all duration-500 ${
-                      isOnline ? 'bg-green-500 text-white animate-pulse' : 'bg-gray-200 text-gray-500'
-                    }`}>
-                      {isOnline ? <Truck size={32} /> : <Clock size={32} />}
-                    </div>
-                    <div className="space-y-1">
-                      <h2 className="text-2xl font-bold">{isOnline ? t('active_shift') : t('not_active')}</h2>
-                      <p className="text-muted-foreground text-sm">{isOnline ? t('search_cargo') : t('change_status_to_start')}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2 w-full md:w-auto">
-                    <button 
-                      type="button"
-                      onClick={handleToggleOnline}
-                      disabled={!canStartWork}
-                      className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg transition-all w-full justify-center ${
-                        isOnline ? 'bg-black text-white shadow-xl shadow-black/10' : 'bg-primary text-black shadow-xl shadow-primary/20 hover:scale-105'
-                      }`}
-                    >
-                      {isOnline 
-                        ? <>{isRtl ? <ToggleRight size={24} /> : <ToggleLeft size={24} />} {t('end_shift')}</> 
-                        : <>{isRtl ? <ToggleLeft size={24} /> : <ToggleRight size={24} />} {t('start_work')}</>
-                      }
-                    </button>
-                    {isLocalDevRuntime() && accountStatus !== 'approved' && (
-                      <button
-                        type="button"
-                        onClick={() => void handleTestActivate()}
-                        disabled={activatingLocal}
-                        className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-100 px-3 py-2 rounded-xl"
-                      >
-                        {localDevWorkEnabled
-                          ? isRtl
-                            ? 'مفعّل محلياً'
-                            : 'Locally active'
-                          : isRtl
-                            ? 'تفعيل تجريبي (محلي)'
-                            : 'Test Activate (local)'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Vehicle Info & Verification */}
-              <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm grid md:grid-cols-2 gap-8 items-center">
-                 <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary">
-                        <UserCheck size={24} />
-                      </div>
-                      <h3 className="text-xl font-bold">{t('vehicle_info')}</h3>
-                    </div>
-                    <p className="text-sm text-muted-foreground">{isRtl ? 'تأكد من تحديث بيانات شاحنتك ورخصة النقل لضمان استقبال الطلبات المناسبة لحمولة مركبتك.' : 'Make sure to update your truck and transport license information to ensure you receive the appropriate cargo requests for your vehicle.'}</p>
-                    <div className="flex gap-4">
-                      <button 
-                        type="button"
-                        onClick={() => navigate('/b2c/driver/profile')}
-                        className="px-6 py-3 bg-black text-white rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-black/90 transition-all"
-                      >
-                        <Upload size={18} /> {t('update_data')}
-                      </button>
-                      <div className="px-4 py-3 bg-green-50 text-green-600 rounded-xl text-xs font-bold flex items-center gap-2">
-                         <div className="w-2 h-2 rounded-full bg-green-500"></div> {t('verified')}
-                      </div>
-                    </div>
-                 </div>
-                 <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-3 font-bold">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">{t('truck_type')}</span>
-                      <span className="font-bold">
-                        {profile?.vehicleType
-                          ? (isRtl ? t(profile.vehicleType) : profile.vehicleType)
-                          : (isRtl ? 'غير محدد' : 'Not set')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">{t('plate_number')}</span>
-                      <span className="font-bold uppercase tracking-widest">
-                        {profile?.plateNumber || (isRtl ? '—' : '—')}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">{t('subtype') || (isRtl ? 'النوع الفرعي' : 'Subtype')}</span>
-                      <span className="font-bold">
-                        {profile?.vehicleOption
-                          ? t(OPTION_LABELS[profile.vehicleOption] || profile.vehicleOption)
-                          : (isRtl ? '—' : '—')}
-                      </span>
-                    </div>
-                 </div>
-              </div>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard 
-                  icon={<TrendingUp className="text-blue-500" />} 
-                  label={isRtl ? 'صافي الأرباح المتاحة' : 'Available net earnings'} 
-                  value={`${wallet.balance.toFixed(2)} ${t('sar')}`} 
-                  subValue={
-                    (isRtl ? 'إجمالي الأرباح ' : 'Total earnings ') +
-                    `${totalEarnings.toFixed(2)} ${t('sar')}`
-                  } 
-                  isRtl={isRtl}
-                />
-                <StatCard 
-                  icon={<Users className="text-orange-500" />} 
-                  label={isRtl ? 'العمليات المكتملة' : 'Completed Operations'} 
-                  value={
-                    isRtl
-                      ? `${wallet.completedOrderCount} عملية`
-                      : `${wallet.completedOrderCount} Operations`
-                  } 
-                  subValue={isRtl ? 'من المحفظة' : 'From wallet ledger'} 
-                  isRtl={isRtl}
-                />
-                <StatCard 
-                  icon={<FileText className="text-purple-500" />} 
-                  label={isRtl ? 'نسبة القبول' : 'Acceptance Rate'} 
-                  value="98.5%" 
-                  subValue={isRtl ? 'مستوى ممتاز' : 'Excellent level'} 
-                  isRtl={isRtl}
-                />
-              </div>
-
               {/* Active / available order */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 gap-3">
                  <div className="space-y-4">
                     <h3 className="font-bold text-lg px-2">
                       {isActiveTrip
@@ -1974,15 +1914,6 @@ const DriverDashboard: React.FC = () => {
                           </div>
                         )}
                 
-                {/* Driver map: preview for offers, stage-aware for active trips */}
-                <DriverTripMap
-                  order={offerOrder}
-                  showRoute={Boolean(offerOrder && (isActiveTrip || isIncomingOffer))}
-                  navPhase={offerNavPhase}
-                  isRtl={isRtl}
-                  driverCoords={driverCoords}
-                />
-
                 {isActiveTrip && latestOrder ? (
                   <div className="space-y-3 pt-1">
                     <div className="grid grid-cols-2 gap-3 items-stretch">
@@ -2072,9 +2003,17 @@ const DriverDashboard: React.FC = () => {
                   </button>
                   </>
                 )}
+
+                <DriverTripMap
+                  order={offerOrder}
+                  showRoute={Boolean(offerOrder && (isActiveTrip || isIncomingOffer))}
+                  navPhase={offerNavPhase}
+                  isRtl={isRtl}
+                  driverCoords={driverCoords}
+                />
               </div>
                       ) : (
-              <div className="bg-white p-12 rounded-[40px] border border-dashed border-primary/30 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="bg-white p-6 rounded-3xl border border-dashed border-primary/30 flex flex-col items-center justify-center text-center space-y-3 min-h-[140px]">
                 <div className="w-12 h-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
                 <p className="text-gray-700 font-bold">
                   {isRtl ? 'بانتظار طلب العميل…' : 'Waiting for a customer order…'}
@@ -2087,40 +2026,94 @@ const DriverDashboard: React.FC = () => {
               </div>
                       )
             ) : (
-              <div className="bg-white p-12 rounded-[40px] border border-dashed border-gray-200 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="bg-white p-6 rounded-3xl border border-dashed border-gray-200 flex flex-col items-center justify-center text-center space-y-3 min-h-[140px]">
                 <AlertCircle size={40} className="text-gray-200" />
                 <p className="text-gray-400 font-bold italic">{t('must_be_online_msg')}</p>
               </div>
             )}
          </div>
+              </div>
+              </div>
+              </div>
 
-         <div className="space-y-4">
-            <h3 className="font-bold text-lg px-2">{t('recent_ops')}</h3>
-            <div className="space-y-3">
-              {recentOps.length === 0 ? (
-                <div className="p-8 bg-white rounded-3xl border border-dashed border-gray-200 text-center">
-                  <p className="text-sm text-gray-400 font-bold">
-                    {isRtl ? 'لا توجد عمليات مكتملة بعد' : 'No completed trips yet'}
+              <div className="space-y-3">
+                <h3 className="font-bold text-sm px-1">{t('recent_ops')}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {recentOps.length === 0 ? (
+                    <div className="sm:col-span-2 px-4 py-3 bg-white rounded-2xl border border-dashed border-gray-200 text-center">
+                      <p className="text-xs text-gray-400 font-bold">
+                        {isRtl ? 'لا توجد عمليات مكتملة بعد' : 'No completed trips yet'}
+                      </p>
+                    </div>
+                  ) : (
+                    recentOps.map((order) => {
+                      const label = formatOrderServiceLabel(order.serviceType, order.serviceDetails, t);
+                      const type = [label.title, label.subtitle].filter(Boolean).join(' · ');
+                      return (
+                        <HistoryItem
+                          key={order.id}
+                          type={type || order.serviceType}
+                          price={driverTripEarnings(order)}
+                          date={formatDriverOpDate(order, isRtl)}
+                          isRtl={isRtl}
+                          t={t}
+                        />
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                <StatCard
+                  icon={<TrendingUp className="text-blue-500" size={16} />}
+                  label={isRtl ? 'إجمالي الأرباح' : 'Total earnings'}
+                  value={`${totalEarnings.toFixed(2)} ${t('sar')}`}
+                  subValue={`${wallet.balance.toFixed(2)} ${t('sar')}`}
+                  isRtl={isRtl}
+                />
+                <StatCard
+                  icon={<Users className="text-orange-500" size={16} />}
+                  label={isRtl ? 'الرحلات المكتملة' : 'Completed trips'}
+                  value={String(wallet.completedOrderCount)}
+                  subValue={isRtl ? 'عملية' : 'Trips'}
+                  isRtl={isRtl}
+                />
+                <StatCard
+                  icon={<Star className="text-primary fill-primary" size={16} />}
+                  label={t('overall_rating')}
+                  value="4.8"
+                  subValue={isRtl ? '128 تقييم' : '128 reviews'}
+                  isRtl={isRtl}
+                />
+                <StatCard
+                  icon={<FileText className="text-purple-500" size={16} />}
+                  label={isRtl ? 'الأداء' : 'Performance'}
+                  value="98.5%"
+                  subValue={isRtl ? 'نسبة القبول' : 'Acceptance rate'}
+                  isRtl={isRtl}
+                />
+              </div>
+
+              <div className={`bg-white px-3 py-3 rounded-2xl border border-gray-100 flex flex-wrap items-center gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
+                <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center text-primary shrink-0">
+                  <UserCheck size={18} />
+                </div>
+                <div className={`min-w-0 flex-1 text-xs font-bold ${isRtl ? 'text-right' : 'text-left'}`}>
+                  <p className="text-gray-400">{t('vehicle_info')}</p>
+                  <p className="text-neutral-900 truncate">
+                    {(profile?.vehicleType ? (isRtl ? t(profile.vehicleType) : profile.vehicleType) : '—')}
+                    {' · '}
+                    <span className="uppercase tracking-wider">{profile?.plateNumber || '—'}</span>
                   </p>
                 </div>
-              ) : (
-                recentOps.map((order) => {
-                  const label = formatOrderServiceLabel(order.serviceType, order.serviceDetails, t);
-                  const type = [label.title, label.subtitle].filter(Boolean).join(' · ');
-                  return (
-                    <HistoryItem
-                      key={order.id}
-                      type={type || order.serviceType}
-                      price={driverTripEarnings(order)}
-                      date={formatDriverOpDate(order, isRtl)}
-                      isRtl={isRtl}
-                      t={t}
-                    />
-                  );
-                })
-              )}
-            </div>
-         </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/b2c/driver/profile')}
+                  className="px-3 py-2 bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Upload size={14} /> {t('update_data')}
+                </button>
               </div>
             </>
           } />
@@ -2500,31 +2493,28 @@ const DriverDashboard: React.FC = () => {
 };
 
 const StatCard: React.FC<{ icon: React.ReactNode, label: string, value: string, subValue: string, isRtl: boolean }> = ({ icon, label, value, subValue, isRtl }) => (
-  <div className={`bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm hover:translate-y-[-4px] transition-all ${isRtl ? 'text-right' : 'text-left'}`}>
-    <div className={`w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center mb-6 shadow-inner ${isRtl ? 'ml-auto' : 'mr-auto'}`}>
+  <div className={`bg-white px-3 py-2.5 rounded-2xl border border-gray-100 flex items-center gap-2.5 min-w-0 ${isRtl ? 'flex-row-reverse text-right' : 'text-left'}`}>
+    <div className="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center shrink-0">
       {icon}
     </div>
-    <p className="text-[10px] font-bold text-gray-400 mb-1 uppercase tracking-widest">{label}</p>
-    <h4 className="text-2xl font-extrabold mb-2 font-mono">{value}</h4>
-    <p className="text-[10px] font-bold text-green-500 uppercase tracking-widest">{subValue}</p>
+    <div className="min-w-0">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide truncate">{label}</p>
+      <p className="text-sm font-black font-mono leading-tight truncate">{value}</p>
+      <p className="text-[10px] font-bold text-green-600 truncate">{subValue}</p>
+    </div>
   </div>
 );
 
 const HistoryItem: React.FC<{ type: string, price: number, date: string, isRtl: boolean, t: any }> = ({ type, price, date, isRtl, t }) => (
-  <div className="flex items-center justify-between p-5 bg-white rounded-3xl border border-gray-50 hover:border-primary/20 transition-all cursor-pointer group">
-    <div className={`flex items-center gap-4 ${isRtl ? '' : 'flex-row-reverse'}`}>
-      <div className="w-12 h-12 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-all">
-        <CheckCircle2 size={24} />
-      </div>
-      <div className={isRtl ? 'text-right' : 'text-left'}>
-        <h4 className="font-bold text-sm">{type}</h4>
-        <p className="text-[10px] text-muted-foreground">{date}</p>
+  <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-white rounded-2xl border border-gray-100">
+    <div className={`flex items-center gap-2 min-w-0 ${isRtl ? '' : 'flex-row-reverse'}`}>
+      <CheckCircle2 size={16} className="text-green-500 shrink-0" />
+      <div className={`min-w-0 ${isRtl ? 'text-right' : 'text-left'}`}>
+        <h4 className="font-bold text-xs truncate">{type}</h4>
+        <p className="text-[10px] text-muted-foreground truncate">{date}</p>
       </div>
     </div>
-    <div className={isRtl ? 'text-left' : 'text-right'}>
-      <p className="font-mono font-bold text-sm">{price.toFixed(2)} {t('sar')}</p>
-      <p className="text-[10px] text-green-500 font-bold uppercase tracking-wider">{t('completed')}</p>
-    </div>
+    <p className="font-mono font-bold text-xs shrink-0">{price.toFixed(2)} {t('sar')}</p>
   </div>
 );
 

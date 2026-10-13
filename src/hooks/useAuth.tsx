@@ -142,7 +142,10 @@ interface AuthContextType {
   /** Store review account only — switch Customer ↔ Driver without a new OTP. */
   switchPlayReviewRole: (role: PlayReviewRole) => Promise<UserProfile>;
   /** Merge profile fields locally + Firestore (drivers/clients updating their data). */
-  updateProfile: (patch: Partial<UserProfile>) => Promise<UserProfile>;
+  updateProfile: (
+    patch: Partial<UserProfile>,
+    options?: { strict?: boolean }
+  ) => Promise<UserProfile>;
   cancelPhoneOtpFlow: () => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -915,7 +918,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateProfile = useCallback(
-    async (patch: Partial<UserProfile>): Promise<UserProfile> => {
+    async (
+      patch: Partial<UserProfile>,
+      options?: { strict?: boolean }
+    ): Promise<UserProfile> => {
       if (!profile) {
         throw new Error('NOT_AUTHENTICATED');
       }
@@ -939,8 +945,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         await syncUserProfileToFirestore(next);
       } catch (error) {
-        console.error('[useAuth] updateProfile Firestore sync failed:', error);
-        // Keep local/cache update so the UI still reflects the change offline.
+        const code = String((error as { code?: string })?.code || '');
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('[useAuth] updateProfile Firestore sync failed:', code, message, error);
+        if (options?.strict) {
+          throw Object.assign(new Error(message || 'FIRESTORE_SYNC_FAILED'), { code });
+        }
       }
 
       return next;

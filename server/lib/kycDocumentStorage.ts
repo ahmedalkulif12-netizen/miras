@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import admin from 'firebase-admin';
+import { MIRAS_PRODUCTION_STORAGE_BUCKET } from '../../src/lib/mirasProductionFirebase.ts';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png']);
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -77,8 +79,54 @@ export function kycBucketName(): string {
   return (
     process.env.DRIVER_DOCS_BUCKET ||
     process.env.FIREBASE_STORAGE_BUCKET ||
-    'hamula-cfc6c-driver-docs'
+    MIRAS_PRODUCTION_STORAGE_BUCKET
   );
+}
+
+/** Long-lived Firebase download URL. V4 signed URLs cannot exceed 7 days. */
+export function firebaseDownloadUrl(bucketName: string, storagePath: string, token: string): string {
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucketName)}/o/${encodeURIComponent(storagePath)}?alt=media&token=${encodeURIComponent(token)}`;
+}
+
+export async function saveImageToStorage(input: {
+  storagePath: string;
+  buffer: Buffer;
+  contentType: string;
+  metadata: Record<string, string>;
+}): Promise<{ storagePath: string; url: string }> {
+  const bucket = admin.storage().bucket(kycBucketName());
+  const token = randomUUID();
+  const file = bucket.file(input.storagePath);
+  try {
+    await file.save(input.buffer, {
+      contentType: input.contentType,
+      resumable: false,
+      metadata: {
+        cacheControl: 'public, max-age=31536000',
+        metadata: {
+          ...input.metadata,
+          firebaseStorageDownloadTokens: token,
+        },
+      },
+    });
+  } catch (error) {
+    const code = (error as { code?: string | number })?.code;
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[storage] image save failed', {
+      bucket: bucket.name,
+      storagePath: input.storagePath,
+      contentType: input.contentType,
+      bytes: input.buffer.length,
+      code,
+      message,
+    });
+    throw error;
+  }
+
+  return {
+    storagePath: input.storagePath,
+    url: firebaseDownloadUrl(bucket.name, input.storagePath, token),
+  };
 }
 
 export async function saveKycImageToStorage(input: {
@@ -87,18 +135,31 @@ export async function saveKycImageToStorage(input: {
   contentType: string;
   metadata: Record<string, string>;
 }): Promise<{ storagePath: string; url: string }> {
+  return saveImageToStorage(input);
+}
+
+/** Prefer the stored download token. Fall back to a signed URL inside the 7-day V4 limit. */
+export async function readableStorageUrl(storagePath: string): Promise<string> {
   const bucket = admin.storage().bucket(kycBucketName());
-  await bucket.file(input.storagePath).save(input.buffer, {
-    contentType: input.contentType,
-    resumable: false,
-    metadata: {
-      metadata: input.metadata,
-    },
-  });
-  const [url] = await bucket.file(input.storagePath).getSignedUrl({
+  const file = bucket.file(storagePath);
+  try {
+    const [metadata] = await file.getMetadata();
+    const raw = metadata.metadata?.firebaseStorageDownloadTokens;
+    const token = String(raw || '').split(',')[0]?.trim();
+    if (token) return firebaseDownloadUrl(bucket.name, storagePath, token);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[storage] metadata read failed', {
+      bucket: bucket.name,
+      storagePath,
+      message,
+    });
+  }
+
+  const [url] = await file.getSignedUrl({
     action: 'read',
-    expires: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000,
+    expires: Date.now() + 6 * 24 * 60 * 60 * 1000,
     version: 'v4',
   });
-  return { storagePath: input.storagePath, url };
+  return url;
 }

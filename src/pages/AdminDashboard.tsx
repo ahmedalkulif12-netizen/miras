@@ -37,6 +37,7 @@ import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
 import { AdminUserAvatar } from '@/components/AdminUserAvatar';
 import { isReviewQueueDriverStatus } from '@/domain/driver-review';
+import { formatSaudiPlateForDisplay } from '@/lib/driverDocumentValidation';
 import {
   CORE_SERVICE_TYPES,
   aggregateServiceDistribution,
@@ -63,6 +64,7 @@ interface Driver {
   rejectionReason?: string | null;
   complaints: number;
   photoURL?: string;
+  vehiclePhotoURL?: string;
   documents: {
     id: AdminDriverDocumentMeta;
     license: AdminDriverDocumentMeta;
@@ -113,6 +115,7 @@ const AdminDashboard: React.FC = () => {
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [rejectTarget, setRejectTarget] = useState<Driver | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [observedPlate, setObservedPlate] = useState('');
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(() => readAdminOverviewCache());
   const [loadingOverview, setLoadingOverview] = useState(() => !readAdminOverviewCache());
   const [loadingDrivers, setLoadingDrivers] = useState(false);
@@ -242,6 +245,10 @@ const AdminDashboard: React.FC = () => {
       void loadWithdrawals();
     }
   }, [authLoading, user, location.pathname, loadDrivers, loadCustomers, loadFinancials, loadWithdrawals]);
+
+  useEffect(() => {
+    setObservedPlate('');
+  }, [selectedDriver?.id]);
 
   /** Keep pending-driver queue live while admin is in the console. */
   const pendingDriversBaselineRef = useRef<number | null>(null);
@@ -614,6 +621,60 @@ const AdminDashboard: React.FC = () => {
                     )}
                   </div>
 
+                  <div className="space-y-4 rounded-3xl border border-amber-100 bg-amber-50/60 p-5">
+                    <h4 className="font-black text-amber-950">
+                      {isRtl ? 'التحقق من السائق' : 'Driver Verification'}
+                    </h4>
+                    <p className="text-sm text-amber-900">
+                      {isRtl
+                        ? 'قارن رقم اللوحة المدخل مع صورة الاستمارة قبل الاعتماد.'
+                        : 'Match the declared plate number against the vehicle registration photo before approving.'}
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                          {isRtl ? 'اللوحة المسجلة' : 'Declared plate'}
+                        </p>
+                        <p className="font-black text-lg tracking-widest">{selectedDriver.plateNumber || '—'}</p>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                          {isRtl ? 'اللوحة كما تظهر في الاستمارة' : 'Plate on registration'}
+                        </label>
+                        <input
+                          value={observedPlate}
+                          onChange={(e) => setObservedPlate(e.target.value)}
+                          placeholder={isRtl ? 'مثال: أ ب ج 1234' : 'e.g. ABC 1234'}
+                          className="mt-1 w-full rounded-2xl border border-amber-200 bg-white p-3 font-black tracking-widest outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+                    {observedPlate.trim() && (
+                      <p
+                        className={`text-sm font-black ${
+                          platesLookEqual(selectedDriver.plateNumber, observedPlate)
+                            ? 'text-emerald-700'
+                            : 'text-red-600'
+                        }`}
+                      >
+                        {platesLookEqual(selectedDriver.plateNumber, observedPlate)
+                          ? isRtl
+                            ? 'اللوحة مطابقة للاستمارة'
+                            : 'Plate matches the registration'
+                          : isRtl
+                            ? 'اللوحة لا تطابق الرقم المسجل'
+                            : 'Plate does not match the declared number'}
+                      </p>
+                    )}
+                    {selectedDriver.vehiclePhotoURL && (
+                      <img
+                        src={selectedDriver.vehiclePhotoURL}
+                        alt={isRtl ? 'صورة المركبة' : 'Vehicle photo'}
+                        className="w-full max-h-56 object-cover rounded-2xl border border-white"
+                      />
+                    )}
+                  </div>
+
                   {/* Documents Section */}
                   <div className="space-y-4">
                     <h4 className="font-bold flex items-center gap-2">
@@ -661,7 +722,11 @@ const AdminDashboard: React.FC = () => {
                       selectedDriver.status === 'banned') && (
                       <button 
                         onClick={() => void updateDriverStatus(selectedDriver, 'approved')}
-                        disabled={updatingDriverId === selectedDriver.id}
+                        disabled={
+                          updatingDriverId === selectedDriver.id ||
+                          (isReviewQueueDriverStatus(selectedDriver.status) &&
+                            !platesLookEqual(selectedDriver.plateNumber, observedPlate))
+                        }
                         className="flex-1 min-w-[140px] flex items-center justify-center gap-2 bg-green-500 text-white py-4 rounded-2xl font-bold hover:bg-green-600 transition-colors shadow-lg shadow-green-200 disabled:opacity-50"
                       >
                         <CheckCircle2 size={18} />
@@ -981,7 +1046,7 @@ const AdminDashboard: React.FC = () => {
                   <div className={`${isRtl ? 'text-right' : 'text-left'}`}>
                     <h3 className={`text-xl font-bold flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                       <Users size={24} className="text-primary" />
-                      {isRtl ? 'إدارة السائقين' : 'Manage Drivers'}
+                      {isRtl ? 'التحقق من السائقين' : 'Driver Verification'}
                     </h3>
                     <p className="text-xs text-orange-600 font-bold mt-1">
                       {isRtl
@@ -1107,7 +1172,14 @@ const AdminDashboard: React.FC = () => {
                               {driver.status !== 'approved' && (
                                 <button
                                   disabled={updatingDriverId === driver.id}
-                                  onClick={() => void updateDriverStatus(driver, 'approved')}
+                                  onClick={() => {
+                                    if (isReviewQueueDriverStatus(driver.status)) {
+                                      setObservedPlate('');
+                                      setSelectedDriver(driver);
+                                      return;
+                                    }
+                                    void updateDriverStatus(driver, 'approved');
+                                  }}
                                   className="px-3 py-2 rounded-lg bg-green-500 text-white text-[10px] font-bold hover:bg-green-600 disabled:opacity-50"
                                   title={isRtl ? 'اعتماد السائق' : 'Approve driver'}
                                 >
@@ -1664,6 +1736,12 @@ const AdminDashboard: React.FC = () => {
     </DashboardLayout>
   );
 };
+
+function platesLookEqual(declared: string, observed: string): boolean {
+  const left = formatSaudiPlateForDisplay(declared).replace(/\s+/g, '');
+  const right = formatSaudiPlateForDisplay(observed).replace(/\s+/g, '');
+  return left.length >= 4 && left === right;
+}
 
 const DocumentPreview: React.FC<{
   label: string;

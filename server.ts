@@ -80,6 +80,8 @@ import {
   isKycDocKey,
   kycBucketName,
   mergeKycDocument,
+  readableStorageUrl,
+  saveImageToStorage,
   saveKycImageToStorage,
 } from './server/lib/kycDocumentStorage.ts';
 import {
@@ -300,7 +302,7 @@ async function startServer() {
     }
   );
 
-  app.use(express.json({ limit: '8mb' }));
+  app.use(express.json({ limit: '12mb' }));
 
   // Initialize Firebase Admin with service-account env/file, Cloud Run ADC, or project-only (local).
   initFirebaseAdmin(config.firebaseProjectId);
@@ -1018,34 +1020,22 @@ async function startServer() {
         }
 
         const buffer = Buffer.from(contentBase64, 'base64');
-        if (!buffer.length || buffer.length > 3 * 1024 * 1024) {
-          return res.status(400).json({ error: 'Image must be between 1 byte and 3 MB' });
+        if (!buffer.length || buffer.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Image must be between 1 byte and 5 MB' });
         }
 
-        const bucketName =
-          process.env.DRIVER_DOCS_BUCKET ||
-          process.env.FIREBASE_STORAGE_BUCKET ||
-          'hamula-cfc6c-driver-docs';
         const storagePath = `users/${uid}/profile/${Date.now()}_${fileName}`;
-        const bucket = admin.storage().bucket(bucketName);
-        await bucket.file(storagePath).save(buffer, {
+        const saved = await saveImageToStorage({
+          storagePath,
+          buffer,
           contentType,
-          resumable: false,
           metadata: {
-            cacheControl: 'public, max-age=31536000',
-            metadata: {
-              userId: uid,
-              uploadedBy: uid,
-              kind: 'profile-photo',
-            },
+            userId: uid,
+            uploadedBy: uid,
+            kind: 'profile-photo',
           },
         });
-
-        const [photoURL] = await bucket.file(storagePath).getSignedUrl({
-          action: 'read',
-          expires: Date.now() + 10 * 365 * 24 * 60 * 60 * 1000,
-          version: 'v4',
-        });
+        const photoURL = saved.url;
 
         const uploadedAt = new Date().toISOString();
         const photoPatch = {
@@ -1074,9 +1064,96 @@ async function startServer() {
           uploadedAt,
         });
       } catch (error: any) {
-        console.error('Profile photo upload error:', error);
+        console.error('[profile-photo] upload failed', {
+          code: error?.code,
+          message: error?.message,
+          statusCode: error?.statusCode,
+          bucket: kycBucketName(),
+        });
         res.status(error?.statusCode ?? 500).json({
           error: error?.message || 'Failed to upload profile photo',
+          code: error?.code || 'PROFILE_PHOTO_UPLOAD_FAILED',
+        });
+      }
+    }
+  );
+
+  /** Upload / replace the authenticated driver's vehicle photo (GCS via Admin SDK). */
+  app.post(
+    '/api/users/vehicle-photo',
+    ...secureApi,
+    async (req: AuthenticatedRequest, res: any) => {
+      try {
+        const uid = req.firebaseUid!;
+        const body = (req.body || {}) as Record<string, unknown>;
+        const contentBase64 = typeof body.contentBase64 === 'string' ? body.contentBase64 : '';
+        const contentTypeRaw =
+          typeof body.contentType === 'string' && body.contentType
+            ? body.contentType.toLowerCase()
+            : 'image/jpeg';
+        const allowedTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+        if (!allowedTypes.has(contentTypeRaw)) {
+          return res.status(400).json({ error: 'Only JPEG, PNG, or WebP images are allowed' });
+        }
+        const contentType = contentTypeRaw === 'image/jpg' ? 'image/jpeg' : contentTypeRaw;
+        const fileNameRaw =
+          typeof body.fileName === 'string' && body.fileName.trim()
+            ? body.fileName.trim()
+            : 'vehicle.jpg';
+        const fileName = fileNameRaw.replace(/[^\w.\-()-]+/g, '_').slice(0, 80);
+
+        if (!contentBase64 || contentBase64.length < 16) {
+          return res.status(400).json({ error: 'contentBase64 is required' });
+        }
+
+        const buffer = Buffer.from(contentBase64, 'base64');
+        if (!buffer.length || buffer.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: 'Image must be between 1 byte and 5 MB' });
+        }
+
+        const storagePath = `users/${uid}/vehicle/${Date.now()}_${fileName}`;
+        const saved = await saveImageToStorage({
+          storagePath,
+          buffer,
+          contentType,
+          metadata: {
+            userId: uid,
+            uploadedBy: uid,
+            kind: 'vehicle-photo',
+          },
+        });
+        const vehiclePhotoURL = saved.url;
+
+        const uploadedAt = new Date().toISOString();
+        const photoPatch = {
+          vehiclePhotoURL,
+          vehiclePhotoStoragePath: storagePath,
+          vehiclePhotoUpdatedAt: uploadedAt,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        await db.collection('users').doc(uid).set({ uid, ...photoPatch }, { merge: true });
+        await db.collection('drivers').doc(uid).get().then((snap) => {
+          if (!snap.exists) return;
+          return snap.ref.set(photoPatch, { merge: true });
+        });
+
+        res.json({
+          vehiclePhotoURL,
+          storagePath,
+          contentType,
+          fileName,
+          uploadedAt,
+        });
+      } catch (error: any) {
+        console.error('[vehicle-photo] upload failed', {
+          code: error?.code,
+          message: error?.message,
+          statusCode: error?.statusCode,
+          bucket: kycBucketName(),
+        });
+        res.status(error?.statusCode ?? 500).json({
+          error: error?.message || 'Failed to upload vehicle photo',
+          code: error?.code || 'VEHICLE_PHOTO_UPLOAD_FAILED',
         });
       }
     }
@@ -1168,9 +1245,15 @@ async function startServer() {
           uploadedAt,
         });
       } catch (error: any) {
-        console.error('Driver document upload error:', error);
+        console.error('[driver-document] upload failed', {
+          code: error?.code,
+          message: error?.message,
+          statusCode: error?.statusCode,
+          bucket: kycBucketName(),
+        });
         res.status(error?.statusCode ?? 500).json({
           error: error?.message || 'Failed to upload document',
+          code: error?.code || 'DRIVER_DOCUMENT_UPLOAD_FAILED',
         });
       }
     }
@@ -1322,11 +1405,7 @@ async function startServer() {
         const fileName =
           (asObj?.fileName != null ? String(asObj.fileName) : null) || storagePath.split('/').pop() || docKey;
 
-        const [url] = await file.getSignedUrl({
-          action: 'read',
-          expires: Date.now() + 15 * 60 * 1000,
-          version: 'v4',
-        });
+        const url = await readableStorageUrl(storagePath);
 
         res.json({
           url,
@@ -1336,7 +1415,11 @@ async function startServer() {
           expiresInSec: 900,
         });
       } catch (error: any) {
-        console.error('Admin document signed URL error:', error);
+        console.error('[admin-document] view URL failed', {
+          code: error?.code,
+          message: error?.message,
+          bucket: kycBucketName(),
+        });
         res.status(error?.statusCode ?? 500).json({
           error: error?.message || 'Failed to create document view URL',
         });
@@ -1400,11 +1483,7 @@ async function startServer() {
           storagePath.split('/').pop() ||
           docKey;
 
-        const [url] = await file.getSignedUrl({
-          action: 'read',
-          expires: Date.now() + 15 * 60 * 1000,
-          version: 'v4',
-        });
+        const url = await readableStorageUrl(storagePath);
 
         res.json({
           url,
@@ -1414,7 +1493,11 @@ async function startServer() {
           expiresInSec: 900,
         });
       } catch (error: any) {
-        console.error('Admin fleet document signed URL error:', error);
+        console.error('[admin-fleet-document] view URL failed', {
+          code: error?.code,
+          message: error?.message,
+          bucket: kycBucketName(),
+        });
         res.status(error?.statusCode ?? 500).json({
           error: error?.message || 'Failed to create fleet document view URL',
         });

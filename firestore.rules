@@ -227,14 +227,29 @@ service cloud.firestore {
       allow create: if isOwner(driverId)
         && request.resource.data.uid == driverId
         && request.resource.data.role in ['b2c_driver', 'driver']
-        && request.resource.data.accountStatus == 'pending';
-      // Drivers cannot self-approve / change accountStatus after create.
+        && request.resource.data.accountStatus in ['pending', 'pending_approval'];
+      // Drivers cannot self-approve. A missing accountStatus must not deny the
+      // whole update: comparing an absent field is a rules error (permission-denied).
       allow update: if isAdmin()
         || (
           isOwner(driverId)
           && request.resource.data.uid == driverId
           && request.resource.data.role in ['b2c_driver', 'driver']
-          && request.resource.data.accountStatus == resource.data.accountStatus
+          && (
+            (
+              !('accountStatus' in resource.data)
+              && (
+                !('accountStatus' in request.resource.data)
+                || request.resource.data.accountStatus in [
+                  'pending', 'pending_approval', 'pending_review', 'ready_for_review'
+                ]
+              )
+            )
+            || (
+              'accountStatus' in resource.data
+              && request.resource.data.accountStatus == resource.data.accountStatus
+            )
+          )
         );
       allow delete: if isAdmin();
     }

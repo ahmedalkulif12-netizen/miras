@@ -27,6 +27,11 @@ service firebase.storage {
         || request.resource.contentType == 'image/png';
     }
 
+    function isAllowedPhotoType() {
+      return isAllowedContentType()
+        || request.resource.contentType == 'image/webp';
+    }
+
     match /drivers/{driverId}/documents/{docKey}/{fileName} {
       allow read: if isOwner(driverId) || isAdmin();
       allow write: if isOwner(driverId)
@@ -43,6 +48,22 @@ service firebase.storage {
         && isAllowedContentType()
         && request.resource.size < 5 * 1024 * 1024;
       allow delete: if isOwner(operatorId) || isAdmin();
+    }
+
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
+        && isAllowedPhotoType()
+        && request.resource.size < 5 * 1024 * 1024;
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId}/vehicle/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
+        && isAllowedPhotoType()
+        && request.resource.size < 5 * 1024 * 1024;
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /{allPaths=**} {

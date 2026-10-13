@@ -56,6 +56,19 @@ async function reverseGeocode(
   }
 }
 
+function moveMapCamera(
+  map: google.maps.Map,
+  center: google.maps.LatLngLiteral,
+  zoom: number
+) {
+  if (typeof map.moveCamera === 'function') {
+    map.moveCamera({ center, zoom });
+    return;
+  }
+  map.panTo(center);
+  map.setZoom(zoom);
+}
+
 /** Keeps the map camera on GPS / pins when they change. */
 const MapCameraController: React.FC<{
   pickup: google.maps.LatLngLiteral | null;
@@ -64,16 +77,51 @@ const MapCameraController: React.FC<{
   mode: BookingMapMode;
   centerPin: boolean;
   focusNonce: number;
-}> = ({ pickup, destination, userLocation, mode, centerPin, focusNonce }) => {
+  activePin: BookingPinTarget;
+  suppressCenterPickRef: React.MutableRefObject<boolean>;
+}> = ({
+  pickup,
+  destination,
+  userLocation,
+  mode,
+  centerPin,
+  focusNonce,
+  activePin,
+  suppressCenterPickRef,
+}) => {
   const map = useMap();
+  const pickupRef = React.useRef(pickup);
+  const destinationRef = React.useRef(destination);
+  const userLocationRef = React.useRef(userLocation);
+  pickupRef.current = pickup;
+  destinationRef.current = destination;
+  userLocationRef.current = userLocation;
 
   useEffect(() => {
     if (!map || !centerPin || focusNonce < 1) return;
-    const focus = userLocation || pickup || destination;
+    // Search / GPS focus must land on the pin being edited. Preferring GPS
+    // left the drop-off camera on the phone after a place was selected.
+    const pickupPoint = pickupRef.current;
+    const destinationPoint = destinationRef.current;
+    const userPoint = userLocationRef.current;
+    const focus =
+      activePin === 'destination'
+        ? destinationPoint || pickupPoint || userPoint
+        : pickupPoint || userPoint || destinationPoint;
     if (!focus) return;
-    map.panTo(focus);
-    map.setZoom(16);
-  }, [map, centerPin, focusNonce]);
+    suppressCenterPickRef.current = true;
+    moveMapCamera(map, focus, 16);
+    const release = window.setTimeout(() => {
+      suppressCenterPickRef.current = false;
+    }, 500);
+    return () => {
+      window.clearTimeout(release);
+      suppressCenterPickRef.current = false;
+    };
+    // Coords are read on focusNonce / pin changes. Dragging the map must not
+    // re-run this and snap the zoom back to 16.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, centerPin, focusNonce, activePin, suppressCenterPickRef]);
 
   useEffect(() => {
     if (!map || centerPin) return;
@@ -93,14 +141,14 @@ const MapCameraController: React.FC<{
 
     const focus =
       (mode === 'delivery_only' ? destination : null) ||
+      (activePin === 'destination' ? destination : pickup) ||
       userLocation ||
       pickup ||
       destination;
     if (focus) {
-      map.panTo(focus);
-      map.setZoom(15);
+      moveMapCamera(map, focus, 15);
     }
-  }, [map, pickup, destination, userLocation, mode, centerPin]);
+  }, [map, pickup, destination, userLocation, mode, centerPin, activePin]);
 
   return null;
 };
@@ -109,7 +157,8 @@ const MapCameraController: React.FC<{
 const CenterPinPicker: React.FC<{
   activePin: BookingPinTarget;
   onPick: (target: BookingPinTarget, coords: google.maps.LatLngLiteral) => void;
-}> = ({ activePin, onPick }) => {
+  suppressCenterPickRef: React.MutableRefObject<boolean>;
+}> = ({ activePin, onPick, suppressCenterPickRef }) => {
   const map = useMap();
   const pinRef = React.useRef(activePin);
   const pickRef = React.useRef(onPick);
@@ -126,10 +175,14 @@ const CenterPinPicker: React.FC<{
     const drag = map.addListener('dragstart', markMoved);
     const zoom = map.addListener('zoom_changed', markMoved);
     const idle = map.addListener('idle', () => {
-      if (!moved) return;
+      if (!moved || suppressCenterPickRef.current) {
+        moved = false;
+        return;
+      }
       moved = false;
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
+        if (suppressCenterPickRef.current) return;
         const center = map.getCenter();
         if (!center) return;
         pickRef.current(pinRef.current, { lat: center.lat(), lng: center.lng() });
@@ -141,7 +194,7 @@ const CenterPinPicker: React.FC<{
       zoom.remove();
       idle.remove();
     };
-  }, [map, activePin]);
+  }, [map, activePin, suppressCenterPickRef]);
 
   return null;
 };
@@ -170,6 +223,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
     [geocodingLib]
   );
   const [mapReady, setMapReady] = useState(false);
+  const suppressCenterPickRef = React.useRef(false);
 
   const defaultCenter = userLocation || pickupCoords || destinationCoords || RIYADH_CENTER;
   const deliveryOnly = mode === 'delivery_only';
@@ -225,10 +279,13 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
               mode={mode}
               centerPin={centerPin}
               focusNonce={focusNonce}
+              activePin={effectiveActivePin}
+              suppressCenterPickRef={suppressCenterPickRef}
             />
             {centerPin && (
               <CenterPinPicker
                 activePin={effectiveActivePin}
+                suppressCenterPickRef={suppressCenterPickRef}
                 onPick={(target, coords) => void applyCoords(target, coords)}
               />
             )}
@@ -243,27 +300,27 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
             />
           )}
 
-          {!centerPin && !deliveryOnly && pickupCoords && (
+          {!deliveryOnly && pickupCoords && (
             <Marker
               position={pickupCoords}
-              draggable
+              draggable={!centerPin}
               title={isRtl ? 'نقطة التحميل' : 'Pickup'}
               onDragEnd={(e) => void handleMarkerDrag('pickup', e)}
             />
           )}
 
-          {!centerPin && destinationCoords && (
+          {destinationCoords && (
             <Marker
               position={destinationCoords}
-              draggable
+              draggable={!centerPin}
               title={
                 deliveryOnly
                   ? isRtl
-                    ? 'موقع التوصيل'
-                    : 'Delivery'
+                    ? 'موقع التنزيل'
+                    : 'Drop-off'
                   : isRtl
-                    ? 'نقطة التسليم'
-                    : 'Delivery'
+                    ? 'موقع التنزيل'
+                    : 'Drop-off'
               }
               onDragEnd={(e) => void handleMarkerDrag('destination', e)}
             />

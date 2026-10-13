@@ -704,7 +704,24 @@ const CustomerDashboard: React.FC = () => {
     return () => window.clearInterval(timer);
   }, [step, trackingStatus]);
 
-  const handleCalculate = async () => {
+  const handleCalculate = async (override?: {
+    pickupCoords?: google.maps.LatLngLiteral | null;
+    destinationCoords?: google.maps.LatLngLiteral | null;
+    pickupLabel?: string;
+    destinationLabel?: string;
+    pickupCityLabel?: string;
+    dropoffCityLabel?: string;
+  }) => {
+    const quotePickupCoords =
+      override && 'pickupCoords' in override ? override.pickupCoords ?? null : pickupCoords;
+    const quoteDestinationCoords =
+      override && 'destinationCoords' in override
+        ? override.destinationCoords ?? null
+        : destinationCoords;
+    const quotePickup = override?.pickupLabel ?? pickup;
+    const quoteDestination = override?.destinationLabel ?? destination;
+    const quotePickupCity = override?.pickupCityLabel ?? pickupCity;
+    const quoteDropoffCity = override?.dropoffCityLabel ?? dropoffCity;
     if (serviceType === 'water_tanker' && !waterType) {
       toast.error(
         isRtl ? 'يرجى اختيار نوع خدمة المياه' : 'Please select a water service type'
@@ -729,7 +746,7 @@ const CustomerDashboard: React.FC = () => {
     setRouteDistanceKm(0);
 
     if (deliveryOnly) {
-      if (!destinationCoords) {
+      if (!quoteDestinationCoords) {
         toast.error(
           isRtl
             ? 'يرجى السماح بالموقع أو تعيين موقع التنزيل'
@@ -737,7 +754,7 @@ const CustomerDashboard: React.FC = () => {
         );
         return;
       }
-    } else if (!pickupCoords || !destinationCoords) {
+    } else if (!quotePickupCoords || !quoteDestinationCoords) {
       toast.error(t('booking_error_location'));
       return;
     }
@@ -761,7 +778,7 @@ const CustomerDashboard: React.FC = () => {
 
       if (deliveryOnly) {
         // Water tanker: billable distance = nearest matching tanker → drop-off.
-        matched = await findNearestOnlineDriver(destinationCoords!, 'water_tanker');
+        matched = await findNearestOnlineDriver(quoteDestinationCoords!, 'water_tanker');
         distKm = sanitizeWaterTankerDistanceKm(
           matched.distanceKm,
           WATER_TANKER_MOCK_DISTANCE_KM
@@ -796,7 +813,7 @@ const CustomerDashboard: React.FC = () => {
         }
       } else {
         setNearestDriver(null);
-        if (!isValidRoutePoint(pickupCoords) || !isValidRoutePoint(destinationCoords)) {
+        if (!isValidRoutePoint(quotePickupCoords) || !isValidRoutePoint(quoteDestinationCoords)) {
           throw new Error(
             isRtl
               ? 'إحداثيات الموقع غير متوفرة. حدد الموقع من البحث أو الخريطة.'
@@ -804,27 +821,27 @@ const CustomerDashboard: React.FC = () => {
           );
         }
 
-        const route = await computeDrivingRoute(pickupCoords, destinationCoords);
+        const route = await computeDrivingRoute(quotePickupCoords, quoteDestinationCoords);
         distKm = route.distanceKm;
         setRouteData({
-          origin: pickupCoords,
-          destination: destinationCoords,
+          origin: quotePickupCoords,
+          destination: quoteDestinationCoords,
           distanceKm: distKm,
           usedFallback: route.usedFallback,
         });
 
         if (map) {
           const bounds = new google.maps.LatLngBounds();
-          bounds.extend(pickupCoords);
-          bounds.extend(destinationCoords);
+          bounds.extend(quotePickupCoords);
+          bounds.extend(quoteDestinationCoords);
           map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
         }
       }
 
       setRouteDistanceKm(distKm);
 
-      const resolvedPickupCity = cityLabelFromAddress(pickup, pickupCity);
-      const resolvedDropoffCity = cityLabelFromAddress(destination, dropoffCity);
+      const resolvedPickupCity = cityLabelFromAddress(quotePickup, quotePickupCity);
+      const resolvedDropoffCity = cityLabelFromAddress(quoteDestination, quoteDropoffCity);
       if (resolvedPickupCity) setPickupCity(resolvedPickupCity);
       if (resolvedDropoffCity) setDropoffCity(resolvedDropoffCity);
       setTransportType(!deliveryOnly && distKm > 100 ? 'outside' : 'inside');
@@ -1573,8 +1590,18 @@ const CustomerDashboard: React.FC = () => {
                                 onPlaceSelect={(place) => {
                                   const label = place.formattedAddress || place.displayName || '';
                                   const city = place.city || cityLabelFromAddress(label);
-                                  if (locationPhase === 'dropoff' || deliveryOnly) {
-                                    setDestinationCoords(place.location);
+                                  const coords = place.location;
+                                  if (!Number.isFinite(coords?.lat) || !Number.isFinite(coords?.lng)) {
+                                    toast.error(
+                                      isRtl
+                                        ? 'تعذر قراءة إحداثيات الموقع المختار'
+                                        : 'Could not read coordinates for the selected place'
+                                    );
+                                    return;
+                                  }
+                                  const choosingDropoff = locationPhase === 'dropoff' || deliveryOnly;
+                                  if (choosingDropoff) {
+                                    setDestinationCoords(coords);
                                     setDestination(label);
                                     setDropoffCity(city);
                                     setActiveMapPin('destination');
@@ -1584,14 +1611,30 @@ const CustomerDashboard: React.FC = () => {
                                       setNearestDriver(null);
                                     }
                                   } else {
-                                    setPickupCoords(place.location);
+                                    setPickupCoords(coords);
                                     setPickup(label);
                                     setPickupCity(city);
                                     setActiveMapPin('pickup');
                                   }
-                                  setUserLocation((prev) => prev || place.location);
                                   setMapFocusNonce((n) => n + 1);
                                   setIsCalculated(false);
+
+                                  const quoteReady =
+                                    choosingDropoff &&
+                                    Boolean(serviceOption) &&
+                                    (serviceType !== 'water_tanker' || Boolean(waterType)) &&
+                                    (deliveryOnly || Boolean(pickupCoords));
+                                  if (!quoteReady) return;
+
+                                  setLocationPhase('summary');
+                                  void handleCalculate({
+                                    pickupCoords: deliveryOnly ? null : pickupCoords,
+                                    destinationCoords: coords,
+                                    pickupLabel: deliveryOnly ? '' : pickup,
+                                    destinationLabel: label,
+                                    pickupCityLabel: pickupCity,
+                                    dropoffCityLabel: city,
+                                  });
                                 }}
                                 className="text-base min-h-12 py-3"
                               />

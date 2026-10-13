@@ -50,6 +50,7 @@ export interface AdminDriverRow {
   rejectionReason?: string | null;
   complaints: number;
   photoURL?: string;
+  vehiclePhotoURL?: string;
   createdAt?: string | null;
   documents: {
     license: DriverDocumentMeta;
@@ -69,7 +70,12 @@ const ALLOWED_STATUSES = new Set<AdminDriverStatus>([
 ]);
 
 const DRIVER_ROLES = new Set(['driver', 'b2c_driver']);
-const REVIEW_ACCOUNT_STATUSES = ['pending', 'pending_review', 'ready_for_review'] as const;
+const REVIEW_ACCOUNT_STATUSES = [
+  'pending',
+  'pending_approval',
+  'pending_review',
+  'ready_for_review',
+] as const;
 
 export function isDriverUserRole(role: unknown): boolean {
   return DRIVER_ROLES.has(String(role || ''));
@@ -167,6 +173,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
     pendingSnap,
     pendingReviewSnap,
     readySnap,
+    pendingApprovalSnap,
     statusPendingSnap,
     statusReviewSnap,
     statusReadySnap,
@@ -181,6 +188,9 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
     ),
     safeQuery('drivers-ready', () =>
       db.collection('drivers').where('accountStatus', '==', 'ready_for_review').limit(200).get()
+    ),
+    safeQuery('drivers-pending-approval', () =>
+      db.collection('drivers').where('accountStatus', '==', 'pending_approval').limit(200).get()
     ),
     safeQuery('drivers-status-pending', () =>
       db.collection('drivers').where('status', '==', 'pending').limit(200).get()
@@ -204,6 +214,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
     ...pendingSnap,
     ...pendingReviewSnap,
     ...readySnap,
+    ...pendingApprovalSnap,
     ...statusPendingSnap,
     ...statusReviewSnap,
     ...statusReadySnap,
@@ -284,6 +295,7 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
       rejectionReason,
       complaints: Number(driver.complaints ?? 0) || 0,
       photoURL: readHttpsPhoto(user.photoURL, driver.photoURL),
+      vehiclePhotoURL: readHttpsPhoto(user.vehiclePhotoURL, driver.vehiclePhotoURL),
       createdAt: timestampToIso(
         driver.submittedAt || driver.createdAt || driver.updatedAt || user.createdAt
       ),

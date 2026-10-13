@@ -5,6 +5,7 @@
 
 export const REVIEW_QUEUE_DRIVER_STATUSES = [
   'pending',
+  'pending_approval',
   'pending_review',
   'ready_for_review',
 ] as const;

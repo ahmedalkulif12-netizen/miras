@@ -560,7 +560,7 @@ const LoginPage: React.FC<{
           const uploaded = await uploadDriverDocumentFiles(uid, documentFiles);
           extraData.documentFiles = uploaded;
           extraData.documentUploadStatuses = documentFilesToUploadStatuses(uploaded);
-          extraData.accountStatus = 'pending';
+          extraData.accountStatus = 'pending_approval';
         } catch (uploadError) {
           console.error('[login] driver document upload failed:', uploadError);
           toast.error(
