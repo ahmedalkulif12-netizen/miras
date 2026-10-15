@@ -23,7 +23,7 @@ server {
   ssl_certificate     /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;
   ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;
 
-  # Moyasar webhook + SPA + API share one origin (required for cookies/auth + callback URLs)
+  # Tap webhook + SPA + API share one origin (required for cookies/auth + redirect URLs)
   location / {
     proxy_pass http://miras_node;
     proxy_http_version 1.1;
@@ -36,7 +36,7 @@ server {
   }
 
   # Optional: stricter rate limit on webhook (adjust zone in http {} block)
-  location /api/webhooks/moyasar {
+  location /api/webhooks/tap {
     proxy_pass http://miras_node;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-Proto $scheme;

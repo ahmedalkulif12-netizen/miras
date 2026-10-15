@@ -186,7 +186,7 @@ export async function finalizeOrderFromCheckoutDraft(
     userId: string;
     draftId: string;
     paymentId?: string;
-    moyasarId?: string;
+    tapChargeId?: string;
     testMode?: boolean;
   }
 ): Promise<{ orderId: string; status: string }> {
@@ -228,7 +228,7 @@ export async function finalizeOrderFromCheckoutDraft(
     financials,
     checkoutDraftId: input.draftId,
     paymentId: input.paymentId,
-    moyasarId: input.moyasarId,
+    tapChargeId: input.tapChargeId,
     testMode: input.testMode,
   });
 
@@ -252,7 +252,7 @@ export function buildBroadcastingOrderPlainDocument(input: {
   financials: Record<string, unknown>;
   checkoutDraftId?: string;
   paymentId?: string;
-  moyasarId?: string;
+  tapChargeId?: string;
   testMode?: boolean;
   customerPhone?: string;
   customerName?: string;
@@ -320,7 +320,7 @@ export function buildBroadcastingOrderPlainDocument(input: {
     ...(customerName ? { customerName } : {}),
     ...(input.checkoutDraftId ? { checkoutDraftId: input.checkoutDraftId } : {}),
     ...(input.paymentId ? { paymentId: input.paymentId } : {}),
-    ...(input.moyasarId ? { moyasarId: input.moyasarId } : {}),
+    ...(input.tapChargeId ? { tapChargeId: input.tapChargeId } : {}),
     ...(input.testMode ? { testMode: true } : {}),
     statusHistory: [
       {
@@ -354,7 +354,7 @@ export async function writeBroadcastingOrder(
     financials: Record<string, unknown>;
     checkoutDraftId?: string;
     paymentId?: string;
-    moyasarId?: string;
+    tapChargeId?: string;
     /** Keep a stable id for local `draft-*` tracking URLs when safe. */
     preferredOrderId?: string;
     testMode?: boolean;
@@ -438,7 +438,7 @@ export async function writeBroadcastingOrder(
       financials: input.financials,
       checkoutDraftId: input.checkoutDraftId,
       paymentId: input.paymentId,
-      moyasarId: input.moyasarId,
+      tapChargeId: input.tapChargeId,
       testMode: input.testMode,
       customerPhone,
       customerName,
@@ -466,7 +466,7 @@ export async function writeBroadcastingOrder(
 }
 
 /**
- * Local/demo payment gateway confirm — create broadcasting order without Moyasar payment doc.
+ * Local/demo payment gateway confirm — create broadcasting order without a Tap payment doc.
  * Prefer existing `checkout_drafts` row; otherwise accept validated session payload.
  */
 export async function publishAfterLocalCheckout(
@@ -474,7 +474,7 @@ export async function publishAfterLocalCheckout(
   input: {
     userId: string;
     draftId: string;
-    moyasarId?: string;
+    tapChargeId?: string;
     payload?: CreateOrderPayload;
     financials?: Record<string, unknown>;
     testMode?: boolean;
@@ -488,7 +488,7 @@ export async function publishAfterLocalCheckout(
       return await finalizeOrderFromCheckoutDraft(db, {
         userId: input.userId,
         draftId,
-        moyasarId: input.moyasarId,
+        tapChargeId: input.tapChargeId,
         testMode: input.testMode,
       });
     } catch (err: unknown) {
@@ -514,7 +514,7 @@ export async function publishAfterLocalCheckout(
     payload: input.payload,
     financials: input.financials,
     checkoutDraftId: draftId,
-    moyasarId: input.moyasarId,
+    tapChargeId: input.tapChargeId,
     preferredOrderId: isLocalId ? draftId : undefined,
     testMode: input.testMode === true || isLocalId,
   });

@@ -1,7 +1,7 @@
 /**
- * Public HTTPS origin for Moyasar callbacks and native App / Universal Links.
+ * Public HTTPS origin for Tap redirects and native App / Universal Links.
  * Capacitor WebViews use https://localhost / capacitor://localhost — never send
- * those to Moyasar. Prefer VITE_APP_URL, then the Firebase Hosting site.
+ * those to Tap. Prefer VITE_APP_URL, then the Firebase Hosting site.
  */
 import { Capacitor } from '@capacitor/core';
 import {
@@ -83,7 +83,7 @@ export function getPublicAppOrigin(): string {
   });
 }
 
-export function getMoyasarCallbackUrl(draftId?: string): string {
+export function getPaymentCallbackUrl(draftId?: string): string {
   const base = `${getPublicAppOrigin()}/payment-callback`;
   const id = String(draftId || '').trim();
   if (!id) return base;

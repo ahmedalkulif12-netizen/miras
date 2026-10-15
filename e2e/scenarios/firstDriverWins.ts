@@ -7,7 +7,7 @@ import {
   seedPaymentFixture,
   waitForOrderStatus,
 } from '../helpers/adminContext.ts';
-import { postMoyasarWebhook } from '../helpers/moyasarWebhook.ts';
+import { postTapWebhook } from '../helpers/tapWebhook.ts';
 import type { ScenarioResult } from './fullLifecycle.ts';
 
 /**
@@ -35,16 +35,16 @@ export async function runFirstDriverWinsScenario(
     const orderId = createRes.body.orderId;
     ctx.artifacts.orderIds.push(orderId);
 
-    const { moyasarId } = await seedPaymentFixture(ctx, {
+    const { tapChargeId } = await seedPaymentFixture(ctx, {
       orderId,
       userId: config.actors.customerUid,
       financials: createRes.body.financials,
     });
 
-    const webhook = await postMoyasarWebhook(ctx, config.baseUrl, {
-      id: moyasarId,
-      status: 'authorized',
-      amount: Math.round(Number(createRes.body.financials.customerTotal ?? 0) * 100),
+    const webhook = await postTapWebhook(ctx, config.baseUrl, {
+      id: tapChargeId,
+      status: 'CAPTURED',
+      amount: Number(createRes.body.financials.customerTotal ?? 0),
       currency: 'SAR',
     });
     assertEqual(webhook.status, 200, 'webhook status');

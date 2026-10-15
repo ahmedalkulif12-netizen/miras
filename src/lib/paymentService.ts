@@ -1,21 +1,21 @@
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
-import { getMoyasarCallbackUrl } from '@/lib/appOrigin';
+import { getPaymentCallbackUrl } from '@/lib/appOrigin';
 import { allowsDemoCheckout, allowsSandboxCheckout } from '@/lib/checkoutGating';
 
-/** Customer-selected checkout method (Moyasar hosted form or in-app wallet). */
+/** Customer-selected checkout method (Tap hosted page or in-app wallet). */
 export type CheckoutPaymentMethod = 'mada' | 'creditcard' | 'applepay' | 'wallet';
 
 export interface PaymentIntent {
   paymentId: string;
-  moyasarId: string;
+  tapChargeId: string;
   paymentUrl: string;
   /** Real order id is null until payment succeeds. */
   orderId: string | null;
   draftId: string;
   amount: number;
   paymentMethod?: CheckoutPaymentMethod;
-  /** Local-dev in-app checkout only — production always opens Moyasar. */
+  /** Local-dev in-app checkout only — production always opens Tap. */
   sandbox?: boolean;
   testMode?: boolean;
 }
@@ -27,7 +27,7 @@ function sandboxIntent(
   const method = encodeURIComponent(paymentMethod);
   return {
     paymentId: `demo-pay-${Date.now()}`,
-    moyasarId: `demo-moyasar-${Date.now()}`,
+    tapChargeId: `demo-tap-${Date.now()}`,
     paymentUrl: `/payment-checkout?draftId=${encodeURIComponent(draftId)}&method=${method}`,
     orderId: null,
     draftId,
@@ -39,7 +39,7 @@ function sandboxIntent(
 }
 
 /**
- * Creates Moyasar payment from a checkout draft (no `orders` document yet).
+ * Creates a Tap charge from a checkout draft (no `orders` document yet).
  * Production and store builds never fall back to a fake in-app checkout.
  */
 export const createPaymentIntent = async (
@@ -51,7 +51,7 @@ export const createPaymentIntent = async (
     return sandboxIntent(draftId, paymentMethod);
   }
 
-  const callbackUrl = getMoyasarCallbackUrl(draftId);
+  const callbackUrl = getPaymentCallbackUrl(draftId);
 
   try {
     const response = await authFetch('/api/create-payment-intent', {
@@ -68,13 +68,13 @@ export const createPaymentIntent = async (
     if (!allowsSandboxCheckout()) {
       throw new Error(message);
     }
-    console.warn('[payments] Moyasar init failed — using local demo checkout:', message);
+    console.warn('[payments] Tap init failed — using local demo checkout:', message);
     return sandboxIntent(draftId, paymentMethod);
   } catch (error) {
     if (!allowsSandboxCheckout()) {
       throw error;
     }
-    console.warn('[payments] Moyasar unreachable — using local demo checkout:', error);
+    console.warn('[payments] Tap unreachable — using local demo checkout:', error);
     return sandboxIntent(draftId, paymentMethod);
   }
 };

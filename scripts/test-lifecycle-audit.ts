@@ -30,9 +30,9 @@ import { resolveApiOriginFrom } from '../src/lib/apiUrl.ts';
 import { sandboxCheckoutAllowed } from '../src/lib/checkoutGatingCore.ts';
 import { isAllowedNativeApiOrigin } from '../server/lib/nativeApiCors.ts';
 import {
-  isDemoMoyasarId,
-  resolveMoyasarCallbackUrl,
-} from '../server/lib/moyasarCallback.ts';
+  isDemoChargeId,
+  resolvePaymentCallbackUrl,
+} from '../server/lib/paymentCallback.ts';
 import {
   isDemoDocumentId,
   isTestOrGhostRecord,
@@ -465,22 +465,22 @@ async function run(): Promise<void> {
   assert(shouldApplyNativeDeepLink('/payment-callback?id=1'), 'payment path is applied');
   assert(!shouldApplyNativeDeepLink('/'), 'root launch URL is ignored');
 
-  assert(isDemoMoyasarId('demo-checkout-1'), 'demo checkout ids are detected');
+  assert(isDemoChargeId('demo-checkout-1'), 'demo checkout ids are detected');
   assert(
-    resolveMoyasarCallbackUrl(
+    resolvePaymentCallbackUrl(
       'https://localhost/payment-callback',
       'https://hamula-cfc6c.web.app',
       { lockToAppUrl: true }
     ) === 'https://hamula-cfc6c.web.app/payment-callback',
-    'production Moyasar callback is APP_URL, never localhost'
+    'production Tap callback is APP_URL, never localhost'
   );
   assert(
-    resolveMoyasarCallbackUrl(
+    resolvePaymentCallbackUrl(
       'https://localhost/payment-callback',
       'https://hamula-cfc6c.web.app',
       { lockToAppUrl: true, draftId: 'draft-abc' }
     ) === 'https://hamula-cfc6c.web.app/payment-callback?draftId=draft-abc',
-    'production Moyasar callback keeps checkout draftId'
+    'production Tap callback keeps checkout draftId'
   );
 
   assert(
@@ -522,18 +522,18 @@ async function run(): Promise<void> {
     }),
     'live production never uses sandbox checkout'
   );
-  const { toMoyasarMetadata } = await import('../server/lib/moyasarMetadata.ts');
-  const meta = toMoyasarMetadata({
+  const { toStringMetadata } = await import('../server/lib/tapPayments.ts');
+  const meta = toStringMetadata({
     userId: 'uid-1',
     draftId: 'abc',
     orderId: null,
     platformFee: 12.5,
     empty: '',
   });
-  assert(meta.userId === 'uid-1', 'Moyasar metadata keeps string ids');
-  assert(meta.draftId === 'abc', 'Moyasar metadata keeps draft id');
-  assert(meta.platformFee === '12.5', 'Moyasar metadata stringifies amounts');
-  assert(meta.orderId === undefined, 'Moyasar metadata drops nulls');
+  assert(meta.userId === 'uid-1', 'Tap metadata keeps string ids');
+  assert(meta.draftId === 'abc', 'Tap metadata keeps draft id');
+  assert(meta.platformFee === '12.5', 'Tap metadata stringifies amounts');
+  assert(meta.orderId === undefined, 'Tap metadata drops nulls');
   const { sanitizeForFirestore, withDefinedPricingMaps } = await import(
     '../server/lib/firestoreSanitize.ts'
   );

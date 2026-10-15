@@ -135,7 +135,7 @@ function isCapacitorWebBuild(): boolean {
 }
 
 // P0-15: Client receives ONLY import.meta.env.VITE_* at build time.
-// Do not use `define` to inject server secrets (Moyasar, webhook, service accounts).
+// Do not use `define` to inject server secrets (Tap secret, service accounts).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const capacitorBuild = isCapacitorWebBuild();

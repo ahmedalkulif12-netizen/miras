@@ -24,7 +24,7 @@ import { auth } from '@/lib/firebase';
 /**
  * Explicit payment checkout screen (local/demo gateway stand-in).
  * User must confirm payment here — never auto-jumps to tracking.
- * Production Moyasar returns still land on /payment-callback.
+ * Production Tap returns still land on /payment-callback.
  */
 const PaymentCheckoutPage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -94,7 +94,7 @@ const PaymentCheckoutPage: React.FC = () => {
       persistPendingCheckoutDraftId(draftId);
       const result = await verifyPaymentReturn({
         draftId,
-        moyasarId: `demo-checkout-${Date.now()}`,
+        tapChargeId: `demo-checkout-${Date.now()}`,
         status: 'paid',
       });
 

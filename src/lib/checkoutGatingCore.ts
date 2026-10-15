@@ -7,7 +7,7 @@ export function readClientDeployEnv(raw?: string | null): CheckoutDeployEnv {
 
 /**
  * In-app sandbox checkout (no live charge). Local `npm run dev` / screenshot
- * demo only. Store and Hosting production builds always use Moyasar.
+ * demo only. Store and Hosting production builds always use Tap.
  */
 export function sandboxCheckoutAllowed(input: {
   demoAllowed: boolean;

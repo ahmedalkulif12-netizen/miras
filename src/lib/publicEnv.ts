@@ -8,7 +8,7 @@ import { isNativeFirebaseAppId } from '@/lib/appCheck/runtime';
 
 /**
  * P0-15: Client-safe configuration — ONLY `import.meta.env.VITE_*` values.
- * Never add server secrets (Moyasar secret, webhook secret, service accounts) here.
+ * Never add server secrets (Tap secret key, service accounts) here.
  */
 export interface ClientPublicEnv {
   firebase: FirebaseOptions;

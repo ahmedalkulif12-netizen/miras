@@ -90,7 +90,7 @@ export async function publishAfterLocalCheckoutAsUser(input: {
   idToken: string;
   userId: string;
   draftId: string;
-  moyasarId?: string;
+  tapChargeId?: string;
   payload?: CreateOrderPayload;
   financials?: Record<string, unknown>;
   testMode?: boolean;
@@ -151,7 +151,7 @@ export async function publishAfterLocalCheckoutAsUser(input: {
     payload: { ...input.payload, serviceType },
     financials: input.financials,
     checkoutDraftId: orderId,
-    moyasarId: input.moyasarId,
+    tapChargeId: input.tapChargeId,
     testMode: input.testMode === true || isLocalId,
     customerPhone,
     customerName,

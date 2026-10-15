@@ -7,7 +7,7 @@ import {
   seedPaymentFixture,
   waitForOrderStatus,
 } from '../helpers/adminContext.ts';
-import { postMoyasarWebhook } from '../helpers/moyasarWebhook.ts';
+import { postTapWebhook } from '../helpers/tapWebhook.ts';
 import { assertTrackingListenerReceivesUpdate } from '../helpers/firestoreListener.ts';
 
 export interface ScenarioResult {
@@ -20,7 +20,7 @@ export interface ScenarioResult {
 
 /**
  * End-to-end customer lifecycle:
- * create order → Moyasar webhook → payment return → driver accept →
+ * create order → Tap webhook → payment return → driver accept →
  * status progression → live tracking listener → capture/complete.
  */
 export async function runFullLifecycleScenario(
@@ -49,19 +49,19 @@ export async function runFullLifecycleScenario(
 
     await waitForOrderStatus(ctx, orderId, 'awaiting_payment');
 
-    const { paymentId, moyasarId } = await seedPaymentFixture(ctx, {
+    const { paymentId, tapChargeId } = await seedPaymentFixture(ctx, {
       orderId,
       userId: config.actors.customerUid,
       financials: createRes.body.financials,
     });
 
-    const webhook = await postMoyasarWebhook(ctx, config.baseUrl, {
-      id: moyasarId,
-      status: 'authorized',
-      amount: Math.round(Number(createRes.body.financials.customerTotal ?? 0) * 100),
+    const webhook = await postTapWebhook(ctx, config.baseUrl, {
+      id: tapChargeId,
+      status: 'CAPTURED',
+      amount: Number(createRes.body.financials.customerTotal ?? 0),
       currency: 'SAR',
     });
-    assertEqual(webhook.status, 200, 'Moyasar webhook status');
+    assertEqual(webhook.status, 200, 'Tap webhook status');
 
     await waitForOrderStatus(ctx, orderId, 'broadcasting');
 
@@ -71,7 +71,7 @@ export async function runFullLifecycleScenario(
         token: customerToken,
         query: {
           orderId,
-          moyasarId,
+          tapChargeId,
           status: 'paid',
         },
       }

@@ -3,7 +3,7 @@
  * Hosting same-origin SPA requests have no Origin that needs echoing.
  */
 import type { Request, Response, NextFunction } from 'express';
-import { isLoopbackHostname } from './moyasarCallback.ts';
+import { isLoopbackHostname } from './paymentCallback.ts';
 
 const NATIVE_SCHEMES = new Set(['capacitor', 'ionic', 'file', 'http', 'https']);
 

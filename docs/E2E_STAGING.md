@@ -132,7 +132,7 @@ Run after automated smoke passes on your staging host.
 |---------|----------------|
 | `E2E blocked` | Missing `E2E_STAGING` or project mismatch |
 | `401 Unauthorized` | Server not running or invalid test UIDs |
-| Webhook `401` | `MOYASAR_WEBHOOK_SECRET` mismatch with server `.env` |
+| Webhook `401` | Tap `hashstring` does not match `TAP_SECRET_KEY` on the server |
 | Tracking listener timeout | Firestore rules not deployed; driver not assigned |
 | `create order failed: 503` | Pricing docs missing in Firestore |
 

@@ -2,20 +2,19 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import admin from 'firebase-admin';
-import axios from 'axios';
 import {
   loadServerEnv,
   getServerConfig,
   assertProductionSecrets,
-  assertMoyasarConfigured,
+  assertTapConfigured,
 } from './server/config/env.ts';
 import { verifyFirebaseToken, adminOverviewTokenOptions, type AuthenticatedRequest } from './server/middleware/verifyFirebaseToken.ts';
 import { verifyAppCheck } from './server/middleware/verifyAppCheck.ts';
 import {
   captureRawBody,
-  verifyMoyasarWebhookSignature,
-  type MoyasarWebhookRequest,
-} from './server/middleware/moyasarWebhook.ts';
+  verifyTapWebhookHash,
+  type TapWebhookRequest,
+} from './server/middleware/tapWebhook.ts';
 import { executeCapturePayment } from './server/lib/capturePayment.ts';
 import { executeCompleteOrder } from './server/lib/completeOrder.ts';
 import { createPricingService } from './server/lib/pricingService.ts';
@@ -47,16 +46,22 @@ import {
 import { verifyPaymentReturnStatus } from './server/lib/paymentReturn.ts';
 import {
   finalizePaidCheckoutReturn,
-  isMoyasarTestSecret,
-  resolveDraftIdFromMoyasarPayment,
+  isTapTestSecret,
+  resolveDraftIdFromTapCharge,
 } from './server/lib/finalizePaidCheckout.ts';
 import { listOrdersForCustomer } from './server/lib/customerOrders.ts';
 import { payCheckoutDraftWithWallet } from './server/lib/customerWallet.ts';
 import {
-  isDemoMoyasarId,
-  resolveMoyasarCallbackUrl,
-} from './server/lib/moyasarCallback.ts';
-import { toMoyasarMetadata } from './server/lib/moyasarMetadata.ts';
+  isDemoChargeId,
+  resolvePaymentCallbackUrl,
+} from './server/lib/paymentCallback.ts';
+import {
+  createTapCharge,
+  isFailedTapStatus,
+  isPaidTapStatus,
+  splitSaudiPhone,
+  type CheckoutGatewayMethod,
+} from './server/lib/tapPayments.ts';
 import {
   consumePlayReviewRateLimit,
   isPlayReviewCredentials,
@@ -177,17 +182,17 @@ async function startServer() {
     next();
   });
 
-  // Moyasar webhook must verify HMAC on raw body — register before global JSON parser
+  // Tap webhook must verify hashstring — register before global JSON parser
   app.post(
-    '/api/webhooks/moyasar',
+    '/api/webhooks/tap',
     express.json({ verify: captureRawBody }),
-    verifyMoyasarWebhookSignature,
-    async (req: MoyasarWebhookRequest, res: any) => {
+    verifyTapWebhookHash,
+    async (req: TapWebhookRequest, res: any) => {
       try {
         const payload = req.body;
         const paymentData = payload?.data ?? payload;
         const id = paymentData?.id;
-        const status = paymentData?.status;
+        const status = String(paymentData?.status || '');
 
         if (!id || !status) {
           return res.status(400).json({ error: 'Invalid webhook payload' });
@@ -200,7 +205,7 @@ async function startServer() {
           return res.sendStatus(200);
         }
 
-        if (status === 'paid' || status === 'authorized') {
+        if (isPaidTapStatus(status)) {
           const paymentsQuery = await db
             .collection('payments')
             .where('transactionId', '==', id)
@@ -233,8 +238,8 @@ async function startServer() {
                   userId: paymentUserId,
                   draftId,
                   paymentId: paymentDoc.id,
-                  moyasarId: id,
-                  testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+                  tapChargeId: id,
+                  testMode: isTapTestSecret(config.tapSecretKey),
                 });
                 linkedOrderId = finalized.orderId;
                 await paymentDoc.ref.set(
@@ -257,8 +262,8 @@ async function startServer() {
                 const finalized = await finalizeOrderFromCheckoutDraft(db, {
                   userId: metaUserId,
                   draftId: metaDraftId,
-                  moyasarId: id,
-                  testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+                  tapChargeId: id,
+                  testMode: isTapTestSecret(config.tapSecretKey),
                 });
                 await eventRef.set({
                   transactionId: id,
@@ -285,6 +290,28 @@ async function startServer() {
               });
             }
           }
+        } else if (isFailedTapStatus(status)) {
+          const failedQuery = await db
+            .collection('payments')
+            .where('transactionId', '==', id)
+            .limit(1)
+            .get();
+          if (!failedQuery.empty) {
+            await failedQuery.docs[0].ref.set(
+              {
+                status: 'failed',
+                tapStatus: status.toLowerCase(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true }
+            );
+          }
+          await eventRef.set({
+            transactionId: id,
+            status,
+            processedAt: admin.firestore.FieldValue.serverTimestamp(),
+            note: 'payment_failed',
+          });
         } else {
           await eventRef.set({
             transactionId: id,
@@ -368,8 +395,6 @@ async function startServer() {
 
   // Run seed check
   seedPricing();
-  
-  const MOYASAR_API_URL = 'https://api.moyasar.com/v1';
 
   // Authenticated APIs also accept App Check tokens (enforced when APP_CHECK_ENFORCE=true).
   const secureApi = [verifyAppCheck(), verifyFirebaseToken()];
@@ -408,23 +433,25 @@ async function startServer() {
     }
   );
 
-  // Moyasar return verification — authenticated customer only (callback landing).
-  // Accepts draftId (pre-payment) or orderId (legacy); finalizes order only after paid.
+  // Tap return verification — authenticated customer only (redirect landing).
+  // Accepts draftId (pre-payment) or orderId (legacy); finalizes order only after CAPTURED.
   app.get('/api/payments/return', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
       const draftId = String(req.query.draftId || '');
       const orderId = String(req.query.orderId || '');
-      const moyasarIdEarly = req.query.moyasarId ? String(req.query.moyasarId) : '';
-      if (!draftId && !orderId && !moyasarIdEarly) {
-        return res.status(400).json({ error: 'draftId, orderId, or moyasarId is required' });
+      const tapChargeIdEarly = String(
+        req.query.tapChargeId || req.query.tap_id || req.query.id || ''
+      );
+      if (!draftId && !orderId && !tapChargeIdEarly) {
+        return res.status(400).json({ error: 'draftId, orderId, or tapChargeId is required' });
       }
 
-      const moyasarId = req.query.moyasarId ? String(req.query.moyasarId) : undefined;
+      const tapChargeId = tapChargeIdEarly || undefined;
       const returnStatus = req.query.status ? String(req.query.status) : undefined;
       const uid = req.firebaseUid!;
       let resolvedDraftId = draftId;
 
-      if (returnStatus && ['failed', 'voided', 'cancelled'].includes(returnStatus.toLowerCase())) {
+      if (returnStatus && ['failed', 'voided', 'cancelled', 'canceled', 'abandoned', 'declined'].includes(returnStatus.toLowerCase())) {
         return res.json({
           success: false,
           orderId: orderId || draftId,
@@ -435,19 +462,19 @@ async function startServer() {
         });
       }
 
-      if (!resolvedDraftId && moyasarId) {
-        resolvedDraftId = (await resolveDraftIdFromMoyasarPayment(db, uid, moyasarId)) || '';
+      if (!resolvedDraftId && tapChargeId) {
+        resolvedDraftId = (await resolveDraftIdFromTapCharge(db, uid, tapChargeId)) || '';
       }
 
-      // Finalize unpaid checkout draft after Moyasar paid (including test keys).
+      // Finalize unpaid checkout draft after Tap reports CAPTURED (including test keys).
       if (resolvedDraftId) {
-        if (!moyasarId) {
+        if (!tapChargeId) {
           return res.status(400).json({
-            error: 'moyasarId is required to finalize a checkout draft',
+            error: 'tapChargeId is required to finalize a checkout draft',
           });
         }
 
-        if (isDemoMoyasarId(moyasarId)) {
+        if (isDemoChargeId(tapChargeId)) {
           if (config.deployEnv === 'production') {
             return res.status(403).json({
               error: 'Demo checkout is disabled in production',
@@ -456,7 +483,7 @@ async function startServer() {
           const published = await publishAfterLocalCheckout(db, {
             userId: uid,
             draftId: resolvedDraftId,
-            moyasarId,
+            tapChargeId,
             testMode: true,
           });
           return res.json({
@@ -472,17 +499,17 @@ async function startServer() {
         const finalized = await finalizePaidCheckoutReturn(db, {
           uid,
           draftId: resolvedDraftId,
-          moyasarId,
+          tapChargeId,
           returnStatus,
-          moyasarSecretKey: config.moyasarSecretKey,
+          tapSecretKey: config.tapSecretKey,
         });
         return res.json(finalized);
       }
 
-      if (!orderId && moyasarId) {
+      if (!orderId && tapChargeId) {
         const paymentsQuery = await db
           .collection('payments')
-          .where('transactionId', '==', moyasarId)
+          .where('transactionId', '==', tapChargeId)
           .limit(1)
           .get();
         if (!paymentsQuery.empty) {
@@ -492,7 +519,7 @@ async function startServer() {
             const result = await verifyPaymentReturnStatus(db, {
               uid,
               orderId: linked,
-              moyasarId,
+              tapChargeId,
               returnStatus,
             });
             return res.json(result);
@@ -509,7 +536,7 @@ async function startServer() {
       const result = await verifyPaymentReturnStatus(db, {
         uid,
         orderId,
-        moyasarId,
+        tapChargeId,
         returnStatus,
       });
 
@@ -567,8 +594,8 @@ async function startServer() {
 
   /**
    * After local/demo payment gateway confirm — write live `orders` as broadcasting
-   * with canonical serviceType (Admin SDK). Used by /payment-checkout; real Moyasar
-   * still finalizes via webhook + GET /api/payments/return.
+   * with canonical serviceType (Admin SDK). Used by /payment-checkout; real Tap
+   * charges still finalize via webhook + GET /api/payments/return.
    */
   app.post(
     '/api/orders/publish-after-checkout',
@@ -576,20 +603,20 @@ async function startServer() {
     async (req: AuthenticatedRequest, res: any) => {
       const userId = req.firebaseUid!;
       const draftId = String(req.body?.draftId || '');
-      const moyasarId = req.body?.moyasarId
-        ? String(req.body.moyasarId)
+      const tapChargeId = req.body?.tapChargeId
+        ? String(req.body.tapChargeId)
         : undefined;
       const payload = req.body?.payload;
       const financials = req.body?.financials;
       const testMode =
-        isMoyasarTestSecret(config.moyasarSecretKey) ||
-        Boolean(moyasarId && moyasarId.startsWith('demo-'));
+        isTapTestSecret(config.tapSecretKey) ||
+        Boolean(tapChargeId && tapChargeId.startsWith('demo-'));
 
       if (!draftId) {
         return res.status(400).json({ error: 'draftId is required' });
       }
 
-      if (config.deployEnv === 'production' && isDemoMoyasarId(moyasarId)) {
+      if (config.deployEnv === 'production' && isDemoChargeId(tapChargeId)) {
         return res.status(403).json({
           error: 'Demo checkout is disabled in production',
         });
@@ -625,7 +652,7 @@ async function startServer() {
                 idToken: bearer,
                 userId,
                 draftId,
-                moyasarId,
+                tapChargeId,
                 payload,
                 financials,
                 testMode,
@@ -655,7 +682,7 @@ async function startServer() {
         const published = await publishAfterLocalCheckout(db, {
           userId,
           draftId,
-          moyasarId,
+          tapChargeId,
           payload,
           financials,
           testMode,
@@ -1775,15 +1802,6 @@ async function startServer() {
     }
   });
 
-  // Helper: Moyasar API Client
-  const moyasar = axios.create({
-    baseURL: MOYASAR_API_URL,
-    auth: {
-      username: config.moyasarSecretKey,
-      password: '',
-    },
-  });
-
   // API Route: Calculate Price (authenticated quote preview — same engine as order create)
   app.post('/api/calculate-price', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
@@ -1815,15 +1833,17 @@ async function startServer() {
     }
   });
 
-  // API Route: Create Moyasar Payment Intent from checkout draft (no orders write).
+  // API Route: Create Tap charge from checkout draft (no orders write).
   app.post('/api/create-payment-intent', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
-      assertMoyasarConfigured(config);
+      assertTapConfigured(config);
       const { draftId, orderId, callbackUrl, paymentMethod: rawMethod } = req.body;
       const userId = req.firebaseUid!;
 
-      const allowedMethods = new Set(['mada', 'creditcard', 'applepay']);
-      const paymentMethod = allowedMethods.has(rawMethod) ? rawMethod : 'mada';
+      const allowedMethods = new Set<CheckoutGatewayMethod>(['mada', 'creditcard', 'applepay']);
+      const paymentMethod: CheckoutGatewayMethod = allowedMethods.has(rawMethod)
+        ? rawMethod
+        : 'mada';
 
       let chargeDraftId = draftId ? String(draftId) : '';
       let financials: Record<string, any> | null = null;
@@ -1846,7 +1866,6 @@ async function startServer() {
           (draft.payload?.serviceDetails as Record<string, unknown> | undefined) || {};
         customerTotal = Number(financials?.customerTotal || 0);
       } else if (orderId) {
-        // Legacy path — prefer draftId; order must already exist (should be rare).
         const orderSnap = await db.collection('orders').doc(orderId).get();
         if (!orderSnap.exists) {
           return res.status(404).json({ error: 'Order not found — prepare a checkout draft first' });
@@ -1868,9 +1887,7 @@ async function startServer() {
         return res.status(400).json({ error: 'No valid charge amount on checkout draft' });
       }
 
-      const amountInHalalas = Math.round(customerTotal * 100);
-
-      const moyasarCallbackUrl = resolveMoyasarCallbackUrl(
+      const redirectUrl = resolvePaymentCallbackUrl(
         callbackUrl,
         config.appUrl,
         {
@@ -1878,61 +1895,62 @@ async function startServer() {
           draftId: chargeDraftId || undefined,
         }
       );
+      const webhookUrl = `${String(config.appUrl).replace(/\/$/, '')}/api/webhooks/tap`;
+
+      const userSnap = await db.collection('users').doc(userId).get();
+      const profile = (userSnap.exists ? userSnap.data() : {}) as Record<string, unknown>;
+      let phoneRaw = String(profile.phone || profile.phoneNumber || '');
+      let email = String(profile.email || '');
+      let firstName = String(profile.name || profile.displayName || 'Customer').split(' ')[0];
+      if (!phoneRaw || !email) {
+        try {
+          const authUser = await admin.auth().getUser(userId);
+          phoneRaw = phoneRaw || String(authUser.phoneNumber || '');
+          email = email || String(authUser.email || '');
+          firstName = firstName === 'Customer'
+            ? String(authUser.displayName || 'Customer').split(' ')[0]
+            : firstName;
+        } catch (authErr) {
+          console.warn('[payments] Auth profile lookup failed:', authErr);
+        }
+      }
+      const phone = splitSaudiPhone(phoneRaw);
+      if (!phone) {
+        return res.status(400).json({
+          error: 'A Saudi mobile number is required before checkout',
+          code: 'PHONE_REQUIRED',
+        });
+      }
 
       const waterBits = [
         serviceDetails.waterType != null ? String(serviceDetails.waterType) : '',
         serviceDetails.capacity != null ? String(serviceDetails.capacity) : '',
       ].filter(Boolean);
-      const moyasarDescription =
+      const description =
         waterBits.length > 0
           ? `JZ Logistics Order - ${serviceType} (${waterBits.join('/')})`
           : `JZ Logistics Order - ${serviceType}`;
 
-      const moyasarPayload = {
-        amount: amountInHalalas,
+      const charge = await createTapCharge(config.tapSecretKey, {
+        amount: customerTotal,
         currency: 'SAR',
-        description: moyasarDescription,
-        callback_url: moyasarCallbackUrl,
-        metadata: toMoyasarMetadata({
-          userId,
-          draftId: chargeDraftId,
+        description,
+        redirectUrl,
+        webhookUrl,
+        draftId: chargeDraftId,
+        userId,
+        paymentMethod,
+        customer: {
+          firstName: firstName || 'Customer',
+          email: email || undefined,
+          phone,
+        },
+        metadata: {
           serviceType,
-          paymentMethod,
           platformFee: (financials?.platformFee ?? 0) + (financials?.serviceFee ?? 0),
           driverAmount: financials?.driverNet ?? 0,
-        }),
-      };
-
-      // Hosted invoice — live or test Moyasar keys, never collect PAN in-app.
-      let moyasarId = '';
-      let paymentUrl = '';
-      try {
-        const invoiceResponse = await moyasar.post('/invoices', moyasarPayload);
-        const invoice = invoiceResponse.data;
-        moyasarId = String(invoice.id || '');
-        paymentUrl = String(invoice.url || invoice.source?.transaction_url || '');
-      } catch (invoiceError: any) {
-        const invoiceDetail = invoiceError?.response?.data || invoiceError?.message;
-        console.error('[payments] Moyasar /invoices failed:', invoiceDetail);
-        throw Object.assign(
-          new Error(
-            invoiceError?.response?.data?.message ||
-              invoiceError?.message ||
-              'Moyasar invoice create failed'
-          ),
-          {
-            statusCode: invoiceError?.response?.status || 502,
-            response: invoiceError?.response,
-          }
-        );
-      }
-
-      if (!moyasarId || !paymentUrl) {
-        return res.status(502).json({
-          error: 'Moyasar did not return a hosted checkout URL',
-          testMode: isMoyasarTestSecret(config.moyasarSecretKey),
-        });
-      }
+        },
+      });
 
       const paymentRef = await db.collection('payments').add({
         userId,
@@ -1946,33 +1964,32 @@ async function startServer() {
         financials: financials ?? null,
         status: 'pending',
         paymentMethod,
-        transactionId: moyasarId,
-        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+        gateway: 'tap',
+        transactionId: charge.id,
+        tapChargeId: charge.id,
+        testMode: isTapTestSecret(config.tapSecretKey),
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
       res.json({
         paymentId: paymentRef.id,
-        moyasarId,
-        paymentUrl,
+        tapChargeId: charge.id,
+        paymentUrl: charge.paymentUrl,
         draftId: chargeDraftId || null,
         orderId: null,
         amount: customerTotal,
         paymentMethod,
-        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+        testMode: isTapTestSecret(config.tapSecretKey),
       });
     } catch (error: any) {
       const statusCode = error?.statusCode || error?.response?.status || 500;
-      const moyasarMessage =
-        error?.response?.data?.message ||
-        error?.response?.data?.type ||
-        error?.message ||
-        'Failed to initialize payment with Moyasar';
-      console.error('Moyasar Init Error:', moyasarMessage, error?.response?.data || error);
+      const tapMessage = error?.message || 'Failed to initialize payment with Tap';
+      console.error('Tap Init Error:', tapMessage, error?.response?.data || error);
       res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
-        error: String(moyasarMessage),
-        testMode: isMoyasarTestSecret(config.moyasarSecretKey),
+        error: String(tapMessage),
+        code: error?.code || 'TAP_INIT_FAILED',
+        testMode: isTapTestSecret(config.tapSecretKey),
       });
     }
   });

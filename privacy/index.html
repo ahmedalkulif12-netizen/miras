@@ -183,7 +183,7 @@
           <p class="mb-4 text-stone-600" data-i18n="s4_p">قد نشارك بيانات محدودة فقط في الحالات التالية:</p>
           <ul class="list-disc space-y-3 pe-5 text-stone-700">
             <li data-i18n="s4_l1">مع السائق أو العميل لإتمام عملية النقل (الاسم، الهاتف، مواقع الاستلام/التسليم).</li>
-            <li data-i18n="s4_l2">مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Moyasar.</li>
+            <li data-i18n="s4_l2">مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Tap Payments.</li>
             <li data-i18n="s4_l3">مع الجهات الحكومية المختصة عند طلب رسمي نظامي.</li>
           </ul>
           <p class="mt-4 font-extrabold" data-i18n="s4_no_sale">نحن لا نبيع بياناتكم الشخصية لأي طرف ثالث.</p>
@@ -213,7 +213,7 @@
         <section id="payments">
           <h2 class="mb-4 text-2xl font-extrabold" data-i18n="s6_t">المدفوعات</h2>
           <p class="text-stone-700" data-i18n="s6_p">
-            تتم المدفوعات الإلكترونية عبر بوابة Moyasar المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق JZ Logistics أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.
+            تتم المدفوعات الإلكترونية عبر بوابة Tap Payments المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق JZ Logistics أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.
           </p>
         </section>
 
@@ -304,7 +304,7 @@
           s4_t: "مشاركة البيانات",
           s4_p: "قد نشارك بيانات محدودة فقط في الحالات التالية:",
           s4_l1: "مع السائق أو العميل لإتمام عملية النقل (الاسم، الهاتف، مواقع الاستلام/التسليم).",
-          s4_l2: "مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Moyasar.",
+          s4_l2: "مع مزودي البنية التحتية: Google Firebase / Google Cloud، وGoogle Maps، وبوابة الدفع Tap Payments.",
           s4_l3: "مع الجهات الحكومية المختصة عند طلب رسمي نظامي.",
           s4_no_sale: "نحن لا نبيع بياناتكم الشخصية لأي طرف ثالث.",
           s5_t: "Firebase والأمان",
@@ -314,7 +314,7 @@
           s5_l3: "<strong>App Check:</strong> التحقق من أن الطلبات صادرة عن تطبيق JZ Logistics الأصلي للحد من الإساءة.",
           s5_l4: "الاتصالات مشفّرة عبر HTTPS. قد تُعالَج بعض البيانات على خوادم Google خارج المملكة ضمن ضوابط مزود الخدمة المعتمد.",
           s6_t: "المدفوعات",
-          s6_p: "تتم المدفوعات الإلكترونية عبر بوابة Moyasar المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق JZ Logistics أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.",
+          s6_p: "تتم المدفوعات الإلكترونية عبر بوابة Tap Payments المعتمدة (مدى، البطاقات، Apple Pay حيث يتوفر). لا يخزّن تطبيق JZ Logistics أرقام بطاقات الدفع الكاملة أو رموز CVV على خوادمنا. نحتفظ بسجلات المعاملة المحاسبية (المبلغ، الحالة، ومعرّف العملية) للفوترة والنزاعات النظامية.",
           s7_t: "الاحتفاظ والحذف",
           s7_p: "نحتفظ بالبيانات طالما الحساب نشط، أو للمدة التي تتطلبها الأنظمة المحاسبية والتنظيمية في المملكة. يمكنكم طلب حذف الحساب من داخل التطبيق.",
           s7_l1: "يُحذف حساب Firebase Authentication وتُلغى الجلسات.",
@@ -364,7 +364,7 @@
           s4_t: "Data sharing",
           s4_p: "We share limited data only in these cases:",
           s4_l1: "With the driver or customer to complete the trip (name, phone, pickup/drop-off).",
-          s4_l2: "With infrastructure providers: Google Firebase / Google Cloud, Google Maps, and the Moyasar payment gateway.",
+          s4_l2: "With infrastructure providers: Google Firebase / Google Cloud, Google Maps, and the Tap Payments payment gateway.",
           s4_l3: "With competent government authorities when legally required.",
           s4_no_sale: "We do not sell your personal data to third parties.",
           s5_t: "Firebase and security",
@@ -374,7 +374,7 @@
           s5_l3: "<strong>App Check:</strong> helps ensure requests come from the genuine JZ Logistics app.",
           s5_l4: "Traffic is encrypted with HTTPS. Some processing may occur on Google servers outside Saudi Arabia under the provider’s controls.",
           s6_t: "Payments",
-          s6_p: "Electronic payments are processed by the licensed Moyasar gateway (mada, cards, and Apple Pay where available). JZ Logistics does not store full card numbers or CVV on our servers. We keep accounting records (amount, status, and transaction ID) for billing and lawful disputes.",
+          s6_p: "Electronic payments are processed by the licensed Tap Payments gateway (mada, cards, and Apple Pay where available). JZ Logistics does not store full card numbers or CVV on our servers. We keep accounting records (amount, status, and transaction ID) for billing and lawful disputes.",
           s7_t: "Retention and deletion",
           s7_p: "We keep data while the account is active, or as required by Saudi accounting and regulatory rules. You can request account deletion from inside the app.",
           s7_l1: "The Firebase Authentication user is deleted and sessions are revoked.",

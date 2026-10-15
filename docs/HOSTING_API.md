@@ -36,9 +36,9 @@ while linking `/api/**` rewrites. Until Cloud Run is healthy:
 ## Deploy order (clean `firebase deploy`)
 
 ```powershell
-# 1) Healthy API with Moyasar TEST keys (staging)
-$env:MOYASAR_SECRET_KEY = "sk_test_..."
-$env:MOYASAR_WEBHOOK_SECRET = "whsec_..."
+# 1) Healthy API with Tap TEST keys (staging)
+$env:TAP_SECRET_KEY = "sk_test_..."
+$env:TAP_PUBLIC_KEY = "pk_test_..."
 .\scripts\deploy-cloud-run.ps1 -AppUrl "https://hamula-cfc6c.web.app"
 
 # 2) Confirm Cloud Run is up

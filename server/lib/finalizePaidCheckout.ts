@@ -1,55 +1,29 @@
-import axios from 'axios';
 import admin from 'firebase-admin';
 import { finalizeOrderFromCheckoutDraft } from './checkoutDraft.ts';
+import {
+  isPaidTapStatus,
+  isTapTestSecret,
+  retrieveTapCharge,
+} from './tapPayments.ts';
 
-const MOYASAR_API_URL = 'https://api.moyasar.com/v1';
-const PAID_STATUSES = new Set(['paid', 'authorized', 'captured']);
-
-export function isMoyasarTestSecret(secret: string): boolean {
-  return String(secret || '').startsWith('sk_test_');
-}
+export { isTapTestSecret };
 
 export function isPaidPaymentStatus(status: unknown): boolean {
-  return PAID_STATUSES.has(String(status || '').toLowerCase());
-}
-
-async function fetchMoyasarPaymentStatus(
-  secretKey: string,
-  moyasarId: string
-): Promise<string | null> {
-  const auth = { username: secretKey, password: '' };
-  try {
-    const response = await axios.get(`${MOYASAR_API_URL}/payments/${moyasarId}`, {
-      auth,
-      timeout: 12_000,
-    });
-    return String(response.data?.status || '').toLowerCase() || null;
-  } catch {
-    try {
-      const invoice = await axios.get(`${MOYASAR_API_URL}/invoices/${moyasarId}`, {
-        auth,
-        timeout: 12_000,
-      });
-      return String(invoice.data?.status || '').toLowerCase() || null;
-    } catch (error) {
-      console.warn('[payments] Moyasar fetch failed for', moyasarId, error);
-      return null;
-    }
-  }
+  return isPaidTapStatus(status);
 }
 
 /**
- * After Moyasar return (including test keys): mark the payment paid and
- * write a broadcasting `orders` document so clients and drivers see it.
+ * After Tap redirect: confirm the charge with Tap, then write a broadcasting
+ * `orders` document so clients and drivers see it.
  */
 export async function finalizePaidCheckoutReturn(
   db: admin.firestore.Firestore,
   input: {
     uid: string;
     draftId: string;
-    moyasarId: string;
+    tapChargeId: string;
     returnStatus?: string;
-    moyasarSecretKey: string;
+    tapSecretKey: string;
   }
 ): Promise<{
   success: boolean;
@@ -60,23 +34,12 @@ export async function finalizePaidCheckoutReturn(
   testMode: boolean;
   message?: string;
 }> {
-  const testMode = isMoyasarTestSecret(input.moyasarSecretKey);
-  const callbackPaid = isPaidPaymentStatus(input.returnStatus);
-  let remoteStatus = await fetchMoyasarPaymentStatus(
-    input.moyasarSecretKey,
-    input.moyasarId
-  );
+  const testMode = isTapTestSecret(input.tapSecretKey);
+  const remote = await retrieveTapCharge(input.tapSecretKey, input.tapChargeId);
+  const remoteStatus = remote ? String(remote.status || '').toLowerCase() : null;
+  const paidOk = isPaidTapStatus(remoteStatus);
 
-  const paidOk =
-    isPaidPaymentStatus(remoteStatus) ||
-    (testMode && callbackPaid) ||
-    (testMode && !input.returnStatus && isPaidPaymentStatus(remoteStatus));
-
-  if (!paidOk && testMode && callbackPaid) {
-    remoteStatus = String(input.returnStatus || 'paid').toLowerCase();
-  }
-
-  if (!paidOk && !isPaidPaymentStatus(remoteStatus) && !(testMode && callbackPaid)) {
+  if (!paidOk) {
     return {
       success: false,
       orderId: input.draftId,
@@ -88,14 +51,10 @@ export async function finalizePaidCheckoutReturn(
     };
   }
 
-  const resolvedStatus = isPaidPaymentStatus(remoteStatus)
-    ? remoteStatus!
-    : 'paid';
-
   let paymentDoc: admin.firestore.QueryDocumentSnapshot | admin.firestore.DocumentSnapshot;
   const paymentsQuery = await db
     .collection('payments')
-    .where('transactionId', '==', input.moyasarId)
+    .where('transactionId', '==', input.tapChargeId)
     .limit(1)
     .get();
 
@@ -106,7 +65,9 @@ export async function finalizePaidCheckoutReturn(
       draftId: input.draftId,
       orderId: null,
       status: 'authorized',
-      transactionId: input.moyasarId,
+      transactionId: input.tapChargeId,
+      tapChargeId: input.tapChargeId,
+      gateway: 'tap',
       testMode,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -131,7 +92,8 @@ export async function finalizePaidCheckoutReturn(
   await paymentDoc.ref.set(
     {
       status: 'authorized',
-      moyasarStatus: resolvedStatus,
+      tapStatus: remoteStatus,
+      gateway: 'tap',
       testMode,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
@@ -142,7 +104,7 @@ export async function finalizePaidCheckoutReturn(
     userId: input.uid,
     draftId: input.draftId,
     paymentId: paymentDoc.id,
-    moyasarId: input.moyasarId,
+    tapChargeId: input.tapChargeId,
     testMode,
   });
 
@@ -165,15 +127,15 @@ export async function finalizePaidCheckoutReturn(
 }
 
 /**
- * Resolve checkout draft from a Moyasar payment/invoice id when the callback
- * URL did not keep `draftId` (common after App Link round-trips).
+ * Resolve checkout draft from a Tap charge id when the redirect URL did not
+ * keep `draftId`.
  */
-export async function resolveDraftIdFromMoyasarPayment(
+export async function resolveDraftIdFromTapCharge(
   db: admin.firestore.Firestore,
   uid: string,
-  moyasarId: string
+  tapChargeId: string
 ): Promise<string | null> {
-  const id = String(moyasarId || '').trim();
+  const id = String(tapChargeId || '').trim();
   if (!id) return null;
   const paymentsQuery = await db
     .collection('payments')

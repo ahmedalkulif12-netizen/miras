@@ -3,7 +3,7 @@
 #
 # Usage:
 #   .\scripts\deploy-cloud-run.ps1
-#   .\scripts\deploy-cloud-run.ps1 -MoyasarSecretKey "sk_test_..." -MoyasarWebhookSecret "whsec_..."
+#   .\scripts\deploy-cloud-run.ps1 -TapSecretKey "sk_test_..." -TapPublicKey "pk_test_..."
 #   .\scripts\deploy-cloud-run.ps1 -AppUrl "https://YOUR_CUSTOM_DOMAIN"
 #
 # Order for a clean firebase deploy:
@@ -17,8 +17,8 @@ param(
   [string]$Region = "us-central1",
   [string]$AppUrl = "https://hamula-cfc6c.web.app",
   [string]$DeployEnv = "staging",
-  [string]$MoyasarSecretKey = $env:MOYASAR_SECRET_KEY,
-  [string]$MoyasarWebhookSecret = $env:MOYASAR_WEBHOOK_SECRET,
+  [string]$TapSecretKey = $env:TAP_SECRET_KEY,
+  [string]$TapPublicKey = $env:TAP_PUBLIC_KEY,
   [string]$AppCheckEnforce = "false"
 )
 
@@ -36,37 +36,30 @@ Then restart your terminal and run:
 "@
 }
 
-if (-not $MoyasarSecretKey) {
+if (-not $TapSecretKey -or -not $TapPublicKey) {
   Write-Error @"
-MOYASAR_SECRET_KEY is required for the API to start.
-Set it in your environment or pass -MoyasarSecretKey.
+TAP_SECRET_KEY and TAP_PUBLIC_KEY are required for the API to start.
+Set them in your environment or pass -TapSecretKey and -TapPublicKey.
 See deploy/cloud-run.env.example
 "@
 }
 
-if (-not $MoyasarWebhookSecret) {
-  if ($DeployEnv -eq "staging") {
-    $MoyasarWebhookSecret = "whsec_test_dummy"
-    Write-Warning "MOYASAR_WEBHOOK_SECRET unset - using staging fallback whsec_test_dummy"
-  } else {
-    Write-Error @"
-MOYASAR_WEBHOOK_SECRET is required for production.
-Set it in your environment or pass -MoyasarWebhookSecret.
-See deploy/cloud-run.env.example
-"@
-  }
+if ($DeployEnv -eq "staging" -and $TapSecretKey -notlike "sk_test_*") {
+  Write-Error "Staging Cloud Run requires a Tap TEST secret (sk_test_*)."
+}
+if ($DeployEnv -eq "staging" -and $TapPublicKey -notlike "pk_test_*") {
+  Write-Error "Staging Cloud Run requires a Tap TEST public key (pk_test_*)."
 }
 
-if ($DeployEnv -eq "staging" -and $MoyasarSecretKey -notlike "sk_test_*") {
-  Write-Error "Staging Cloud Run requires Moyasar TEST key (sk_test_*). Got a non-test key."
+if ($DeployEnv -eq "production" -and $TapSecretKey -notlike "sk_live_*") {
+  Write-Error "Production Cloud Run requires a Tap LIVE secret (sk_live_*)."
 }
-
-if ($DeployEnv -eq "production" -and $MoyasarSecretKey -notlike "sk_live_*") {
-  Write-Error "Production Cloud Run requires Moyasar LIVE key (sk_live_*)."
+if ($DeployEnv -eq "production" -and $TapPublicKey -notlike "pk_live_*") {
+  Write-Error "Production Cloud Run requires a Tap LIVE public key (pk_live_*)."
 }
 
 if ($AppUrl -notlike "https://*") {
-  Write-Error "APP_URL must be HTTPS for Moyasar callbacks (got: $AppUrl)"
+  Write-Error "APP_URL must be HTTPS for Tap redirects (got: $AppUrl)"
 }
 
 Write-Host "Enabling required APIs on $ProjectId ..."
@@ -84,7 +77,7 @@ gcloud run deploy $ServiceName `
   --cpu=1 `
   --min-instances=0 `
   --max-instances=10 `
-  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,MOYASAR_SECRET_KEY=$MoyasarSecretKey,MOYASAR_WEBHOOK_SECRET=$MoyasarWebhookSecret"
+  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,TAP_SECRET_KEY=$TapSecretKey,TAP_PUBLIC_KEY=$TapPublicKey"
 
 $url = gcloud run services describe $ServiceName --project=$ProjectId --region=$Region --format="value(status.url)"
 Write-Host ""

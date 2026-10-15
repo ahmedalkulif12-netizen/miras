@@ -7,9 +7,7 @@ import {
   loadServerEnv,
   getServerConfig,
   assertProductionSecrets,
-  applyMoyasarWebhookSecretFallback,
   resetServerConfigCache,
-  STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK,
 } from '../server/config/env.ts';
 import { getDeployEnvironment } from '../server/config/deployEnv.ts';
 import { validateRecaptchaSiteKey } from '../src/lib/appCheck/config.ts';
@@ -39,10 +37,6 @@ function main(): number {
   const checks: Check[] = [];
 
   loadServerEnv();
-  // Staging verify: ensure webhook secret exists (real value or safe dummy fallback).
-  if (target === 'staging') {
-    applyMoyasarWebhookSecretFallback('staging');
-  }
 
   const config = getServerConfig();
 
@@ -51,22 +45,15 @@ function main(): number {
   for (const key of [
     'APP_URL',
     'FIREBASE_PROJECT_ID',
-    'MOYASAR_SECRET_KEY',
-    'MOYASAR_WEBHOOK_SECRET',
+    'TAP_SECRET_KEY',
+    'TAP_PUBLIC_KEY',
     'VITE_FIREBASE_API_KEY',
     'VITE_FIREBASE_APP_ID',
     'VITE_GOOGLE_MAPS_PLATFORM_KEY',
     'VITE_APP_CHECK_RECAPTCHA_SITE_KEY',
   ] as const) {
     const present = has(key);
-    const detail =
-      key === 'MOYASAR_WEBHOOK_SECRET' &&
-      present &&
-      process.env.MOYASAR_WEBHOOK_SECRET === STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK
-        ? 'set (staging fallback whsec_test_dummy)'
-        : present
-          ? 'set'
-          : 'missing';
+    const detail = present ? 'set' : 'missing';
     push(checks, key, present, detail);
   }
 
@@ -79,9 +66,9 @@ function main(): number {
     );
     push(
       checks,
-      'Moyasar live key',
-      config.moyasarSecretKey.startsWith('sk_live_'),
-      config.moyasarSecretKey.startsWith('sk_live_') ? 'sk_live_* present' : 'must be sk_live_*'
+      'Tap live secret',
+      config.tapSecretKey.startsWith('sk_live_'),
+      config.tapSecretKey.startsWith('sk_live_') ? 'sk_live_* present' : 'must be sk_live_*'
     );
     push(checks, 'App Check enforce', config.appCheckEnforce, String(config.appCheckEnforce));
     push(
@@ -123,9 +110,9 @@ function main(): number {
   } else {
     push(
       checks,
-      'Staging Moyasar test key',
-      !config.moyasarSecretKey || config.moyasarSecretKey.startsWith('sk_test_'),
-      config.moyasarSecretKey.startsWith('sk_live_') ? 'sk_live_* not allowed on staging' : 'ok'
+      'Staging Tap test key',
+      !config.tapSecretKey || config.tapSecretKey.startsWith('sk_test_'),
+      config.tapSecretKey.startsWith('sk_live_') ? 'sk_live_* not allowed on staging' : 'ok'
     );
     push(checks, 'E2E project pin optional', true, 'Set E2E_ALLOWED_FIREBASE_PROJECT for smoke tests');
   }

@@ -6,7 +6,7 @@ import {
   loadCheckoutDraft,
   type CheckoutDraft,
 } from '@/lib/checkoutDraft';
-import { allowsSandboxCheckout, isDemoMoyasarId } from '@/lib/checkoutGating';
+import { allowsSandboxCheckout, isDemoChargeId } from '@/lib/checkoutGating';
 
 export interface PaymentReturnStatus {
   success: boolean;
@@ -27,16 +27,16 @@ export function isPaymentSuccessStatus(status?: string | null): boolean {
   return value === 'paid' || value === 'authorized' || value === 'captured';
 }
 
-/** Local/demo gateway (no Moyasar payment doc) — disabled in production builds. */
+/** Local/demo gateway (no Tap payment doc) — disabled in production builds. */
 function isLocalDemoGateway(params: {
   draftId?: string | null;
   orderId?: string | null;
-  moyasarId?: string | null;
+  tapChargeId?: string | null;
 }): boolean {
   if (!allowsSandboxCheckout()) return false;
   const id = params.draftId || params.orderId || '';
   if (id.startsWith('demo-')) return true;
-  if (isDemoMoyasarId(params.moyasarId)) return true;
+  if (isDemoChargeId(params.tapChargeId)) return true;
   return false;
 }
 
@@ -81,7 +81,7 @@ function seedPromoteRestoreKey(draftId: string, draft: CheckoutDraft | null): vo
  */
 async function publishLocalCheckoutOrder(params: {
   draftId: string;
-  moyasarId?: string | null;
+  tapChargeId?: string | null;
 }): Promise<PaymentReturnStatus> {
   const { draftId } = params;
   const draft = loadCheckoutDraft(draftId);
@@ -118,7 +118,7 @@ async function publishLocalCheckoutOrder(params: {
       method: 'POST',
       body: JSON.stringify({
         draftId,
-        moyasarId: params.moyasarId || `demo-checkout-${Date.now()}`,
+        tapChargeId: params.tapChargeId || `demo-checkout-${Date.now()}`,
         ...(draft
           ? {
               payload: draftPayloadBody(draft),
@@ -182,7 +182,7 @@ async function publishLocalCheckoutOrder(params: {
 export async function verifyPaymentReturn(params: {
   draftId?: string | null;
   orderId?: string | null;
-  moyasarId?: string | null;
+  tapChargeId?: string | null;
   status?: string | null;
 }): Promise<PaymentReturnStatus> {
   const status = (params.status || '').toLowerCase();
@@ -200,7 +200,7 @@ export async function verifyPaymentReturn(params: {
   }
 
   // Local/demo gateway: never call GET /api/payments/return with demo-checkout ids
-  // (that path requires a real Moyasar payments doc). Publish via Admin SDK instead.
+  // (that path requires a real Tap payments doc). Publish via Admin SDK instead.
   if (isLocalDemoGateway(params)) {
     if (!draftId) {
       return {
@@ -214,14 +214,14 @@ export async function verifyPaymentReturn(params: {
     }
     return publishLocalCheckoutOrder({
       draftId,
-      moyasarId: params.moyasarId,
+      tapChargeId: params.tapChargeId,
     });
   }
 
   const query = new URLSearchParams();
   if (params.draftId) query.set('draftId', params.draftId);
   if (params.orderId) query.set('orderId', params.orderId);
-  if (params.moyasarId) query.set('moyasarId', params.moyasarId);
+  if (params.tapChargeId) query.set('tapChargeId', params.tapChargeId);
   if (params.status) query.set('status', params.status);
 
   if (!query.toString()) {
@@ -239,7 +239,7 @@ export async function verifyPaymentReturn(params: {
     if (!draftId) return null;
     return publishLocalCheckoutOrder({
       draftId,
-      moyasarId: params.moyasarId,
+      tapChargeId: params.tapChargeId,
     });
   };
 
@@ -255,7 +255,7 @@ export async function verifyPaymentReturn(params: {
     }
 
     // Local DEV only: webhook lag / test keys may need a client publish.
-    // Production never creates a live order without Moyasar verification.
+    // Production never creates a live order without Tap verification.
     if (allowsSandboxCheckout() && (isPaymentSuccessStatus(params.status) || !status)) {
       const published = await publishIfPossible();
       if (published?.success) return published;
@@ -269,7 +269,7 @@ export async function verifyPaymentReturn(params: {
     ) {
       return publishLocalCheckoutOrder({
         draftId,
-        moyasarId: params.moyasarId,
+        tapChargeId: params.tapChargeId,
       });
     }
 

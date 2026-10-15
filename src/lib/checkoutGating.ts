@@ -1,5 +1,5 @@
 /**
- * Checkout locks: staging and production never skip Moyasar.
+ * Checkout locks: staging and production never skip Tap.
  * Local `npm run dev` may still use an in-app demo checkout.
  */
 
@@ -46,7 +46,7 @@ export function allowsSandboxCheckout(): boolean {
   });
 }
 
-export function isDemoMoyasarId(id?: string | null): boolean {
+export function isDemoChargeId(id?: string | null): boolean {
   if (!id) return false;
   return id === 'demo' || id.startsWith('demo-');
 }

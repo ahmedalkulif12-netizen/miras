@@ -36,7 +36,7 @@ function requireHttpsUrl(url: string, label: string): void {
 
 /**
  * Production deploy safety — fail fast before serving traffic or processing payments.
- * Keeps staging/dev permissive while production requires live Moyasar + App Check + HTTPS.
+ * Keeps staging/dev permissive while production requires live Tap + App Check + HTTPS.
  */
 export function assertDeployEnvironment(config: ServerConfig): void {
   const deployEnv = getDeployEnvironment();
@@ -61,23 +61,23 @@ export function assertDeployEnvironment(config: ServerConfig): void {
   }
 
   if (deployEnv === 'staging') {
-    if (!config.moyasarSecretKey) {
+    if (!config.tapSecretKey) {
       console.warn(
-        '[env] Staging: MOYASAR_SECRET_KEY unset — payment routes will return 503 until a sk_test_* key is set.'
+        '[env] Staging: TAP_SECRET_KEY unset — payment routes will return 503 until a sk_test_* key is set.'
       );
       return;
     }
-    if (config.moyasarSecretKey.startsWith('sk_live_')) {
+    if (config.tapSecretKey.startsWith('sk_live_')) {
       throw new Error(
-        'Staging deploy cannot use Moyasar live key (sk_live_*). Use sk_test_* on staging hosts.'
+        'Staging deploy cannot use a Tap live key (sk_live_*). Use sk_test_* on staging hosts.'
       );
     }
-    if (!config.moyasarSecretKey.startsWith('sk_test_')) {
+    if (!config.tapSecretKey.startsWith('sk_test_')) {
       throw new Error(
-        'Staging deploy requires Moyasar test secret key (sk_test_*). See deploy/cloud-run.env.example'
+        'Staging deploy requires a Tap test secret key (sk_test_*). See deploy/cloud-run.env.example'
       );
     }
-    // Live Firebase Hosting / custom domain should still use HTTPS for Moyasar callbacks.
+    // Live Firebase Hosting / custom domain should still use HTTPS for Tap redirects.
     if (config.appUrl && !config.appUrl.startsWith('http://localhost') && !config.appUrl.startsWith('http://127.0.0.1')) {
       requireHttpsUrl(config.appUrl, 'APP_URL');
     }
@@ -87,8 +87,11 @@ export function assertDeployEnvironment(config: ServerConfig): void {
   // --- production ---
   requireHttpsUrl(config.appUrl, 'APP_URL');
 
-  if (!config.moyasarSecretKey.startsWith('sk_live_')) {
-    throw new Error('Production deploy requires Moyasar live secret key (sk_live_*)');
+  if (!config.tapSecretKey.startsWith('sk_live_')) {
+    throw new Error('Production deploy requires a Tap live secret key (sk_live_*)');
+  }
+  if (!config.tapPublicKey.startsWith('pk_live_')) {
+    throw new Error('Production deploy requires a Tap live public key (pk_live_*)');
   }
 
   if (!config.appCheckEnforce) {

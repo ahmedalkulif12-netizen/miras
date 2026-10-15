@@ -24,7 +24,7 @@ interface ImportMetaEnv {
   readonly VITE_MIRAS_DEPLOY_ENV?: 'development' | 'staging' | 'production';
   /** @deprecated Use VITE_MIRAS_DEPLOY_ENV */
   readonly VITE_HAMOULA_DEPLOY_ENV?: 'development' | 'staging' | 'production';
-  /** Optional public HTTPS app origin for Moyasar callbacks (native must not use localhost). */
+  /** Optional public HTTPS app origin for Tap redirects (native must not use localhost). */
   readonly VITE_APP_URL?: string;
   /** Optional API origin when the SPA is hosted separately from Express (e.g. Firebase Hosting). */
   readonly VITE_API_ORIGIN?: string;

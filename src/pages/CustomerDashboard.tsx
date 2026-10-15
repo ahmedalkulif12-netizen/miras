@@ -1961,15 +1961,15 @@ const CustomerDashboard: React.FC = () => {
                            : `${checkoutTotal.toFixed(2)} SAR will be deducted from your wallet (balance ${walletBalance.toFixed(2)} SAR).`
                          : checkoutMethod === 'applepay'
                          ? isRtl
-                           ? 'ستُفتح صفحة Moyasar الآمنة — اختر Apple Pay إن كان متاحاً على جهازك.'
-                           : 'You will open Moyasar’s secure page — choose Apple Pay if available on your device.'
+                           ? 'ستُفتح صفحة Tap الآمنة — اختر Apple Pay إن كان متاحاً على جهازك.'
+                           : 'You will open Tap’s secure page — choose Apple Pay if available on your device.'
                          : checkoutMethod === 'mada'
                            ? isRtl
-                             ? 'ستُفتح صفحة Moyasar الآمنة لإتمام الدفع ببطاقة مدى.'
-                             : 'You will open Moyasar’s secure page to pay with your Mada card.'
+                             ? 'ستُفتح صفحة Tap الآمنة لإتمام الدفع ببطاقة مدى.'
+                             : 'You will open Tap’s secure page to pay with your Mada card.'
                            : isRtl
-                             ? 'ستُفتح صفحة Moyasar الآمنة لإتمام الدفع بفيزا / ماستركارد.'
-                             : 'You will open Moyasar’s secure page to pay with Visa / Mastercard.'}
+                             ? 'ستُفتح صفحة Tap الآمنة لإتمام الدفع بفيزا / ماستركارد.'
+                             : 'You will open Tap’s secure page to pay with Visa / Mastercard.'}
                      </p>
                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
                        {isRtl

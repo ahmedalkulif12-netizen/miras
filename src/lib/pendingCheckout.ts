@@ -1,5 +1,5 @@
 /**
- * Persist the unpaid checkout draft id across Moyasar redirects.
+ * Persist the unpaid checkout draft id across Tap redirects.
  * sessionStorage is lost when iOS/Android reopen the app via App Links;
  * localStorage survives the round-trip.
  */

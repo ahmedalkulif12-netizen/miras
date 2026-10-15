@@ -115,18 +115,18 @@ Firebase Web API key (separate from Maps):
 - Application restrictions: HTTP referrers matching your domain
 - App Check enforced in Firebase Console
 
-### Phase 4 — Moyasar live integration
+### Phase 4 — Tap Payments live integration
 
-Moyasar Dashboard (live mode):
+Tap Dashboard (live mode):
 
 | Setting | Value |
 |---------|--------|
-| Secret API key | `sk_live_*` → host env `MOYASAR_SECRET_KEY` |
-| Webhook URL | `https://app.YOUR_DOMAIN.com/api/webhooks/moyasar` |
-| Webhook secret | → `MOYASAR_WEBHOOK_SECRET` |
-| Callback (client) | `https://app.YOUR_DOMAIN.com/payment-callback` (via `APP_URL`) |
+| Secret API key | `sk_live_*` → host env `TAP_SECRET_KEY` |
+| Public key | `pk_live_*` → host env `TAP_PUBLIC_KEY` |
+| Webhook URL | `https://app.YOUR_DOMAIN.com/api/webhooks/tap` |
+| Redirect (client) | `https://app.YOUR_DOMAIN.com/payment-callback` (via `APP_URL`) |
 
-Flow unchanged: customer pays → Moyasar webhook → `broadcasting` → driver accept → capture.
+Enable mada, Visa/Mastercard, and Apple Pay on the Tap account. Checkout opens Tap’s hosted page (`src_sa.mada`, `src_card`, or `src_apple_pay`). Flow: customer pays → Tap webhook or redirect verify → `broadcasting` → driver accept → capture.
 
 Test on **staging** with `sk_test_*` first; switch host env to live only on production deploy.
 

@@ -9,9 +9,6 @@ import {
 } from './deployEnv.ts';
 import { loadProjectEnv } from './loadProjectEnv.ts';
 
-/** Safe placeholder for staging/local when Moyasar webhook secret is not configured yet. */
-export const STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK = 'whsec_test_dummy';
-
 export interface ServerConfig {
   nodeEnv: string;
   deployEnv: DeployEnvironment;
@@ -21,8 +18,8 @@ export interface ServerConfig {
   isStagingDeploy: boolean;
   port: number;
   appUrl: string;
-  moyasarSecretKey: string;
-  moyasarWebhookSecret: string;
+  tapSecretKey: string;
+  tapPublicKey: string;
   appCheckEnforce: boolean;
   firebaseProjectId: string;
   googleApplicationCredentials?: string;
@@ -57,8 +54,8 @@ function isRenderHost(): boolean {
 }
 
 /**
- * Email worker / first Render boot: do not require Moyasar.
- * Payment routes still 503 via assertMoyasarConfigured until keys are set.
+ * Email worker / first Render boot: do not require Tap.
+ * Payment routes still 503 via assertTapConfigured until keys are set.
  */
 function shouldRelaxPaymentSecrets(config: ServerConfig): boolean {
   if (isAgentsProcess()) return true;
@@ -82,31 +79,6 @@ function applyRelaxedHostDefaults(): void {
     process.env.MIRAS_DEPLOY_ENV = 'staging';
     console.warn('[env] MIRAS_DEPLOY_ENV unset on Render — defaulting to staging');
   }
-  applyMoyasarWebhookSecretFallback(getDeployEnvironment());
-}
-
-/**
- * Staging / local: fill MOYASAR_WEBHOOK_SECRET so verify + Cloud Run boot don't fail
- * when the operator has not created a Moyasar webhook yet.
- * Production always requires an explicit real secret.
- */
-export function applyMoyasarWebhookSecretFallback(
-  deployEnv: DeployEnvironment = getDeployEnvironment()
-): string {
-  const existing = readEnv('MOYASAR_WEBHOOK_SECRET');
-  if (existing) {
-    return existing;
-  }
-
-  if (deployEnv === 'production') {
-    return '';
-  }
-
-  process.env.MOYASAR_WEBHOOK_SECRET = STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK;
-  console.warn(
-    `[env] MOYASAR_WEBHOOK_SECRET unset — using staging fallback "${STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK}". Replace with your Moyasar dashboard webhook secret before enabling live webhooks.`
-  );
-  return STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK;
 }
 
 /** Invalidate cached config (used by verify scripts after mutating process.env). */
@@ -120,7 +92,6 @@ export function loadServerEnv(): void {
   if (loaded) return;
   const mode = process.env.NODE_ENV === 'production' ? 'production' : 'development';
   loadProjectEnv(mode);
-  applyMoyasarWebhookSecretFallback(getDeployEnvironment());
   loaded = true;
 }
 
@@ -132,8 +103,6 @@ export function getServerConfig(): ServerConfig {
   const nodeEnv = readEnv('NODE_ENV') || 'development';
   const isProduction = nodeEnv === 'production';
   const deployEnv = getDeployEnvironment();
-  const moyasarWebhookSecret = applyMoyasarWebhookSecretFallback(deployEnv);
-
   cached = {
     nodeEnv,
     deployEnv,
@@ -143,8 +112,8 @@ export function getServerConfig(): ServerConfig {
     isStagingDeploy: deployEnv === 'staging',
     port: Number(process.env.PORT || readEnv('PORT') || '8080'),
     appUrl: readEnv('APP_URL') || 'http://localhost:3000',
-    moyasarSecretKey: readEnv('MOYASAR_SECRET_KEY'),
-    moyasarWebhookSecret,
+    tapSecretKey: readEnv('TAP_SECRET_KEY'),
+    tapPublicKey: readEnv('TAP_PUBLIC_KEY'),
     appCheckEnforce: readEnv('APP_CHECK_ENFORCE') === 'true',
     firebaseProjectId:
       readEnv('FIREBASE_PROJECT_ID') || readEnv('VITE_FIREBASE_PROJECT_ID'),
@@ -158,7 +127,7 @@ export function getServerConfig(): ServerConfig {
 /**
  * Fail fast when hosting a production/staging build (NODE_ENV=production).
  * Combines secret presence checks with deploy-target rules (HTTPS, live keys, App Check).
- * Relaxed on the Render email worker and staging Render boots so missing Moyasar
+ * Relaxed on the Render email worker and staging Render boots so missing Tap
  * keys do not crash the process (status 1). Checkout stays gated until keys exist.
  */
 export function assertProductionSecrets(config: ServerConfig = getServerConfig()): void {
@@ -167,36 +136,22 @@ export function assertProductionSecrets(config: ServerConfig = getServerConfig()
   if (shouldRelaxPaymentSecrets(config)) {
     applyRelaxedHostDefaults();
     console.warn(
-      '[env] Skipping strict Moyasar/production secret checks ' +
+      '[env] Skipping strict Tap/production secret checks ' +
         `(role=${readEnv('MIRAS_PROCESS_ROLE') || 'unset'}, deploy=${config.deployEnv}, render=${isRenderHost()}). ` +
-        'Payment APIs stay disabled until MOYASAR_SECRET_KEY is set.'
+        'Payment APIs stay disabled until TAP_SECRET_KEY is set.'
     );
     return;
   }
 
-  requireEnv('MOYASAR_SECRET_KEY');
+  requireEnv('TAP_SECRET_KEY');
+  requireEnv('TAP_PUBLIC_KEY');
   requireEnv('APP_URL');
   requireEnv('FIREBASE_PROJECT_ID');
 
-  // Staging may use the dummy fallback; production must have a real webhook secret.
-  if (config.deployEnv === 'production') {
-    requireEnv('MOYASAR_WEBHOOK_SECRET');
-    if (config.moyasarWebhookSecret === STAGING_MOYASAR_WEBHOOK_SECRET_FALLBACK) {
-      throw new Error(
-        'Production deploy cannot use the staging webhook fallback (whsec_test_dummy). Set MOYASAR_WEBHOOK_SECRET from Moyasar Dashboard.'
-      );
-    }
-  } else {
-    applyMoyasarWebhookSecretFallback(config.deployEnv);
-    if (!readEnv('MOYASAR_WEBHOOK_SECRET')) {
-      throw new Error('Missing required environment variable: MOYASAR_WEBHOOK_SECRET');
-    }
-  }
-
-  const moyasarKey = config.moyasarSecretKey;
+  const tapKey = config.tapSecretKey;
 
   // Legacy guard when MIRAS_DEPLOY_ENV is unset but NODE_ENV=production.
-  if (config.deployEnv === 'development' && moyasarKey?.startsWith('sk_test_')) {
+  if (config.deployEnv === 'development' && tapKey?.startsWith('sk_test_')) {
     throw new Error(
       'NODE_ENV=production with sk_test_* — set MIRAS_DEPLOY_ENV=staging explicitly or use sk_live_* for production'
     );
@@ -217,9 +172,12 @@ export function assertProductionSecrets(config: ServerConfig = getServerConfig()
   }
 }
 
-/** Guard payment routes when Moyasar is not configured (dev-friendly). */
-export function assertMoyasarConfigured(config: ServerConfig = getServerConfig()): void {
-  if (!config.moyasarSecretKey) {
-    throw Object.assign(new Error('MOYASAR_SECRET_KEY is not configured'), { statusCode: 503 });
+/** Guard payment routes when Tap is not configured (dev-friendly). */
+export function assertTapConfigured(config: ServerConfig = getServerConfig()): void {
+  if (!config.tapSecretKey) {
+    throw Object.assign(new Error('TAP_SECRET_KEY is not configured'), { statusCode: 503 });
+  }
+  if (!config.tapPublicKey) {
+    throw Object.assign(new Error('TAP_PUBLIC_KEY is not configured'), { statusCode: 503 });
   }
 }

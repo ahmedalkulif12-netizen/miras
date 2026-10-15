@@ -8,8 +8,8 @@ name: Deploy Cloud Run API
 # Optional JSON fallback: GCP_SA_KEY or FIREBASE_SERVICE_ACCOUNT.
 #
 # Optional (keep existing Cloud Run values when omitted):
-#   MOYASAR_SECRET_KEY         — sk_test_* while MIRAS_DEPLOY_ENV=staging
-#   MOYASAR_WEBHOOK_SECRET     — webhook HMAC secret
+#   TAP_SECRET_KEY             — sk_test_* while MIRAS_DEPLOY_ENV=staging
+#   TAP_PUBLIC_KEY             — pk_test_* while MIRAS_DEPLOY_ENV=staging
 #
 # Optional repository / environment variables:
 #   MIRAS_DEPLOY_ENV           — staging (default) or production
@@ -36,7 +36,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Hosting secrets (FIREBASE_SERVICE_ACCOUNT, Moyasar keys) live here.
+    # Hosting secrets (FIREBASE_SERVICE_ACCOUNT, Tap keys) live here.
     environment: production
     permissions:
       contents: read
@@ -59,24 +59,30 @@ jobs:
 
       - name: Validate deploy env
         env:
-          MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
-          MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
+          TAP_SECRET_KEY: ${{ secrets.TAP_SECRET_KEY }}
+          TAP_PUBLIC_KEY: ${{ secrets.TAP_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "${MOYASAR_SECRET_KEY}" ]]; then
-            echo "MOYASAR_SECRET_KEY is not in GitHub secrets — keeping the key already set on Cloud Run."
-          elif [[ "${DEPLOY_ENV}" == "staging" && "${MOYASAR_SECRET_KEY}" != sk_test_* ]]; then
-            echo "Staging Cloud Run requires Moyasar TEST key (sk_test_*)."
+          if [[ -z "${TAP_SECRET_KEY}" ]]; then
+            echo "TAP_SECRET_KEY is not in GitHub secrets — keeping the key already set on Cloud Run."
+          elif [[ "${DEPLOY_ENV}" == "staging" && "${TAP_SECRET_KEY}" != sk_test_* ]]; then
+            echo "Staging Cloud Run requires a Tap TEST secret (sk_test_*)."
             exit 1
-          elif [[ "${DEPLOY_ENV}" == "production" && "${MOYASAR_SECRET_KEY}" != sk_live_* ]]; then
-            echo "Production Cloud Run requires Moyasar LIVE key (sk_live_*)."
+          elif [[ "${DEPLOY_ENV}" == "production" && "${TAP_SECRET_KEY}" != sk_live_* ]]; then
+            echo "Production Cloud Run requires a Tap LIVE secret (sk_live_*)."
             exit 1
           fi
-          if [[ -z "${MOYASAR_WEBHOOK_SECRET}" ]]; then
-            echo "MOYASAR_WEBHOOK_SECRET unset — keeping the secret already set on Cloud Run."
+          if [[ -z "${TAP_PUBLIC_KEY}" ]]; then
+            echo "TAP_PUBLIC_KEY unset — keeping the key already set on Cloud Run."
+          elif [[ "${DEPLOY_ENV}" == "staging" && "${TAP_PUBLIC_KEY}" != pk_test_* ]]; then
+            echo "Staging Cloud Run requires a Tap TEST public key (pk_test_*)."
+            exit 1
+          elif [[ "${DEPLOY_ENV}" == "production" && "${TAP_PUBLIC_KEY}" != pk_live_* ]]; then
+            echo "Production Cloud Run requires a Tap LIVE public key (pk_live_*)."
+            exit 1
           fi
           if [[ "${APP_URL}" != https://* ]]; then
-            echo "APP_URL must be HTTPS for Moyasar callbacks (got: ${APP_URL})"
+            echo "APP_URL must be HTTPS for Tap redirects (got: ${APP_URL})"
             exit 1
           fi
 
@@ -101,36 +107,16 @@ jobs:
 
       - name: Deploy hamula-api
         env:
-          MOYASAR_SECRET_KEY: ${{ secrets.MOYASAR_SECRET_KEY }}
-          MOYASAR_WEBHOOK_SECRET: ${{ secrets.MOYASAR_WEBHOOK_SECRET }}
+          TAP_SECRET_KEY: ${{ secrets.TAP_SECRET_KEY }}
+          TAP_PUBLIC_KEY: ${{ secrets.TAP_PUBLIC_KEY }}
         run: |
           set -euo pipefail
           UPDATE_VARS="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=${DEPLOY_ENV},HAMOULA_DEPLOY_ENV=${DEPLOY_ENV},FIREBASE_PROJECT_ID=${PROJECT_ID},MIRAS_EXPECTED_FIREBASE_PROJECT=${PROJECT_ID},HAMOULA_EXPECTED_FIREBASE_PROJECT=${PROJECT_ID},APP_URL=${APP_URL},APP_CHECK_ENFORCE=${APP_CHECK_ENFORCE},APP_STORE_APPLE_ID=6807503584"
-          EXTRA=()
-          if [[ -n "${MOYASAR_SECRET_KEY}" || -n "${MOYASAR_WEBHOOK_SECRET}" ]]; then
-            {
-              echo "NODE_ENV: production"
-              echo "MIRAS_PROCESS_ROLE: api"
-              echo "MIRAS_DEPLOY_ENV: ${DEPLOY_ENV}"
-              echo "HAMOULA_DEPLOY_ENV: ${DEPLOY_ENV}"
-              echo "FIREBASE_PROJECT_ID: ${PROJECT_ID}"
-              echo "MIRAS_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}"
-              echo "HAMOULA_EXPECTED_FIREBASE_PROJECT: ${PROJECT_ID}"
-              echo "APP_URL: ${APP_URL}"
-              echo "APP_CHECK_ENFORCE: ${APP_CHECK_ENFORCE}"
-              echo "APP_STORE_APPLE_ID: \"6807503584\""
-              if [[ -n "${MOYASAR_SECRET_KEY}" ]]; then
-                echo "MOYASAR_SECRET_KEY: ${MOYASAR_SECRET_KEY}"
-              fi
-              if [[ -n "${MOYASAR_WEBHOOK_SECRET}" ]]; then
-                echo "MOYASAR_WEBHOOK_SECRET: ${MOYASAR_WEBHOOK_SECRET}"
-              else
-                echo "MOYASAR_WEBHOOK_SECRET: whsec_test_dummy"
-              fi
-            } > /tmp/hamula-api.env.yaml
-            EXTRA+=(--env-vars-file=/tmp/hamula-api.env.yaml)
-          else
-            EXTRA+=(--update-env-vars="${UPDATE_VARS}")
+          if [[ -n "${TAP_SECRET_KEY}" ]]; then
+            UPDATE_VARS="${UPDATE_VARS},TAP_SECRET_KEY=${TAP_SECRET_KEY}"
+          fi
+          if [[ -n "${TAP_PUBLIC_KEY}" ]]; then
+            UPDATE_VARS="${UPDATE_VARS},TAP_PUBLIC_KEY=${TAP_PUBLIC_KEY}"
           fi
           gcloud run deploy "${SERVICE_NAME}" \
             --project="${PROJECT_ID}" \
@@ -144,7 +130,7 @@ jobs:
             --min-instances=0 \
             --max-instances=10 \
             --quiet \
-            "${EXTRA[@]}"
+            --update-env-vars="${UPDATE_VARS}"
 
       - name: Smoke-test /health
         run: |

@@ -1,5 +1,5 @@
 /**
- * Moyasar hosted-checkout return URL.
+ * Tap hosted-checkout return URL.
  * Production / staging always use APP_URL (HTTPS). Loopback is local-dev only.
  */
 
@@ -8,7 +8,7 @@ export function isLoopbackHostname(hostname: string): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
-export function isDemoMoyasarId(id?: string | null): boolean {
+export function isDemoChargeId(id?: string | null): boolean {
   if (!id) return false;
   const value = String(id);
   return value === 'demo' || value.startsWith('demo-');
@@ -27,7 +27,7 @@ function withDraftId(url: string, draftId?: string): string {
   }
 }
 
-export function resolveMoyasarCallbackUrl(
+export function resolvePaymentCallbackUrl(
   requested: unknown,
   appUrl: string,
   options?: { lockToAppUrl?: boolean; draftId?: string }

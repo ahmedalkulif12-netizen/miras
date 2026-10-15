@@ -17,8 +17,8 @@ import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { auth } from '@/lib/firebase';
 
 /**
- * Moyasar redirects here after checkout (callback_url).
- * Order is created + broadcast only after payment verification succeeds.
+ * Tap redirects here after checkout (redirect.url).
+ * Order is created + broadcast only after the charge is verified as captured.
  */
 const PaymentCallbackPage: React.FC = () => {
   const { i18n } = useTranslation();
@@ -45,11 +45,21 @@ const PaymentCallbackPage: React.FC = () => {
         readPendingCheckoutDraftId() ||
         getActiveCheckoutDraftId();
       const legacyOrderId = searchParams.get('orderId');
-      const moyasarId = searchParams.get('id');
+      const tapChargeId =
+        searchParams.get('tap_id') ||
+        searchParams.get('tapChargeId') ||
+        searchParams.get('id');
       const status = searchParams.get('status');
-      const failedStatuses = new Set(['failed', 'voided', 'cancelled']);
+      const failedStatuses = new Set([
+        'failed',
+        'voided',
+        'cancelled',
+        'canceled',
+        'abandoned',
+        'declined',
+      ]);
 
-      if (!draftId && !legacyOrderId && !moyasarId) {
+      if (!draftId && !legacyOrderId && !tapChargeId) {
         if (!cancelled) {
           setState('error');
           setMessage(isRtl ? 'لم يتم العثور على جلسة الدفع' : 'Checkout session not found');
@@ -78,7 +88,7 @@ const PaymentCallbackPage: React.FC = () => {
         const result = await verifyPaymentReturn({
           draftId,
           orderId: legacyOrderId,
-          moyasarId,
+          tapChargeId,
           status,
         });
 
@@ -118,8 +128,8 @@ const PaymentCallbackPage: React.FC = () => {
         const isDemo =
           id.startsWith('demo-') ||
           id.startsWith('draft-') ||
-          moyasarId === 'demo' ||
-          (moyasarId?.startsWith('demo-') ?? false) ||
+          tapChargeId === 'demo' ||
+          (tapChargeId?.startsWith('demo-') ?? false) ||
           (error instanceof Error && error.message === 'DEV_BYPASS_NO_FIREBASE_SESSION');
         if (allowsSandboxCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
           try {

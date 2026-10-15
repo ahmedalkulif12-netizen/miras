@@ -187,7 +187,7 @@ export async function executeTransitionOrder(
 }
 
 /**
- * After Moyasar authorization — move order to driver pool.
+ * After Tap authorization — move order to driver pool.
  */
 export async function executePaymentAuthorizedToBroadcasting(
   db: admin.firestore.Firestore,

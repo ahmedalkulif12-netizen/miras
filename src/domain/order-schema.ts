@@ -68,7 +68,7 @@ export interface FirestoreOrderDocument {
   statusHistory?: StatusHistoryEntry[];
   paymentId?: string;
   paymentStatus?: 'pending' | 'authorized' | 'captured' | 'voided' | 'failed';
-  moyasarId?: string;
+  tapChargeId?: string;
   broadcastExpiresAt?: unknown;
   createdAt: unknown;
   updatedAt?: unknown;

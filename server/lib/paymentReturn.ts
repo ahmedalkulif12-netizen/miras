@@ -4,7 +4,7 @@ import { normalizeOrderStatus, OrderStatus } from './orderStatus.ts';
 export interface PaymentReturnInput {
   uid: string;
   orderId: string;
-  moyasarId?: string;
+  tapChargeId?: string;
   returnStatus?: string;
 }
 
@@ -32,14 +32,14 @@ const TRACKABLE_ORDER_STATUSES = new Set([
 ]);
 
 /**
- * Secure Moyasar return handler — validates ownership and persisted payment state.
+ * Secure Tap return handler — validates ownership and persisted payment state.
  * Webhook may still be processing; authorized/pending states allow tracking UI entry.
  */
 export async function verifyPaymentReturnStatus(
   db: admin.firestore.Firestore,
   input: PaymentReturnInput
 ): Promise<PaymentReturnResult> {
-  const { uid, orderId, moyasarId, returnStatus } = input;
+  const { uid, orderId, tapChargeId, returnStatus } = input;
 
   const orderRef = db.collection('orders').doc(orderId);
   const orderSnap = await orderRef.get();
@@ -67,10 +67,10 @@ export async function verifyPaymentReturnStatus(
   const orderStatus = String(order.status || OrderStatus.AWAITING_PAYMENT);
   const normalized = normalizeOrderStatus(orderStatus);
 
-  if (moyasarId) {
+  if (tapChargeId) {
     const paymentsQuery = await db
       .collection('payments')
-      .where('transactionId', '==', moyasarId)
+      .where('transactionId', '==', tapChargeId)
       .limit(1)
       .get();
 

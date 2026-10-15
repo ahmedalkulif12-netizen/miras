@@ -102,7 +102,7 @@ export async function mintIdToken(
   return data.idToken;
 }
 
-/** Seed payment doc the same shape server creates before Moyasar webhook authorization. */
+/** Seed payment doc the same shape server creates before Tap webhook authorization. */
 export async function seedPaymentFixture(
   ctx: AdminContext,
   input: {
@@ -110,9 +110,9 @@ export async function seedPaymentFixture(
     userId: string;
     financials: Record<string, unknown>;
   }
-): Promise<{ paymentId: string; moyasarId: string }> {
+): Promise<{ paymentId: string; tapChargeId: string }> {
   const customerTotal = Number(input.financials.customerTotal ?? 0);
-  const moyasarId = `e2e_moy_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const tapChargeId = `chg_e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const paymentRef = await ctx.db.collection('payments').add({
     userId: input.userId,
@@ -125,7 +125,9 @@ export async function seedPaymentFixture(
     financials: input.financials,
     status: 'pending',
     paymentMethod: 'mada',
-    transactionId: moyasarId,
+    gateway: 'tap',
+    transactionId: tapChargeId,
+    tapChargeId,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -136,7 +138,7 @@ export async function seedPaymentFixture(
   });
 
   ctx.artifacts.paymentIds.push(paymentRef.id);
-  return { paymentId: paymentRef.id, moyasarId };
+  return { paymentId: paymentRef.id, tapChargeId };
 }
 
 export async function waitForOrderStatus(

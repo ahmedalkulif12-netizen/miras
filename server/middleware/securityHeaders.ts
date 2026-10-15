@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Baseline security headers for production/staging hosts behind HTTPS terminators.
- * Does not break SPA routing or Moyasar payment redirects.
+ * Does not break SPA routing or Tap payment redirects.
  */
 export function securityHeaders(isProductionNode: boolean) {
   return (_req: Request, res: Response, next: NextFunction) => {

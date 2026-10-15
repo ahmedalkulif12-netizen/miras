@@ -4,7 +4,7 @@ export interface StagingGuardResult {
   projectId: string;
   baseUrl: string;
   appCheckEnforce: boolean;
-  moyasarIsTestKey: boolean;
+  tapIsTestKey: boolean;
 }
 
 /**
@@ -46,9 +46,9 @@ export function assertStagingEnvironment(): StagingGuardResult {
     );
   }
 
-  const moyasarKey = config.moyasarSecretKey;
-  if (moyasarKey.startsWith('sk_live_')) {
-    throw new Error('E2E blocked: Moyasar live secret key (sk_live_*) is not allowed for automated tests.');
+  const tapKey = config.tapSecretKey;
+  if (tapKey.startsWith('sk_live_')) {
+    throw new Error('E2E blocked: Tap live secret key (sk_live_*) is not allowed for automated tests.');
   }
 
   const baseUrl = (process.env.E2E_BASE_URL || config.appUrl || 'http://localhost:3000').replace(/\/$/, '');
@@ -79,6 +79,6 @@ export function assertStagingEnvironment(): StagingGuardResult {
     projectId,
     baseUrl,
     appCheckEnforce: config.appCheckEnforce,
-    moyasarIsTestKey: !moyasarKey || moyasarKey.startsWith('sk_test_'),
+    tapIsTestKey: !tapKey || tapKey.startsWith('sk_test_'),
   };
 }

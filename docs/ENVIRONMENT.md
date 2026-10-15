@@ -9,8 +9,8 @@ Miras separates **server secrets** from **client public config** to prevent acci
 │  .env (gitignored)                                          │
 ├──────────────────────────┬──────────────────────────────────┤
 │  Server-only             │  VITE_* (public in browser build) │
-│  MOYASAR_SECRET_KEY      │  VITE_FIREBASE_*                  │
-│  MOYASAR_WEBHOOK_SECRET  │  VITE_GOOGLE_MAPS_PLATFORM_KEY    │
+│  TAP_SECRET_KEY          │  VITE_FIREBASE_*                  │
+│  TAP_PUBLIC_KEY          │  VITE_GOOGLE_MAPS_PLATFORM_KEY    │
 │  GOOGLE_APPLICATION_…    │  VITE_APP_CHECK_*                 │
 │  FIREBASE_PROJECT_ID     │                                   │
 │  APP_CHECK_ENFORCE       │                                   │
@@ -38,13 +38,13 @@ npm run dev
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NODE_ENV` | Dev: optional | `development` or `production` |
-| `MIRAS_DEPLOY_ENV` | **Prod/staging: yes** | `development` \| `staging` \| `production` — controls Moyasar + App Check rules |
+| `MIRAS_DEPLOY_ENV` | **Prod/staging: yes** | `development` \| `staging` \| `production` — controls Tap + App Check rules |
 | `MIRAS_EXPECTED_FIREBASE_PROJECT` | Recommended | Pin Firebase project id on host (prevents cross-env deploy) |
 | `PORT` | Optional | Default `3000` |
-| `APP_URL` | **Prod/staging: yes** | Public HTTPS app URL for Moyasar callbacks (custom domain or `*.web.app`) |
+| `APP_URL` | **Prod/staging: yes** | Public HTTPS app URL for Tap redirects (custom domain or `*.web.app`) |
 | `FIREBASE_PROJECT_ID` | **Prod: yes** | Firebase project for Admin SDK |
-| `MOYASAR_SECRET_KEY` | **Prod: yes** | Moyasar API secret (`sk_test_*` local/staging, `sk_live_*` production) |
-| `MOYASAR_WEBHOOK_SECRET` | **Prod: yes** | HMAC secret for webhook verification |
+| `TAP_SECRET_KEY` | **Prod: yes** | Tap secret API key (`sk_test_*` local/staging, `sk_live_*` production). Also verifies webhook `hashstring`. |
+| `TAP_PUBLIC_KEY` | **Prod: yes** | Tap public key (`pk_test_*` / `pk_live_*`). Server-side config; never ship the secret to the browser. |
 | `GOOGLE_APPLICATION_…` | Prod recommended | Path to Firebase service account JSON (omit on Cloud Run ADC) |
 | `APP_CHECK_ENFORCE` | Optional | `true` to reject APIs without App Check token |
 
