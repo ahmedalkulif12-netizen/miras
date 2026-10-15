@@ -1,5 +1,10 @@
 import { haversineKm } from '@/lib/tripDistance';
-import { driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
+import {
+  driverMatchesRequiredVehicle,
+  resolveOrderRequiredVehicleType,
+  resolveOrderServiceOption,
+} from '@/domain/serviceCategories';
+import { vehicleMatchesService } from '@/lib/fleetServiceCatalog';
 import {
   DISPATCH_EXPANDED_RADIUS_KM,
   DISPATCH_MAX_RADIUS_KM,
@@ -36,6 +41,13 @@ export function evaluateDispatchOffer(input: {
     pickupCoords?: { lat?: number; lng?: number };
     dropoffCoords?: { lat?: number; lng?: number };
     destinationCoords?: { lat?: number; lng?: number };
+    serviceOption?: string;
+    serviceDetails?: {
+      type?: string;
+      option?: string;
+      serviceOption?: string;
+      capacity?: string;
+    };
     pickup?: { lat?: number; lng?: number; city?: string };
     dispatch?: { startedAt?: unknown; city?: string; cityKey?: string };
     createdAt?: unknown;
@@ -46,6 +58,7 @@ export function evaluateDispatchOffer(input: {
     lng?: number;
     city?: string;
     vehicleType?: string;
+    vehicleOption?: string;
   };
   nowMs?: number;
   /** Localhost: still hide other cities, but allow missing GPS. */
@@ -64,8 +77,27 @@ export function evaluateDispatchOffer(input: {
     return { visible: false, distanceKm: null, window, reason: 'cross_city' };
   }
 
-  if (!driverMatchesRequiredVehicle(input.driver.vehicleType, input.order)) {
-    return { visible: false, distanceKm: null, window, reason: 'vehicle' };
+  const requiredService =
+    resolveOrderRequiredVehicleType(input.order) || input.order.serviceType || '';
+  const requiredOption = resolveOrderServiceOption(input.order) || undefined;
+  const categoryOk = driverMatchesRequiredVehicle(input.driver.vehicleType, input.order);
+  const subtypeOk = vehicleMatchesService(
+    {
+      serviceType: input.driver.vehicleType,
+      category: input.driver.vehicleType,
+      serviceOption: input.driver.vehicleOption,
+      subtype: input.driver.vehicleOption,
+    },
+    requiredService,
+    requiredOption
+  );
+  if (!subtypeOk) {
+    return {
+      visible: false,
+      distanceKm: null,
+      window,
+      reason: categoryOk ? 'subtype' : 'vehicle',
+    };
   }
 
   if (!pickup) {

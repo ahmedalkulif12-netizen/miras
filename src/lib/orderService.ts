@@ -115,7 +115,13 @@ async function tryServerOrderMutation<T>(
 /** P0-12: Atomic accept — first driver wins. Falls back to client SDK when Admin credentials are missing. */
 export async function acceptOrder(
   orderId: string,
-  driver: { name: string; phone: string; truckDetails: string; vehicleType?: string }
+  driver: {
+    name: string;
+    phone: string;
+    truckDetails: string;
+    vehicleType?: string;
+    vehicleOption?: string;
+  }
 ): Promise<{ orderId: string; status: string; alreadyAssigned?: boolean }> {
   previewOrderBlocked(orderId, 'ACCEPT_REQUIRES_CUSTOMER_ORDER');
 
@@ -147,6 +153,7 @@ export async function acceptOrder(
     phone: driver.phone,
     truckDetails: driver.truckDetails,
     vehicleType: driver.vehicleType || profile?.vehicleType,
+    vehicleOption: driver.vehicleOption || profile?.vehicleOption,
   });
 }
 

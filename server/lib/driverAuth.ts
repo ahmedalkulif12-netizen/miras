@@ -1,6 +1,7 @@
 import admin from 'firebase-admin';
 import { isDriverUserRole } from './adminDrivers.ts';
 import { canonicalizeServiceType } from './serviceCategories.ts';
+import { normalizeServiceOption } from '../../src/domain/serviceCategories.ts';
 
 export interface ApprovedDriverProfile {
   uid: string;
@@ -10,6 +11,8 @@ export interface ApprovedDriverProfile {
   accountStatus: 'approved';
   /** Canonical vehicle category from drivers/{uid} or users/{uid}. */
   vehicleType: string | null;
+  /** Registered tier from drivers/{uid}.vehicleOption or users/{uid}.vehicleOption. */
+  vehicleOption: string | null;
 }
 
 /**
@@ -46,6 +49,13 @@ export async function verifyApprovedDriverAccess(
 
   const rawVehicle = String(driver?.vehicleType || user.vehicleType || '').trim();
   const vehicleType = canonicalizeServiceType(rawVehicle);
+  const storedOption = String(
+    driver?.vehicleOption || driver?.vehicleSize || user.vehicleOption || user.vehicleSize || ''
+  ).trim();
+  const vehicleOption =
+    normalizeServiceOption(vehicleType, storedOption) ||
+    normalizeServiceOption(vehicleType, rawVehicle) ||
+    storedOption;
 
   return {
     uid,
@@ -54,5 +64,6 @@ export async function verifyApprovedDriverAccess(
     role: user.role === 'b2c_driver' ? 'b2c_driver' : 'driver',
     accountStatus: 'approved',
     vehicleType,
+    vehicleOption: vehicleOption || null,
   };
 }

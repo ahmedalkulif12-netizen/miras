@@ -63,7 +63,9 @@ import {
   persistLocalDevWorkEnabled,
   readLocalDevWorkEnabled,
 } from '@/lib/localDevRuntime';
-import { driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
+import { resolveOrderRequiredVehicleType, resolveOrderServiceOption } from '@/domain/serviceCategories';
+import { vehicleMatchesService } from '@/lib/fleetServiceCatalog';
+import { nearestDispatchCity } from '@/lib/cityCoordinates';
 import {
   listLocalBroadcastingOrders,
   loadLocalBroadcastOrders,
@@ -83,12 +85,23 @@ import {
   persistIgnoredDriverOffer,
 } from '@/lib/ignoredDriverOffers';
 
-/** Whether this driver's vehicle category can take the offer (strict 6-category match). */
+/** Category plus booked tier (hydraulic, 12000L, large_truck). */
 function driverMatchesOffer(
   vehicleType: string | undefined,
-  order: Pick<Order, 'serviceType' | 'requiredVehicleType' | 'truckType'>
+  vehicleOption: string | undefined,
+  order: Pick<Order, 'serviceType' | 'requiredVehicleType' | 'truckType' | 'serviceDetails'>
 ): boolean {
-  return driverMatchesRequiredVehicle(vehicleType, order);
+  const serviceType = resolveOrderRequiredVehicleType(order) || order.serviceType || '';
+  return vehicleMatchesService(
+    {
+      serviceType: vehicleType,
+      category: vehicleType,
+      serviceOption: vehicleOption,
+      subtype: vehicleOption,
+    },
+    serviceType,
+    resolveOrderServiceOption(order) || undefined
+  );
 }
 
 function OfferCustomerNotes({
@@ -615,7 +628,7 @@ const DriverDashboard: React.FC = () => {
             (order) =>
               isOpenOfferStatus(order.status) &&
               !isTerminalOrderStatus(order.status) &&
-              driverMatchesOffer(profile?.vehicleType, order)
+              driverMatchesOffer(profile?.vehicleType, profile?.vehicleOption, order)
           ),
         ignoredOfferIds
       );
@@ -634,7 +647,7 @@ const DriverDashboard: React.FC = () => {
 
     applyLocalOffers();
     return subscribeLocalBroadcastOrders(applyLocalOffers);
-  }, [isOnline, profile?.uid, profile?.vehicleType, ignoredOfferIds]);
+  }, [isOnline, profile?.uid, profile?.vehicleType, profile?.vehicleOption, ignoredOfferIds]);
 
   useEffect(() => {
     const bump = () => setLocalOpsEpoch((n) => n + 1);
@@ -655,7 +668,7 @@ const DriverDashboard: React.FC = () => {
         (order) =>
           isOpenOfferStatus(order.status) &&
           !isTerminalOrderStatus(order.status) &&
-          driverMatchesOffer(profile?.vehicleType, order)
+          driverMatchesOffer(profile?.vehicleType, profile?.vehicleOption, order)
       )
       .map((order) => ({
         order,
@@ -664,7 +677,9 @@ const DriverDashboard: React.FC = () => {
           driver: {
             lat: driverCoords?.lat,
             lng: driverCoords?.lng,
+            city: nearestDispatchCity(driverCoords?.lat, driverCoords?.lng) || undefined,
             vehicleType: profile?.vehicleType,
+            vehicleOption: profile?.vehicleOption,
           },
           relaxMissingGps: import.meta.env.DEV,
           relaxRadius: import.meta.env.DEV,
@@ -710,6 +725,7 @@ const DriverDashboard: React.FC = () => {
     driverCoords,
     dispatchTick,
     profile?.vehicleType,
+    profile?.vehicleOption,
   ]);
 
   // Live GPS publisher — orders/{orderId}/tracking/live (Firestore rules: assigned driver only)
@@ -1132,6 +1148,7 @@ const DriverDashboard: React.FC = () => {
         phone: profile.phone,
         truckDetails: `${profile.vehicleType || ''} - ${profile.plateNumber || ''}`,
         vehicleType: profile.vehicleType,
+        vehicleOption: profile.vehicleOption,
       });
 
       // Accept → bind UI to this exact Firestore order ID (customer tracks the same ID)
@@ -1290,7 +1307,7 @@ const DriverDashboard: React.FC = () => {
               isOpenOfferStatus(order.status) &&
               !isTerminalOrderStatus(order.status) &&
               !isIgnoredDriverOffer(order.id, nextIgnored) &&
-              driverMatchesOffer(profile.vehicleType, order)
+              driverMatchesOffer(profile.vehicleType, profile.vehicleOption, order)
           )
           .sort((a, b) => orderCreatedAtMs(b) - orderCreatedAtMs(a))[0] || null;
       pendingOfferRef.current = nextOffer;
@@ -1338,7 +1355,9 @@ const DriverDashboard: React.FC = () => {
         driver: {
           lat: driverCoords?.lat,
           lng: driverCoords?.lng,
+          city: nearestDispatchCity(driverCoords?.lat, driverCoords?.lng) || undefined,
           vehicleType: profile?.vehicleType,
+          vehicleOption: profile?.vehicleOption,
         },
         relaxMissingGps: import.meta.env.DEV,
         relaxRadius: import.meta.env.DEV,

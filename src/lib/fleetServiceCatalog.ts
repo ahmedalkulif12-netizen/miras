@@ -3,7 +3,7 @@
  * Used by Fleet Operator "Add Vehicle" and for matching orders to fleet capacity.
  */
 
-import { driverVehicleMatchesOrder } from '@/domain/serviceCategories';
+import { driverMatchesOrderService } from '@/domain/serviceCategories';
 
 export type CoreServiceType =
   | 'furniture_moving'
@@ -144,15 +144,21 @@ export function getFleetCategoryLabel(serviceType: string, isRtl: boolean): stri
   return isRtl ? cat.ar : cat.en;
 }
 
-/** True when a fleet vehicle can serve an order of the given type/tier. */
+/** True when a fleet vehicle can serve an order of the given type and tier. */
 export function vehicleMatchesService(
   vehicle: { category?: string; subtype?: string; serviceType?: string; serviceOption?: string },
   serviceType: string,
   serviceOption?: string
 ): boolean {
-  const vType = vehicle.serviceType || vehicle.category;
-  if (!driverVehicleMatchesOrder(vType, serviceType)) return false;
-  if (!serviceOption) return true;
-  const vOpt = vehicle.serviceOption || vehicle.subtype;
-  return !vOpt || vOpt === serviceOption;
+  return driverMatchesOrderService(
+    {
+      vehicleType: vehicle.serviceType || vehicle.category,
+      vehicleOption: vehicle.serviceOption || vehicle.subtype,
+    },
+    {
+      serviceType,
+      requiredVehicleType: serviceType,
+      serviceDetails: serviceOption ? { type: serviceOption } : undefined,
+    }
+  );
 }

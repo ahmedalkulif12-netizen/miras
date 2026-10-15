@@ -25,6 +25,7 @@ import {
   canonicalizeServiceType,
   driverVehicleMatchesOrder,
 } from '@/domain/serviceCategories';
+import { vehicleMatchesService } from '@/lib/fleetServiceCatalog';
 
 export interface DriverPresence {
   uid: string;
@@ -108,7 +109,8 @@ export async function publishDriverPresence(input: {
  */
 export async function findNearestOnlineDriver(
   client: { lat: number; lng: number },
-  serviceType: string
+  serviceType: string,
+  serviceOption?: string
 ): Promise<NearestDriverMatch> {
   const mockKm = sanitizeWaterTankerDistanceKm(WATER_TANKER_MOCK_DISTANCE_KM);
   const wanted = canonicalizeServiceType(serviceType);
@@ -149,7 +151,14 @@ export async function findNearestOnlineDriver(
 
     snap.forEach((docSnap) => {
       const data = docSnap.data() as DriverPresence;
-      if (!driverVehicleMatchesOrder(data.vehicleType, wanted)) return;
+      const tierOk = serviceOption
+        ? vehicleMatchesService(
+            { serviceType: data.vehicleType, serviceOption: data.vehicleOption },
+            wanted,
+            serviceOption
+          )
+        : driverVehicleMatchesOrder(data.vehicleType, wanted);
+      if (!tierOk) return;
       if (!isValidSaudiServiceCoord(data.lat, data.lng)) return;
 
       const rawKm = haversineKm(client, { lat: data.lat, lng: data.lng });

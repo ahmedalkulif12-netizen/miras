@@ -50,7 +50,7 @@ export async function listOrdersForCustomer(
   const fields = ['userId', 'clientId', 'customerId'] as const;
   const snaps = await Promise.all(
     fields.map((field) =>
-      db.collection('orders').where(field, '==', userId).limit(50).get()
+      db.collection('orders').where(field, '==', userId).orderBy('createdAt', 'desc').limit(50).get()
     )
   );
 

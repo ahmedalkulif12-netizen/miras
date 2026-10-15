@@ -2004,6 +2004,7 @@ async function startServer() {
         driverPhone: driverPhone || driverProfile.phone || '',
         truckDetails: truckDetails || '',
         vehicleType: driverProfile.vehicleType,
+        vehicleOption: driverProfile.vehicleOption,
       });
 
       res.json(result);

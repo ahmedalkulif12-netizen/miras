@@ -5,7 +5,7 @@ import {
   canRoleTransition,
   appendStatusHistory,
 } from './orderStatus.ts';
-import { driverMatchesRequiredVehicle } from './serviceCategories.ts';
+import { driverMatchesOrderService } from '../../src/domain/serviceCategories.ts';
 
 export interface AcceptOrderInput {
   orderId: string;
@@ -15,6 +15,8 @@ export interface AcceptOrderInput {
   truckDetails: string;
   /** Canonical vehicle category from verifyApprovedDriverAccess — required for match. */
   vehicleType: string | null;
+  /** Registered tier (hydraulic, 12000L, large_truck). */
+  vehicleOption?: string | null;
 }
 
 export interface AcceptOrderResult {
@@ -32,7 +34,7 @@ export async function executeAcceptOrder(
   db: admin.firestore.Firestore,
   input: AcceptOrderInput
 ): Promise<AcceptOrderResult> {
-  const { orderId, driverId, driverName, driverPhone, truckDetails, vehicleType } = input;
+  const { orderId, driverId, driverName, driverPhone, truckDetails, vehicleType, vehicleOption } = input;
   const orderRef = db.collection('orders').doc(orderId);
 
   return db.runTransaction(async (transaction) => {
@@ -47,11 +49,11 @@ export async function executeAcceptOrder(
     const requiredVehicle =
       String(order.requiredVehicleType || order.serviceType || '');
 
-    // Strict category match — never allow flatbed driver to take furniture, etc.
-    if (!driverMatchesRequiredVehicle(vehicleType, order)) {
+    // Category, then booked tier — hydraulic / 12000L only reach that subtype.
+    if (!driverMatchesOrderService({ vehicleType, vehicleOption }, order)) {
       throw Object.assign(
         new Error(
-          `Vehicle type mismatch: driver=${vehicleType || 'none'} order=${requiredVehicle || 'none'}`
+          `VEHICLE_TYPE_MISMATCH: driver=${vehicleType || 'none'}/${vehicleOption || 'none'} order=${requiredVehicle || 'none'}`
         ),
         { statusCode: 403, code: 'VEHICLE_TYPE_MISMATCH' }
       );

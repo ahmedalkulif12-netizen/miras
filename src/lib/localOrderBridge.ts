@@ -13,7 +13,7 @@ import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { debitLocalCustomerWallet } from '@/lib/localCustomerWallet';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
-import { canonicalizeServiceType, driverMatchesRequiredVehicle } from '@/domain/serviceCategories';
+import { canonicalizeServiceType, driverMatchesOrderService } from '@/domain/serviceCategories';
 import { isActiveTripStatus, isOpenOfferStatus, isTerminalOrderStatus, OrderStatus, preferFresherOrderStatus } from '@/domain/order-status';
 import { buildOrderDispatch } from '@/domain/dispatchMatching';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields, coerceMoney } from '@/domain/financials';
@@ -557,6 +557,7 @@ export async function assignSharedLocalOrder(
     phone: string;
     truckDetails: string;
     vehicleType?: string;
+    vehicleOption?: string;
   }
 ): Promise<{ orderId: string; status: string; alreadyAssigned?: boolean }> {
   await ensureFirebaseReady();
@@ -567,9 +568,14 @@ export async function assignSharedLocalOrder(
     throw new Error(`ORDER_NOT_FOUND:${orderId}`);
   }
 
-  if (driver.vehicleType && !driverMatchesRequiredVehicle(driver.vehicleType, data)) {
+  if (
+    !driverMatchesOrderService(
+      { vehicleType: driver.vehicleType, vehicleOption: driver.vehicleOption },
+      data
+    )
+  ) {
     throw new Error(
-      `VEHICLE_TYPE_MISMATCH:driver=${driver.vehicleType || 'none'}:order=${String(
+      `VEHICLE_TYPE_MISMATCH:driver=${driver.vehicleType || 'none'}/${driver.vehicleOption || 'none'}:order=${String(
         (data as { requiredVehicleType?: string }).requiredVehicleType || data.serviceType || 'none'
       )}`
     );

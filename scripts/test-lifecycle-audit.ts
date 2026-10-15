@@ -236,6 +236,97 @@ async function run(): Promise<void> {
   });
   assert(tankerNearDropoff.visible, 'water tanker drivers match the drop-off, not a distant quote origin');
 
+  const { nearestDispatchCity } = await import('../src/lib/cityCoordinates.ts');
+  assert(nearestDispatchCity(25.3646, 49.586) === 'ahsa', 'Hofuf GPS resolves to Al-Ahsa');
+  assert(nearestDispatchCity(26.4207, 50.0888) === 'dammam', 'Dammam GPS resolves to Dammam');
+  assert(nearestDispatchCity(24.7136, 46.6753) === 'riyadh', 'Riyadh GPS resolves to Riyadh');
+
+  const normalSeesHydraulic = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'flatbed',
+      requiredVehicleType: 'flatbed',
+      truckType: 'hydraulic',
+      serviceDetails: { type: 'hydraulic' },
+      pickupLat: 25.3646,
+      pickupLng: 49.586,
+      pickupCity: 'الأحساء',
+      createdAt: new Date().toISOString(),
+    },
+    driver: {
+      lat: 25.37,
+      lng: 49.59,
+      city: 'ahsa',
+      vehicleType: 'flatbed',
+      vehicleOption: 'normal',
+    },
+  });
+  assert(!normalSeesHydraulic.visible, 'a normal flatbed does not see a hydraulic order');
+  assert(normalSeesHydraulic.reason === 'subtype', 'hydraulic mismatch is a subtype filter');
+
+  const hydraulicSeesHydraulic = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'flatbed',
+      requiredVehicleType: 'flatbed',
+      serviceDetails: { type: 'hydraulic' },
+      pickupLat: 25.3646,
+      pickupLng: 49.586,
+      pickupCity: 'الأحساء',
+      createdAt: new Date().toISOString(),
+    },
+    driver: {
+      lat: 25.37,
+      lng: 49.59,
+      city: 'ahsa',
+      vehicleType: 'flatbed',
+      vehicleOption: 'hydraulic',
+    },
+  });
+  assert(hydraulicSeesHydraulic.visible, 'a hydraulic flatbed sees a hydraulic order');
+
+  const smallTankerSeesLarge = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'water_tanker',
+      requiredVehicleType: 'water_tanker',
+      deliveryOnly: true,
+      serviceDetails: { type: '12000L', capacity: '12000L' },
+      dropoffLat: 26.4207,
+      dropoffLng: 50.0888,
+      dropoffCity: 'الدمام',
+      createdAt: new Date().toISOString(),
+    },
+    driver: {
+      lat: 26.43,
+      lng: 50.09,
+      city: 'dammam',
+      vehicleType: 'water_tanker',
+      vehicleOption: '1000L',
+    },
+  });
+  assert(!smallTankerSeesLarge.visible, 'a 1000L tanker does not see a 12000L order');
+
+  const khobarSeesDammam = evaluateDispatchOffer({
+    order: {
+      status: 'broadcasting',
+      serviceType: 'furniture_moving',
+      requiredVehicleType: 'furniture_moving',
+      pickupLat: 26.4207,
+      pickupLng: 50.0888,
+      pickupCity: 'الدمام',
+      createdAt: new Date().toISOString(),
+    },
+    driver: {
+      lat: 26.2172,
+      lng: 50.1971,
+      city: nearestDispatchCity(26.2172, 50.1971) || 'khobar',
+      vehicleType: 'furniture_moving',
+      vehicleOption: 'small_truck',
+    },
+  });
+  assert(!khobarSeesDammam.visible, 'a Khobar driver does not see a Dammam order before any radius expansion');
+
   const first = applyLocalWalletCredit(
     'driver-1',
     { tripFare: 100, platformFee: 15, driverNet: 85 },

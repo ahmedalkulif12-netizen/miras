@@ -1,4 +1,49 @@
+import { haversineKm } from '@/lib/tripDistance';
+
 type LatLng = { lat: number; lng: number };
+
+/** Keys accepted by dispatchMatching.normalizeCityKey / CITY_GROUPS. */
+const DISPATCH_CITY_CENTERS: Array<{ name: string; lat: number; lng: number }> = [
+  { name: 'ahsa', lat: 25.3646, lng: 49.586 },
+  { name: 'dammam', lat: 26.4207, lng: 50.0888 },
+  { name: 'khobar', lat: 26.2172, lng: 50.1971 },
+  { name: 'dhahran', lat: 26.2886, lng: 50.1139 },
+  { name: 'jubail', lat: 27.0046, lng: 49.6225 },
+  { name: 'qatif', lat: 26.565, lng: 49.996 },
+  { name: 'riyadh', lat: 24.7136, lng: 46.6753 },
+  { name: 'jeddah', lat: 21.4858, lng: 39.1925 },
+  { name: 'makkah', lat: 21.3891, lng: 39.8579 },
+  { name: 'madinah', lat: 24.5247, lng: 39.5692 },
+  { name: 'taif', lat: 21.2703, lng: 40.4158 },
+  { name: 'abha', lat: 18.2164, lng: 42.5053 },
+  { name: 'khamis mushait', lat: 18.3, lng: 42.7333 },
+  { name: 'tabuk', lat: 28.3838, lng: 36.555 },
+  { name: 'hail', lat: 27.5114, lng: 41.69 },
+  { name: 'buraidah', lat: 26.326, lng: 43.975 },
+  { name: 'yanbu', lat: 24.0892, lng: 38.0618 },
+  { name: 'najran', lat: 17.5656, lng: 44.2289 },
+  { name: 'jazan', lat: 16.8892, lng: 42.5511 },
+];
+
+/**
+ * City label for sameDispatchCity, taken from the driver's live GPS.
+ * Only labels a driver who is inside the expanded metro radius of that city,
+ * so a later radius expansion still stays in the same city.
+ */
+export function nearestDispatchCity(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  maxKm = 80
+): string | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  let best: { name: string; km: number } | null = null;
+  for (const city of DISPATCH_CITY_CENTERS) {
+    const km = haversineKm({ lat: lat as number, lng: lng as number }, city);
+    if (!best || km < best.km) best = { name: city.name, km };
+  }
+  if (!best || best.km > maxKm) return null;
+  return best.name;
+}
 
 const CITY_CENTERS: Record<string, LatLng> = {
   riyadh: { lat: 24.7136, lng: 46.6753 },

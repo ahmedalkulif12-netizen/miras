@@ -9,6 +9,8 @@
  * 6. water_tanker      — صهاريج
  */
 
+import { SERVICE_OPTIONS } from '@/constants';
+
 export const CORE_SERVICE_TYPES = [
   'furniture_moving',
   'flatbed',
@@ -106,16 +108,20 @@ export function serviceTypeQueryValues(
  * Prefers `requiredVehicleType`, then `serviceType` — never a flatbed subtype
  * like `normal` when a real service category is present.
  */
+function asOptionalString(raw: unknown): string | null {
+  return typeof raw === 'string' ? raw : null;
+}
+
 export function resolveOrderRequiredVehicleType(order: {
-  requiredVehicleType?: string | null;
-  serviceType?: string | null;
-  truckType?: string | null;
+  requiredVehicleType?: unknown;
+  serviceType?: unknown;
+  truckType?: unknown;
 } | null | undefined): CoreServiceType | null {
   if (!order) return null;
   return (
-    canonicalizeServiceType(order.requiredVehicleType) ||
-    canonicalizeServiceType(order.serviceType) ||
-    canonicalizeServiceType(order.truckType)
+    canonicalizeServiceType(asOptionalString(order.requiredVehicleType)) ||
+    canonicalizeServiceType(asOptionalString(order.serviceType)) ||
+    canonicalizeServiceType(asOptionalString(order.truckType))
   );
 }
 
@@ -126,10 +132,10 @@ export function resolveOrderRequiredVehicleType(order: {
  */
 export function driverVehicleMatchesOrder(
   driverVehicleType: string | null | undefined,
-  orderServiceType: string | null | undefined
+  orderServiceType: unknown
 ): boolean {
   const driver = canonicalizeServiceType(driverVehicleType);
-  const order = canonicalizeServiceType(orderServiceType);
+  const order = canonicalizeServiceType(asOptionalString(orderServiceType));
   if (!driver || !order) return false;
   return driver === order;
 }
@@ -137,15 +143,107 @@ export function driverVehicleMatchesOrder(
 export function driverMatchesRequiredVehicle(
   driverVehicleType: string | null | undefined,
   order: {
-    requiredVehicleType?: string | null;
-    serviceType?: string | null;
-    truckType?: string | null;
+    requiredVehicleType?: unknown;
+    serviceType?: unknown;
+    truckType?: unknown;
   } | null | undefined
 ): boolean {
   return driverVehicleMatchesOrder(
     driverVehicleType,
     resolveOrderRequiredVehicleType(order)
   );
+}
+
+const SERVICE_OPTION_LISTS: Record<CoreServiceType, readonly string[]> = {
+  furniture_moving: SERVICE_OPTIONS.furniture_moving,
+  flatbed: SERVICE_OPTIONS.flatbed,
+  refrigerated: SERVICE_OPTIONS.refrigerated,
+  heavy_equipment: SERVICE_OPTIONS.heavy_equipment,
+  goods_transport: SERVICE_OPTIONS.goods_transport,
+  water_tanker: SERVICE_OPTIONS.water_tanker,
+};
+
+function optionToken(raw: unknown): string {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s,_-]+/g, '');
+}
+
+/** Map a raw tier (hydraulic, 1000L, small_truck) onto the catalog id for that service. */
+export function normalizeServiceOption(
+  serviceType: string | null | undefined,
+  raw: unknown
+): string | null {
+  const service = canonicalizeServiceType(serviceType);
+  if (!service) return null;
+  const token = optionToken(raw);
+  if (!token) return null;
+  const list = SERVICE_OPTION_LISTS[service];
+  return list.find((item) => optionToken(item) === token) || null;
+}
+
+type OrderOptionSource = {
+  requiredVehicleType?: unknown;
+  serviceType?: unknown;
+  truckType?: unknown;
+  serviceOption?: unknown;
+  serviceDetails?: {
+    type?: unknown;
+    option?: unknown;
+    serviceOption?: unknown;
+    capacity?: unknown;
+  } | null;
+};
+
+/**
+ * Tier the customer booked (hydraulic, 12000L, large_truck).
+ * Flatbed may fall back to truckType. Other services ignore truckType so a
+ * leftover `hydraulic` flag cannot relabel a furniture or tanker order.
+ */
+export function resolveOrderServiceOption(
+  order: OrderOptionSource | null | undefined
+): string | null {
+  if (!order) return null;
+  const service = resolveOrderRequiredVehicleType(order);
+  if (!service) return null;
+  const details = order.serviceDetails;
+  const candidates = [
+    details?.capacity,
+    details?.option,
+    details?.serviceOption,
+    details?.type,
+    order.serviceOption,
+  ];
+  for (const raw of candidates) {
+    const option = normalizeServiceOption(service, raw);
+    if (option) return option;
+  }
+  if (service === 'flatbed') {
+    return normalizeServiceOption(service, order.truckType);
+  }
+  return null;
+}
+
+/**
+ * Category match, then subtype. An order with a tier only reaches a driver
+ * registered for that same tier. Orders with no tier stay category-wide.
+ */
+export function driverMatchesOrderService(
+  driver: {
+    vehicleType?: string | null;
+    vehicleOption?: string | null;
+  },
+  order: OrderOptionSource | null | undefined
+): boolean {
+  if (!driverMatchesRequiredVehicle(driver.vehicleType, order)) return false;
+  const required = resolveOrderServiceOption(order);
+  if (!required) return true;
+  const service = resolveOrderRequiredVehicleType(order);
+  const registered =
+    normalizeServiceOption(service, driver.vehicleOption) ||
+    normalizeServiceOption(service, driver.vehicleType);
+  return registered === required;
 }
 
 export function isCoreServiceType(value: string | null | undefined): boolean {

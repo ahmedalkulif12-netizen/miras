@@ -8,7 +8,7 @@ import { calculateOrderPrice } from '@/lib/pricing';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
-import { doc, onSnapshot, collection, query, where, limit, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, limit, orderBy, getDoc } from 'firebase/firestore';
 import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 import { prepareCheckoutDraft, clearCheckoutDraft, loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
 import {
@@ -778,7 +778,11 @@ const CustomerDashboard: React.FC = () => {
 
       if (deliveryOnly) {
         // Water tanker: billable distance = nearest matching tanker → drop-off.
-        matched = await findNearestOnlineDriver(quoteDestinationCoords!, 'water_tanker');
+        matched = await findNearestOnlineDriver(
+          quoteDestinationCoords!,
+          'water_tanker',
+          serviceOption
+        );
         distKm = sanitizeWaterTankerDistanceKm(
           matched.distanceKm,
           WATER_TANKER_MOCK_DISTANCE_KM
@@ -2977,6 +2981,7 @@ const CustomerOrderHistory: React.FC<{
       const q = query(
         collection(db, 'orders'),
         where('userId', '==', ownerUid),
+        orderBy('createdAt', 'desc'),
         limit(50)
       );
       unsubs.push(
@@ -2994,7 +2999,12 @@ const CustomerOrderHistory: React.FC<{
       );
       unsubs.push(
         onSnapshot(
-          query(collection(db, 'orders'), where('clientId', '==', ownerUid), limit(50)),
+          query(
+            collection(db, 'orders'),
+            where('clientId', '==', ownerUid),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+          ),
           (snap) => {
             snap.docs.forEach((d) => remember(d.id, d.data() as Record<string, unknown>));
             publish();
@@ -3007,7 +3017,12 @@ const CustomerOrderHistory: React.FC<{
       );
       unsubs.push(
         onSnapshot(
-          query(collection(db, 'orders'), where('customerId', '==', ownerUid), limit(50)),
+          query(
+            collection(db, 'orders'),
+            where('customerId', '==', ownerUid),
+            orderBy('createdAt', 'desc'),
+            limit(50)
+          ),
           (snap) => {
             snap.docs.forEach((d) => remember(d.id, d.data() as Record<string, unknown>));
             publish();
