@@ -10,6 +10,7 @@ export interface PaymentIntent {
   paymentId: string;
   tapChargeId: string;
   paymentUrl: string;
+  status?: string;
   /** Real order id is null until payment succeeds. */
   orderId: string | null;
   draftId: string;
@@ -44,7 +45,8 @@ function sandboxIntent(
  */
 export const createPaymentIntent = async (
   draftId: string,
-  paymentMethod: CheckoutPaymentMethod = 'mada'
+  paymentMethod: CheckoutPaymentMethod = 'mada',
+  tapToken?: string
 ): Promise<PaymentIntent> => {
   if (allowsDemoCheckout()) {
     console.info('[payments] Local checkout screen for draft', draftId);
@@ -56,7 +58,12 @@ export const createPaymentIntent = async (
   try {
     const response = await authFetch('/api/create-payment-intent', {
       method: 'POST',
-      body: JSON.stringify({ draftId, callbackUrl, paymentMethod }),
+      body: JSON.stringify({
+        draftId,
+        callbackUrl,
+        paymentMethod,
+        ...(tapToken ? { tapToken } : {}),
+      }),
     });
 
     if (response.ok) {

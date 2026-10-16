@@ -20,6 +20,7 @@ export interface ServerConfig {
   appUrl: string;
   tapSecretKey: string;
   tapPublicKey: string;
+  tapMerchantId: string;
   appCheckEnforce: boolean;
   firebaseProjectId: string;
   googleApplicationCredentials?: string;
@@ -114,6 +115,7 @@ export function getServerConfig(): ServerConfig {
     appUrl: readEnv('APP_URL') || 'http://localhost:3000',
     tapSecretKey: readEnv('TAP_SECRET_KEY'),
     tapPublicKey: readEnv('TAP_PUBLIC_KEY'),
+    tapMerchantId: readEnv('TAP_MERCHANT_ID'),
     appCheckEnforce: readEnv('APP_CHECK_ENFORCE') === 'true',
     firebaseProjectId:
       readEnv('FIREBASE_PROJECT_ID') || readEnv('VITE_FIREBASE_PROJECT_ID'),

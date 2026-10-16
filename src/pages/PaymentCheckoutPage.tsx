@@ -16,10 +16,12 @@ import {
 } from '@/lib/pendingCheckout';
 import { rememberCustomerOrderId } from '@/lib/customerOrderMemory';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
+import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { buildClientOrdersPath, CUSTOMER_SERVICES_PATH } from '@/lib/authRouting';
 import { auth } from '@/lib/firebase';
+import { TapCardFrame, tokenizeTapCard, type TapCardMethod } from '@/components/TapCardFrame';
 
 /**
  * Explicit payment checkout screen (local/demo gateway stand-in).
@@ -32,6 +34,8 @@ const PaymentCheckoutPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [paying, setPaying] = useState(false);
+  const [cardReady, setCardReady] = useState(false);
+  const [cardError, setCardError] = useState('');
 
   const draftId =
     searchParams.get('draftId') ||
@@ -40,6 +44,9 @@ const PaymentCheckoutPage: React.FC = () => {
     '';
 
   const method = (searchParams.get('method') || 'mada').toLowerCase();
+  const cardMethod: TapCardMethod | null =
+    method === 'mada' || method === 'creditcard' ? method : null;
+  const useTapCard = Boolean(cardMethod) && !allowsSandboxCheckout();
 
   const draft = useMemo(
     () => (draftId ? loadCheckoutDraft(draftId) : null),
@@ -61,6 +68,97 @@ const PaymentCheckoutPage: React.FC = () => {
         : isRtl
           ? 'مدى'
           : 'Mada';
+
+  const finishPaid = async (tapChargeId: string, status: string) => {
+    persistPendingCheckoutDraftId(draftId);
+    const result = await verifyPaymentReturn({
+      draftId,
+      tapChargeId,
+      status,
+    });
+    clearPendingCheckoutDraftId();
+    if (!result.success) {
+      toast.error(
+        result.message || (isRtl ? 'لم يكتمل الدفع' : 'Payment was not completed'),
+        { id: 'gateway-pay' }
+      );
+      navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true });
+      return;
+    }
+    toast.success(isRtl ? 'تم الدفع بنجاح' : 'Payment successful', { id: 'gateway-pay' });
+    const uid = auth.currentUser?.uid || '';
+    if (uid && result.orderId) rememberCustomerOrderId(uid, result.orderId);
+    navigate(
+      buildClientOrdersPath({ placed: result.orderId, payment: 'success' }),
+      { replace: true }
+    );
+  };
+
+  const payWithTapCard = () => {
+    if (!draftId || amount <= 0) {
+      toast.error(isRtl ? 'جلسة الدفع غير موجودة' : 'Checkout session missing');
+      return;
+    }
+    setPaying(true);
+    toast.loading(isRtl ? 'جاري التحقق من البطاقة...' : 'Checking card details...', {
+      id: 'gateway-pay',
+    });
+    tokenizeTapCard();
+  };
+
+  const onTapToken = async (tokenId: string) => {
+    try {
+      const intent = await createPaymentIntent(
+        draftId,
+        method as CheckoutPaymentMethod,
+        tokenId
+      );
+      const status = (intent.status || '').toLowerCase();
+      const paid = status === 'captured' || status === 'authorized' || status === 'paid';
+      if (intent.paymentUrl && !paid) {
+        toast.success(isRtl ? 'جاري التحقق من البطاقة...' : 'Verifying your card...', {
+          id: 'gateway-pay',
+        });
+        window.location.assign(intent.paymentUrl);
+        return;
+      }
+      await finishPaid(intent.tapChargeId, intent.status || 'captured');
+    } catch (error) {
+      console.error('[payment-checkout] tap token charge failed:', error);
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message || (isRtl ? 'فشل الدفع' : 'Payment failed'), { id: 'gateway-pay' });
+      setPaying(false);
+    }
+  };
+
+  const payOnHostedPage = async () => {
+    if (!draftId) return;
+    setPaying(true);
+    toast.loading(isRtl ? 'جاري فتح صفحة الدفع...' : 'Opening the payment page...', {
+      id: 'gateway-pay',
+    });
+    try {
+      const intent = await createPaymentIntent(draftId, method as CheckoutPaymentMethod);
+      if (intent.sandbox) {
+        toast.error(
+          isRtl ? 'صفحة تاب غير متاحة في الوضع التجريبي' : 'Tap checkout is not available in demo mode',
+          { id: 'gateway-pay' }
+        );
+        setPaying(false);
+        return;
+      }
+      if (!intent.paymentUrl) {
+        throw new Error(isRtl ? 'لم يُرجع تاب رابط الدفع' : 'Tap did not return a payment link');
+      }
+      window.location.assign(intent.paymentUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message || (isRtl ? 'فشل فتح الدفع' : 'Could not open payment'), {
+        id: 'gateway-pay',
+      });
+      setPaying(false);
+    }
+  };
 
   const cancelPayment = () => {
     clearPendingCheckoutDraftId();
@@ -91,39 +189,7 @@ const PaymentCheckoutPage: React.FC = () => {
     });
 
     try {
-      persistPendingCheckoutDraftId(draftId);
-      const result = await verifyPaymentReturn({
-        draftId,
-        tapChargeId: `demo-checkout-${Date.now()}`,
-        status: 'paid',
-      });
-
-      clearPendingCheckoutDraftId();
-
-      if (!result.success) {
-        toast.error(
-          result.message ||
-            (isRtl ? 'لم يكتمل الدفع' : 'Payment was not completed'),
-          { id: 'gateway-pay' }
-        );
-        navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true });
-        return;
-      }
-
-      toast.success(isRtl ? 'تم الدفع بنجاح' : 'Payment successful', {
-        id: 'gateway-pay',
-      });
-      const uid = auth.currentUser?.uid || '';
-      if (uid && result.orderId) {
-        rememberCustomerOrderId(uid, result.orderId);
-      }
-      navigate(
-        buildClientOrdersPath({
-          placed: result.orderId,
-          payment: 'success',
-        }),
-        { replace: true }
-      );
+      await finishPaid(`demo-checkout-${Date.now()}`, 'paid');
     } catch (error) {
       console.error('[payment-checkout] confirm failed:', error);
       toast.error(isRtl ? 'فشل تأكيد الدفع' : 'Payment confirmation failed', {
@@ -172,7 +238,7 @@ const PaymentCheckoutPage: React.FC = () => {
         <div className="flex justify-end">
           <LanguageToggle />
         </div>
-      <div className="bg-white rounded-[32px] border border-gray-100 shadow-xl overflow-hidden">
+      <div className={`bg-white rounded-[32px] border border-gray-100 shadow-xl ${useTapCard ? 'overflow-visible' : 'overflow-hidden'}`}>
         <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
@@ -251,16 +317,39 @@ const PaymentCheckoutPage: React.FC = () => {
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-            {isRtl
-              ? 'لن يتم إنشاء الطلب أو البحث عن سائق إلا بعد تأكيد الدفع أدناه.'
-              : 'The order is created and drivers are notified only after you confirm payment below.'}
-          </p>
+          {useTapCard && cardMethod ? (
+            <TapCardFrame
+              amount={amount}
+              method={cardMethod}
+              isRtl={isRtl}
+              onReady={() => setCardReady(true)}
+              onToken={(tokenId) => void onTapToken(tokenId)}
+              onError={(message) => {
+                setCardError(message);
+                setPaying(false);
+                if (/key not found/i.test(message)) {
+                  toast.message(
+                    isRtl ? 'جاري فتح صفحة الدفع الآمنة...' : 'Opening the secure payment page...',
+                    { id: 'gateway-pay' }
+                  );
+                  void payOnHostedPage();
+                  return;
+                }
+                toast.error(message, { id: 'gateway-pay' });
+              }}
+            />
+          ) : (
+            <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+              {isRtl
+                ? 'لن يتم إنشاء الطلب أو البحث عن سائق إلا بعد تأكيد الدفع أدناه.'
+                : 'The order is created and drivers are notified only after you confirm payment below.'}
+            </p>
+          )}
 
           <button
             type="button"
-            disabled={paying || amount <= 0}
-            onClick={() => void confirmPayment()}
+            disabled={paying || amount <= 0 || (useTapCard && !cardReady && !cardError)}
+            onClick={() => void (useTapCard && !cardError ? payWithTapCard() : useTapCard ? payOnHostedPage() : confirmPayment())}
             className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <CheckCircle2 size={18} />
@@ -268,6 +357,10 @@ const PaymentCheckoutPage: React.FC = () => {
               ? isRtl
                 ? 'جاري الدفع...'
                 : 'Processing…'
+              : cardError
+                ? isRtl
+                  ? 'المتابعة في صفحة تاب'
+                  : 'Continue on Tap checkout'
               : isRtl
                 ? 'ادفع الآن وأكّد الطلب'
                 : 'Pay now & confirm order'}

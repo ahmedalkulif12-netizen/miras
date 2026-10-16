@@ -138,6 +138,8 @@ export interface TapChargeRequest {
   draftId: string;
   userId: string;
   paymentMethod: CheckoutGatewayMethod;
+  /** Card SDK token (`tok_...`). When set, the charge uses that card instead of a hosted source. */
+  sourceId?: string;
   customer: {
     firstName: string;
     email?: string;
@@ -203,7 +205,7 @@ export async function createTapCharge(
       email: input.customer.email || `customer@miras.app`,
       phone: input.customer.phone,
     },
-    source: { id: tapSourceId(input.paymentMethod) },
+    source: { id: input.sourceId || tapSourceId(input.paymentMethod) },
     post: { url: input.webhookUrl },
     redirect: { url: input.redirectUrl },
   };
@@ -214,8 +216,9 @@ export async function createTapCharge(
     const transaction = (data.transaction || {}) as Record<string, unknown>;
     const id = String(data.id || '');
     const paymentUrl = String(transaction.url || '');
-    if (!id || !paymentUrl) {
-      throw Object.assign(new Error('Tap did not return a hosted checkout URL'), {
+    const status = String(data.status || '');
+    if (!id || (!paymentUrl && !isPaidTapStatus(status))) {
+      throw Object.assign(new Error('Tap did not return a charge id'), {
         statusCode: 502,
       });
     }

@@ -1652,9 +1652,9 @@ const DriverDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Above the fold: shift toggle beside the live order feed */}
-              <div className="grid grid-cols-[minmax(7.75rem,16rem)_minmax(0,1fr)] gap-3 items-start">
-              <aside className={`rounded-3xl border-2 p-3 flex flex-col gap-3 sticky top-3 ${
+              {/* Shift status on top, available orders full width underneath on phones. */}
+              <div className="flex w-full flex-col gap-3 md:grid md:grid-cols-[minmax(7.75rem,16rem)_minmax(0,1fr)] md:items-start">
+              <aside className={`w-full rounded-3xl border-2 p-3 flex flex-col gap-3 md:sticky md:top-3 ${
                 isOnline ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'
               } ${
                 !canStartWork ? 'opacity-60' : ''
@@ -1665,8 +1665,8 @@ const DriverDashboard: React.FC = () => {
                   }`}>
                     {isOnline ? <Truck size={20} /> : <Clock size={20} />}
                   </div>
-                  <div className="min-w-0">
-                    <h2 className="text-sm font-black leading-tight truncate">{isOnline ? t('active_shift') : t('not_active')}</h2>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-sm font-black leading-tight md:truncate">{isOnline ? t('active_shift') : t('not_active')}</h2>
                     <p className="text-[10px] text-muted-foreground leading-snug line-clamp-2">{isOnline ? t('search_cargo') : t('change_status_to_start')}</p>
                   </div>
                 </div>
@@ -1701,7 +1701,7 @@ const DriverDashboard: React.FC = () => {
                 )}
               </aside>
 
-              <div className="min-w-0 space-y-3">
+              <div className="w-full min-w-0 space-y-3">
               {isOnline && isIncomingOffer && (
                 <div className={`rounded-2xl bg-primary text-black px-3 py-2 flex items-center justify-between gap-2 ${isRtl ? 'flex-row-reverse' : ''}`}>
                   <p className="text-xs font-black truncate">
@@ -1724,14 +1724,14 @@ const DriverDashboard: React.FC = () => {
               {/* Active / available order */}
               <div className="grid grid-cols-1 gap-3">
                  <div className="space-y-4">
-                    <h3 className="font-bold text-lg px-2">
+                    <h3 className="w-full font-bold text-lg px-1 leading-snug">
                       {isActiveTrip
                         ? (isRtl ? 'الرحلة النشطة' : 'Active Trip')
                         : t('available_orders')}
                     </h3>
                     {isOnline ? (
                       offerOrder ? (
-                      <div className={`bg-white p-6 rounded-[40px] border-2 shadow-2xl space-y-5 relative overflow-hidden group ${
+                      <div className={`bg-white p-4 sm:p-6 rounded-[28px] sm:rounded-[40px] border-2 shadow-2xl space-y-5 relative overflow-hidden group ${
                         isActiveTrip ? 'border-teal-500' : 'border-primary'
                       }`}>
                         <div className={`absolute top-0 ${isRtl ? 'left-0' : 'right-0'} p-3 text-black text-[10px] font-bold ${isRtl ? 'rounded-br-2xl' : 'rounded-bl-2xl'} uppercase tracking-widest ${
@@ -1989,12 +1989,12 @@ const DriverDashboard: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                  <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-2 gap-3 pt-1 w-full">
                     <button 
                       type="button"
                       onClick={() => void handleAcceptClick()}
                       disabled={isAcceptButtonDisabled}
-                      className="py-4 bg-black text-white rounded-2xl font-bold hover:bg-black/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/10"
+                      className="w-full min-h-12 py-4 px-3 bg-black text-white rounded-2xl font-bold hover:bg-black/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/10 text-center leading-tight"
                     >
                       {isDriverActionBusy(latestOrder?.id)
                         ? (isRtl ? 'جاري المعالجة...' : 'Processing...')
@@ -2008,7 +2008,7 @@ const DriverDashboard: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => openOrderInMaps(latestOrder, 'auto')}
-                      className="py-4 bg-gray-100 text-teal-800 rounded-2xl font-bold hover:bg-gray-200 transition-all"
+                      className="w-full min-h-12 py-4 px-3 bg-gray-100 text-teal-800 rounded-2xl font-bold hover:bg-gray-200 transition-all text-center leading-tight"
                     >
                       {isRtl ? 'الخرائط' : 'Maps'}
                     </button>
@@ -2016,7 +2016,7 @@ const DriverDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleIgnoreOffer}
-                    className="w-full py-2 text-xs font-bold text-gray-400 hover:text-gray-600"
+                    className="w-full min-h-11 py-3 text-sm font-bold text-gray-500 hover:text-gray-700"
                   >
                     {t('ignore')}
                   </button>

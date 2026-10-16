@@ -1833,6 +1833,22 @@ async function startServer() {
     }
   });
 
+  app.get('/api/payments/tap-config', ...secureApi, (_req: AuthenticatedRequest, res: any) => {
+    try {
+      assertTapConfigured(config);
+      res.json({
+        publicKey: config.tapPublicKey,
+        merchantId: config.tapMerchantId || '',
+        testMode: isTapTestSecret(config.tapSecretKey),
+      });
+    } catch (error: any) {
+      res.status(error?.statusCode ?? 503).json({
+        error: error?.message || 'Tap is not configured',
+        code: 'TAP_NOT_CONFIGURED',
+      });
+    }
+  });
+
   // API Route: Create Tap charge from checkout draft (no orders write).
   app.post('/api/create-payment-intent', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
@@ -1931,6 +1947,14 @@ async function startServer() {
           ? `JZ Logistics Order - ${serviceType} (${waterBits.join('/')})`
           : `JZ Logistics Order - ${serviceType}`;
 
+      const tapToken = String(req.body?.tapToken || '').trim();
+      if (tapToken && !tapToken.startsWith('tok_')) {
+        return res.status(400).json({
+          error: 'Card token is invalid',
+          code: 'TAP_TOKEN_INVALID',
+        });
+      }
+
       const charge = await createTapCharge(config.tapSecretKey, {
         amount: customerTotal,
         currency: 'SAR',
@@ -1940,6 +1964,7 @@ async function startServer() {
         draftId: chargeDraftId,
         userId,
         paymentMethod,
+        sourceId: tapToken || undefined,
         customer: {
           firstName: firstName || 'Customer',
           email: email || undefined,
@@ -1975,6 +2000,7 @@ async function startServer() {
       res.json({
         paymentId: paymentRef.id,
         tapChargeId: charge.id,
+        status: charge.status,
         paymentUrl: charge.paymentUrl,
         draftId: chargeDraftId || null,
         orderId: null,

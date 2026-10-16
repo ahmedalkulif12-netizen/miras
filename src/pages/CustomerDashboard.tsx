@@ -1168,9 +1168,23 @@ const CustomerDashboard: React.FC = () => {
         return;
       }
 
+      persistPendingCheckoutDraftId(checkoutDraftId);
+
+      // Card methods render Tap's card element in-app so expiry and CVV are not
+      // clipped by the hosted checkout iframe. Apple Pay still opens Tap's page.
+      if (checkoutMethod === 'mada' || checkoutMethod === 'creditcard') {
+        setIsProcessing(false);
+        toast.success(isRtl ? 'أدخل بيانات البطاقة' : 'Enter your card details', {
+          id: 'payment-toast',
+        });
+        navigate(
+          `/payment-checkout?draftId=${encodeURIComponent(checkoutDraftId)}&method=${encodeURIComponent(checkoutMethod)}`
+        );
+        return;
+      }
+
       const intent = await createPaymentIntent(checkoutDraftId, checkoutMethod);
 
-      persistPendingCheckoutDraftId(checkoutDraftId);
       // Keep UI on payment until the gateway page loads; order/searching only after success callback.
       toast.success(isRtl ? 'جاري توجيهك لصفحة الدفع...' : 'Redirecting to payment page...', {
         id: 'payment-toast',
