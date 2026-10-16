@@ -28,6 +28,7 @@ import {
 } from '../src/lib/appOrigin.ts';
 import { resolveApiOriginFrom } from '../src/lib/apiUrl.ts';
 import { sandboxCheckoutAllowed } from '../src/lib/checkoutGatingCore.ts';
+import { readTapReturnParams } from '../src/lib/tapReturnParams.ts';
 import { isAllowedNativeApiOrigin } from '../server/lib/nativeApiCors.ts';
 import {
   isDemoChargeId,
@@ -465,7 +466,16 @@ async function run(): Promise<void> {
   assert(shouldApplyNativeDeepLink('/payment-callback?id=1'), 'payment path is applied');
   assert(!shouldApplyNativeDeepLink('/'), 'root launch URL is ignored');
 
-  assert(isDemoChargeId('demo-checkout-1'), 'demo checkout ids are detected');
+  assert(
+    readTapReturnParams({
+      draftId: 'draft-abc?tap_id=chg_TS01',
+    }).chargeId === 'chg_TS01',
+    'glued Tap redirect still yields the charge id'
+  );
+  assert(
+    readTapReturnParams({ tap_id: 'chg_TS02', status: 'CAPTURED' }).chargeId === 'chg_TS02',
+    'tap_id is the charge id on return'
+  );
   assert(
     resolvePaymentCallbackUrl(
       'https://localhost/payment-callback',

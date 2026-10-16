@@ -10,6 +10,27 @@ import {
 
 export { isTapTestSecret };
 
+function draftIdFromCharge(charge: Record<string, unknown> | null): string {
+  if (!charge) return '';
+  const metadata = (charge.metadata || {}) as Record<string, unknown>;
+  const reference = (charge.reference || {}) as Record<string, unknown>;
+  return String(metadata.draftId || reference.transaction || reference.order || '').trim();
+}
+
+async function ownedCheckoutDraftId(
+  db: admin.firestore.Firestore,
+  uid: string,
+  candidate: string
+): Promise<string> {
+  const id = String(candidate || '').trim();
+  if (!id) return '';
+  const snap = await db.collection('checkout_drafts').doc(id).get();
+  if (!snap.exists) return '';
+  const owner = String((snap.data() as { userId?: string } | undefined)?.userId || '');
+  if (owner && owner !== uid) return '';
+  return id;
+}
+
 export function isPaidPaymentStatus(status: unknown): boolean {
   return isPaidTapStatus(status);
 }
@@ -112,15 +133,42 @@ export async function finalizePaidCheckoutReturn(
       statusCode: 403,
     });
   }
-  if (payment.draftId && String(payment.draftId) !== input.draftId) {
-    throw Object.assign(new Error('Payment does not match checkout draft'), {
-      statusCode: 403,
-    });
+
+  const draftCandidates = [
+    draftIdFromCharge(remote),
+    String(payment.draftId || ''),
+    input.draftId,
+  ];
+  let draftId = '';
+  for (const candidate of draftCandidates) {
+    const owned = await ownedCheckoutDraftId(db, input.uid, candidate);
+    if (owned) {
+      draftId = owned;
+      break;
+    }
+  }
+  if (!draftId) {
+    return {
+      success: false,
+      orderId: input.draftId,
+      paymentStatus: remoteStatus || 'captured',
+      orderStatus: 'awaiting_payment',
+      startTracking: false,
+      testMode,
+      message: 'Checkout draft not found for this captured charge',
+    };
+  }
+  if (draftId !== input.draftId) {
+    console.info(
+      '[payments] tap return using charge draft',
+      JSON.stringify({ queryDraftId: input.draftId, draftId, chargeId: input.tapChargeId })
+    );
   }
 
   await paymentDoc.ref.set(
     {
       status: 'authorized',
+      draftId,
       tapStatus: remoteStatus,
       gateway: 'tap',
       testMode,
@@ -131,7 +179,7 @@ export async function finalizePaidCheckoutReturn(
 
   const finalized = await finalizeOrderFromCheckoutDraft(db, {
     userId: input.uid,
-    draftId: input.draftId,
+    draftId,
     paymentId: paymentDoc.id,
     tapChargeId: input.tapChargeId,
     testMode,

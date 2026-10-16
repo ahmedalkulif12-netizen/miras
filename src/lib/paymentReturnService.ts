@@ -244,7 +244,7 @@ export async function verifyPaymentReturn(params: {
   };
 
   try {
-    const response = await authFetch(`/api/payments/return?${query.toString()}`);
+    const response = await authFetch(`/api/payments/return?${query.toString()}`, {}, { softAppCheck: true });
     if (!response.ok) {
       throw new Error(await readApiErrorMessage(response, 'Payment verification failed'));
     }

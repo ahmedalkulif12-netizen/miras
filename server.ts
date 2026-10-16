@@ -55,6 +55,7 @@ import {
   isDemoChargeId,
   resolvePaymentCallbackUrl,
 } from './server/lib/paymentCallback.ts';
+import { readTapReturnParams } from './src/lib/tapReturnParams.ts';
 import {
   createTapCharge,
   isFailedTapStatus,
@@ -447,17 +448,16 @@ async function startServer() {
   // Accepts draftId (pre-payment) or orderId (legacy); finalizes order only after CAPTURED.
   app.get('/api/payments/return', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
     try {
-      const draftId = String(req.query.draftId || '');
-      const orderId = String(req.query.orderId || '');
-      const tapChargeIdEarly = String(
-        req.query.tapChargeId || req.query.tap_id || req.query.id || ''
-      );
+      const returned = readTapReturnParams(req.query as Record<string, unknown>);
+      const draftId = returned.draftId;
+      const orderId = returned.orderId;
+      const tapChargeIdEarly = returned.chargeId;
       if (!draftId && !orderId && !tapChargeIdEarly) {
         return res.status(400).json({ error: 'draftId, orderId, or tapChargeId is required' });
       }
 
       const tapChargeId = tapChargeIdEarly || undefined;
-      const returnStatus = req.query.status ? String(req.query.status) : undefined;
+      const returnStatus = returned.status || undefined;
       const uid = req.firebaseUid!;
       let resolvedDraftId = draftId;
 

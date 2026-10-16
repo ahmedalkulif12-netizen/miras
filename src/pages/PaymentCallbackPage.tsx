@@ -15,6 +15,7 @@ import { buildClientOrdersPath } from '@/lib/authRouting';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
 import { auth } from '@/lib/firebase';
+import { readTapReturnParams } from '@/lib/tapReturnParams';
 
 /**
  * Tap redirects here after checkout (redirect.url).
@@ -40,24 +41,30 @@ const PaymentCallbackPage: React.FC = () => {
         console.warn('[payments] Auth not ready on payment return:', error);
       }
 
+      const returned = readTapReturnParams(Object.fromEntries(searchParams.entries()));
       const draftId =
-        searchParams.get('draftId') ||
+        returned.draftId ||
         readPendingCheckoutDraftId() ||
         getActiveCheckoutDraftId();
-      const legacyOrderId = searchParams.get('orderId');
-      const tapChargeId =
-        searchParams.get('tap_id') ||
-        searchParams.get('tapChargeId') ||
-        searchParams.get('id');
-      const status = searchParams.get('status');
+      const legacyOrderId = returned.orderId;
+      const tapChargeId = returned.chargeId;
+      const status = returned.status;
+      console.info('[payments] tap redirect', {
+        draftId: draftId || null,
+        chargeId: tapChargeId || null,
+        status: status || null,
+      });
 
       if (!draftId && !legacyOrderId && !tapChargeId) {
         if (!cancelled) {
           setState('error');
           setMessage(isRtl ? 'لم يتم العثور على جلسة الدفع' : 'Checkout session not found');
-          setTimeout(
-            () => navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true }),
-            1800
+          navigate(
+            buildClientOrdersPath({
+              payment: 'failed',
+              reason: isRtl ? 'لم يتم العثور على جلسة الدفع' : 'Checkout session not found',
+            }),
+            { replace: true }
           );
         }
         return;
@@ -81,16 +88,12 @@ const PaymentCallbackPage: React.FC = () => {
             result.message ||
               (isRtl ? 'فشل التحقق من الدفع' : 'Payment was not completed')
           );
-          setTimeout(
-            () =>
-              navigate(
-                buildClientOrdersPath({
-                  payment: 'failed',
-                  reason: result.message,
-                }),
-                { replace: true }
-              ),
-            1800
+          navigate(
+            buildClientOrdersPath({
+              payment: 'failed',
+              reason: result.message,
+            }),
+            { replace: true }
           );
           return;
         }
@@ -149,10 +152,21 @@ const PaymentCallbackPage: React.FC = () => {
         }
         if (!cancelled) {
           setState('error');
-          setMessage(isRtl ? 'تعذر التحقق من الدفع' : 'Could not verify payment');
-          setTimeout(
-            () => navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true }),
-            1800
+          const detail = error instanceof Error ? error.message : '';
+          const reason = detail
+            ? isRtl
+              ? `تعذر التحقق من الدفع: ${detail}`
+              : `Could not verify payment: ${detail}`
+            : isRtl
+              ? 'تعذر التحقق من الدفع'
+              : 'Could not verify payment';
+          setMessage(reason);
+          navigate(
+            buildClientOrdersPath({
+              payment: 'failed',
+              reason,
+            }),
+            { replace: true }
           );
         }
       }

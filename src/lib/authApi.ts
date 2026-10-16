@@ -54,7 +54,8 @@ function isNotAuthenticatedError(error: unknown): boolean {
 
 export async function authFetch(
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  options: { softAppCheck?: boolean } = {}
 ): Promise<Response> {
   await ensureFirebaseReady();
 
@@ -93,6 +94,9 @@ export async function authFetch(
             '[authApi] Native App Check token unavailable — continuing without X-Firebase-AppCheck:',
             err
           );
+          appCheckToken = null;
+        } else if (options.softAppCheck) {
+          console.warn('[authApi] App Check token unavailable — continuing payment verification:', err);
           appCheckToken = null;
         } else {
           throw err;

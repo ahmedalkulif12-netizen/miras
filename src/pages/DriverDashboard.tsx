@@ -456,13 +456,15 @@ const DriverDashboard: React.FC = () => {
           offersQuery: ReturnType<typeof query>,
           label: string
         ) => {
-          console.info('[driver] LISTEN query', {
-            label,
-            filter: `status in [${DRIVER_OFFER_STATUSES.join(', ')}]`,
-            authUid: driverUid,
-            isOnline,
-            vehicleType: profile.vehicleType || null,
-          });
+          if (import.meta.env.DEV) {
+            console.info('[driver] LISTEN query', {
+              label,
+              filter: `status in [${DRIVER_OFFER_STATUSES.join(', ')}]`,
+              authUid: driverUid,
+              isOnline,
+              vehicleType: profile.vehicleType || null,
+            });
+          }
           offersUnsub?.();
           offersUnsub = onSnapshot(
             offersQuery,
@@ -471,12 +473,14 @@ const DriverDashboard: React.FC = () => {
                 const data = orderDoc.data() as Order;
                 return { id: orderDoc.id, ...data } as Order;
               });
-              console.info(
-                '[driver] LISTEN snapshot',
-                matches.map((order) =>
-                  debugOrderPayload(order.id, order as unknown as Record<string, unknown>)
-                )
-              );
+              if (import.meta.env.DEV) {
+                console.info(
+                  '[driver] LISTEN snapshot',
+                  matches.map((order) =>
+                    debugOrderPayload(order.id, order as unknown as Record<string, unknown>)
+                  )
+                );
+              }
               setBroadcastPool((prev) => {
                 const remoteOpen = excludeIgnoredOffers<Order>(
                   matches.filter(

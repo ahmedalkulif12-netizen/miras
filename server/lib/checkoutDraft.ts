@@ -370,6 +370,26 @@ export async function writeBroadcastingOrder(
       .get();
     if (!existingByDraft.empty) {
       const doc = existingByDraft.docs[0];
+      const current = String(doc.data()?.status || '');
+      if (
+        current === OrderStatus.AWAITING_PAYMENT ||
+        current === 'pending_payment' ||
+        current === 'initiated'
+      ) {
+        await doc.ref.set(
+          {
+            status: OrderStatus.BROADCASTING,
+            paymentStatus: 'authorized',
+            userId: input.userId,
+            clientId: input.userId,
+            customerId: input.userId,
+            tapChargeId: input.tapChargeId || doc.data()?.tapChargeId || null,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
+        return { orderId: doc.id, status: OrderStatus.BROADCASTING };
+      }
       if (input.debitCustomerWallet) {
         await debitCustomerWalletOnOrder(db, {
           userId: input.userId,

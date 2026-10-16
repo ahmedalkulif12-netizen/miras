@@ -281,13 +281,57 @@ export async function retrieveTapCharge(
   secretKey: string,
   chargeId: string
 ): Promise<Record<string, unknown> | null> {
+  const retrieved = await retrieveTapChargeResult(secretKey, chargeId);
+  const outcome = tapChargeOutcome(retrieved.charge);
+  console.info(
+    '[payments] tap charge',
+    JSON.stringify({
+      chargeId: String(chargeId || '').trim(),
+      httpStatus: retrieved.httpStatus,
+      ...formatTapChargeLog(String(chargeId || '').trim(), outcome, Boolean(retrieved.charge)),
+      errorCode: retrieved.errorCode,
+      errorMessage: retrieved.errorMessage,
+    })
+  );
+  return retrieved.charge;
+}
+
+export async function retrieveTapChargeResult(
+  secretKey: string,
+  chargeId: string
+): Promise<{
+  charge: Record<string, unknown> | null;
+  httpStatus: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}> {
   const id = String(chargeId || '').trim();
-  if (!id || !secretKey) return null;
+  if (!id || !secretKey) {
+    return {
+      charge: null,
+      httpStatus: null,
+      errorCode: secretKey ? 'MISSING_CHARGE_ID' : 'MISSING_SECRET',
+      errorMessage: secretKey ? 'Charge id is empty' : 'Tap secret is not configured',
+    };
+  }
   try {
     const response = await tapClient(secretKey).get(`/charges/${encodeURIComponent(id)}`);
-    return (response.data || null) as Record<string, unknown> | null;
+    return {
+      charge: (response.data || null) as Record<string, unknown> | null,
+      httpStatus: response.status,
+      errorCode: null,
+      errorMessage: null,
+    };
   } catch (error) {
-    console.warn('[payments] Tap charge fetch failed for', id, tapErrorMessage(error, 'fetch failed'));
-    return null;
+    const httpStatus = (error as { response?: { status?: number } }).response?.status || null;
+    const data = (error as { response?: { data?: { errors?: Array<{ code?: string; description?: string }> } } })
+      .response?.data;
+    const tapError = data?.errors?.find((item) => item?.description || item?.code);
+    return {
+      charge: null,
+      httpStatus,
+      errorCode: tapError?.code ? String(tapError.code) : null,
+      errorMessage: tapErrorMessage(error, 'fetch failed'),
+    };
   }
 }

@@ -2876,7 +2876,16 @@ const CustomerOrderHistory: React.FC<{
     const listenedIds = new Set<string>();
     let matchUid = customerUid;
 
+    let publishQueued = false;
     const publish = () => {
+      if (publishQueued) return;
+      publishQueued = true;
+      queueMicrotask(() => {
+        publishQueued = false;
+        publishNow();
+      });
+    };
+    const publishNow = () => {
       if (cancelled) return;
       const localRows = loadLocalBroadcastOrders()
         .filter((entry) => ownerMatches(entry.data, matchUid))
@@ -3000,6 +3009,8 @@ const CustomerOrderHistory: React.FC<{
       } catch (error) {
         console.warn('[CustomerOrderHistory] /api/orders/mine failed:', error);
       }
+
+      if (cancelled) return;
 
       const q = query(
         collection(db, 'orders'),
