@@ -30,8 +30,8 @@ workflows:
         XCODE_SCHEME: "App"
         BUNDLE_ID: "com.ahmed.miras"
         DEVELOPMENT_TEAM: "4TRJXRYK8A"
-        IOS_MARKETING_VERSION: "1.0.4"
-        IOS_MIN_BUILD_NUMBER: "66"
+        IOS_MARKETING_VERSION: "1.0.5"
+        IOS_MIN_BUILD_NUMBER: "8"
         APP_STORE_APPLE_ID: "6807503584"
         VITE_APP_STORE_APPLE_ID: "6807503584"
         NODE_ENV: "production"
@@ -125,18 +125,13 @@ workflows:
       - name: Increment iOS build number
         script: |
           cd "$CM_BUILD_DIR/ios/App"
+          MARKETING="${IOS_MARKETING_VERSION:-1.0.5}"
           LATEST=0
           if [ -n "${APP_STORE_APPLE_ID:-}" ]; then
-            LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" || true)
-            if [ -z "$LATEST" ] || [ "$LATEST" = "None" ]; then
-              LATEST=$(app-store-connect get-latest-app-store-build-number "$APP_STORE_APPLE_ID" || true)
-            fi
+            LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" --pre-release-version "$MARKETING" || true)
           fi
           if [ -z "$LATEST" ] || [ "$LATEST" = "None" ] || [ "$LATEST" = "0" ]; then
-            LATEST=$(app-store-connect get-latest-testflight-build-number --bundle-id "$BUNDLE_ID" || true)
-          fi
-          if [ -z "$LATEST" ] || [ "$LATEST" = "None" ]; then
-            LATEST=$(app-store-connect get-latest-app-store-build-number --bundle-id "$BUNDLE_ID" || true)
+            LATEST=$(app-store-connect get-latest-testflight-build-number --bundle-id "$BUNDLE_ID" --pre-release-version "$MARKETING" || true)
           fi
           case "$LATEST" in
             ''|None|none) LATEST=0 ;;
@@ -145,10 +140,9 @@ workflows:
           if [ "$NEW_BUILD" -lt "${BUILD_NUMBER:-1}" ]; then
             NEW_BUILD=$BUILD_NUMBER
           fi
-          if [ "$NEW_BUILD" -lt "${IOS_MIN_BUILD_NUMBER:-66}" ]; then
-            NEW_BUILD="${IOS_MIN_BUILD_NUMBER:-66}"
+          if [ "$NEW_BUILD" -lt "${IOS_MIN_BUILD_NUMBER:-8}" ]; then
+            NEW_BUILD="${IOS_MIN_BUILD_NUMBER:-8}"
           fi
-          MARKETING="${IOS_MARKETING_VERSION:-1.0.4}"
           agvtool new-version -all "$NEW_BUILD"
           agvtool new-marketing-version "$MARKETING"
           echo "Using CFBundleShortVersionString=$MARKETING CFBundleVersion=$NEW_BUILD"
