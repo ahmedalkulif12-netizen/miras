@@ -35,7 +35,8 @@ const PaymentCheckoutPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [paying, setPaying] = useState(false);
   const [cardReady, setCardReady] = useState(false);
-  const [cardError, setCardError] = useState('');
+  const [useHostedCheckout, setUseHostedCheckout] = useState(false);
+  const hostedStarted = React.useRef(false);
 
   const draftId =
     searchParams.get('draftId') ||
@@ -132,32 +133,40 @@ const PaymentCheckoutPage: React.FC = () => {
   };
 
   const payOnHostedPage = async () => {
-    if (!draftId) return;
+    if (!draftId || amount <= 0) {
+      toast.error(isRtl ? 'جلسة الدفع غير موجودة' : 'Checkout session missing');
+      hostedStarted.current = false;
+      return;
+    }
     setPaying(true);
-    toast.loading(isRtl ? 'جاري فتح صفحة الدفع...' : 'Opening the payment page...', {
-      id: 'gateway-pay',
-    });
+    toast.loading(
+      isRtl ? 'جاري فتح صفحة الدفع الآمنة...' : 'Opening the secure payment page...',
+      { id: 'gateway-pay' }
+    );
     try {
       const intent = await createPaymentIntent(draftId, method as CheckoutPaymentMethod);
-      if (intent.sandbox) {
-        toast.error(
-          isRtl ? 'صفحة تاب غير متاحة في الوضع التجريبي' : 'Tap checkout is not available in demo mode',
-          { id: 'gateway-pay' }
+      if (intent.sandbox || !intent.paymentUrl) {
+        throw new Error(
+          isRtl ? 'لم يُرجع تاب رابط الدفع' : 'Tap did not return a payment link'
         );
-        setPaying(false);
-        return;
-      }
-      if (!intent.paymentUrl) {
-        throw new Error(isRtl ? 'لم يُرجع تاب رابط الدفع' : 'Tap did not return a payment link');
       }
       window.location.assign(intent.paymentUrl);
     } catch (error) {
+      console.error('[payment-checkout] hosted checkout failed:', error);
+      hostedStarted.current = false;
       const message = error instanceof Error ? error.message : '';
       toast.error(message || (isRtl ? 'فشل فتح الدفع' : 'Could not open payment'), {
         id: 'gateway-pay',
       });
       setPaying(false);
     }
+  };
+
+  const openHostedCheckout = () => {
+    if (hostedStarted.current || cardReady) return;
+    hostedStarted.current = true;
+    setUseHostedCheckout(true);
+    void payOnHostedPage();
   };
 
   const cancelPayment = () => {
@@ -231,10 +240,10 @@ const PaymentCheckoutPage: React.FC = () => {
 
   return (
     <div
-      className="min-h-dvh flex items-center justify-center bg-[#f0f2f5] p-6"
+      className="min-h-dvh flex items-center justify-center bg-[#f0f2f5] p-4 sm:p-6"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      <div className="max-w-md w-full space-y-4">
+      <div className="max-w-lg w-full space-y-4">
         <div className="flex justify-end">
           <LanguageToggle />
         </div>
@@ -318,26 +327,23 @@ const PaymentCheckoutPage: React.FC = () => {
           </div>
 
           {useTapCard && cardMethod ? (
-            <TapCardFrame
-              amount={amount}
-              method={cardMethod}
-              isRtl={isRtl}
-              onReady={() => setCardReady(true)}
-              onToken={(tokenId) => void onTapToken(tokenId)}
-              onError={(message) => {
-                setCardError(message);
-                setPaying(false);
-                if (/key not found/i.test(message)) {
-                  toast.message(
-                    isRtl ? 'جاري فتح صفحة الدفع الآمنة...' : 'Opening the secure payment page...',
-                    { id: 'gateway-pay' }
-                  );
-                  void payOnHostedPage();
-                  return;
-                }
-                toast.error(message, { id: 'gateway-pay' });
-              }}
-            />
+            <div className="space-y-2">
+              <p className="text-sm font-bold text-slate-800">
+                {isRtl ? 'بيانات البطاقة' : 'Card details'}
+              </p>
+              <TapCardFrame
+                amount={amount}
+                method={cardMethod}
+                isRtl={isRtl}
+                onReady={() => setCardReady(true)}
+                onToken={(tokenId) => void onTapToken(tokenId)}
+                onUnavailable={() => openHostedCheckout()}
+                onError={(message) => {
+                  setPaying(false);
+                  toast.error(message, { id: 'gateway-pay' });
+                }}
+              />
+            </div>
           ) : (
             <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
               {isRtl
@@ -348,22 +354,24 @@ const PaymentCheckoutPage: React.FC = () => {
 
           <button
             type="button"
-            disabled={paying || amount <= 0 || (useTapCard && !cardReady && !cardError)}
-            onClick={() => void (useTapCard && !cardError ? payWithTapCard() : useTapCard ? payOnHostedPage() : confirmPayment())}
-            className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+            disabled={paying || amount <= 0 || (useTapCard && !cardReady && !useHostedCheckout)}
+            onClick={() =>
+              void (useTapCard && cardReady
+                ? payWithTapCard()
+                : useTapCard
+                  ? payOnHostedPage()
+                  : confirmPayment())
+            }
+            className="w-full min-h-12 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-60"
           >
             <CheckCircle2 size={18} />
             {paying
               ? isRtl
                 ? 'جاري الدفع...'
                 : 'Processing…'
-              : cardError
-                ? isRtl
-                  ? 'المتابعة في صفحة تاب'
-                  : 'Continue on Tap checkout'
               : isRtl
-                ? 'ادفع الآن وأكّد الطلب'
-                : 'Pay now & confirm order'}
+                ? 'ادفع الآن'
+                : 'Pay Now'}
           </button>
 
           <button

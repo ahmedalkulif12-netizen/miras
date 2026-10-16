@@ -4,8 +4,8 @@ import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 
 const TAP_CARD_SDK_URL = 'https://tap-sdks.b-cdn.net/card/1.0.2/index.js';
 const CARD_MOUNT_ID = 'tap-card-frame';
-/** SDK hardcodes the card iframe at 95px, which hides the MM/YY and CVV row. */
-const CARD_FRAME_HEIGHT_PX = 320;
+/** One row of card number + MM/YY + CVV, plus the brand line. Grows if Tap reports a taller form. */
+const CARD_FRAME_MIN_PX = 168;
 
 type TapCardSdk = {
   renderTapCard: (
@@ -52,24 +52,52 @@ function loadTapCardScript(): Promise<void> {
   });
 }
 
-/** Keep the Tap iframe tall enough that expiry (MM/YY) and CVV are not clipped. */
-function expandTapCardFrame(root: HTMLElement | null) {
+function expandTapCardFrame(root: HTMLElement | null, heightPx: number) {
   if (!root) return;
+  const height = `${heightPx}px`;
   root.style.overflow = 'visible';
-  root.style.minHeight = `${CARD_FRAME_HEIGHT_PX}px`;
+  root.style.minHeight = height;
   root.querySelectorAll('iframe').forEach((frame) => {
-    if (frame.style.height === `${CARD_FRAME_HEIGHT_PX}px` && frame.style.minHeight === `${CARD_FRAME_HEIGHT_PX}px`) {
-      return;
-    }
+    if (frame.style.height === height && frame.style.minHeight === height) return;
     frame.style.display = 'block';
     frame.style.width = '100%';
-    frame.style.minHeight = `${CARD_FRAME_HEIGHT_PX}px`;
-    frame.style.height = `${CARD_FRAME_HEIGHT_PX}px`;
+    frame.style.minHeight = height;
+    frame.style.height = height;
     frame.style.maxHeight = 'none';
     frame.style.overflow = 'visible';
     frame.style.border = '0';
-    frame.setAttribute('height', String(CARD_FRAME_HEIGHT_PX));
+    frame.setAttribute('height', String(heightPx));
   });
+}
+
+/** Tap's onError / postMessage payloads nest the real reason under errors[0]. */
+export function readTapCardError(data: unknown): string {
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (!data || typeof data !== 'object') return 'Card form error';
+  const record = data as {
+    description?: string;
+    message?: string;
+    code?: string;
+    errors?: { description?: string; code?: string; message?: string }[];
+    data?: { errors?: { description?: string; code?: string; message?: string }[] };
+  };
+  const nested = record.errors?.[0] || record.data?.errors?.[0];
+  const text =
+    nested?.description ||
+    nested?.message ||
+    record.description ||
+    record.message ||
+    '';
+  const code = nested?.code || record.code || '';
+  if (text && code) return `${text} (${code})`;
+  return text || (code ? `Card form error (${code})` : 'Card form error');
+}
+
+/** Init failures. Field mistakes after the form is ready are not fatal. */
+export function isFatalTapCardError(message: string): boolean {
+  return /key not found|invalid api key|2104|1224|7017|merchant public key|not configured|card script failed|could not load card form|card form error/i.test(
+    message
+  );
 }
 
 export function TapCardFrame({
@@ -79,6 +107,7 @@ export function TapCardFrame({
   onToken,
   onError,
   onReady,
+  onUnavailable,
 }: {
   amount: number;
   method: TapCardMethod;
@@ -86,36 +115,67 @@ export function TapCardFrame({
   onToken: (tokenId: string) => void;
   onError: (message: string) => void;
   onReady?: () => void;
+  /** Card element could not mount. Parent opens Tap's hosted checkout. */
+  onUnavailable?: (message: string) => void;
 }) {
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [frameHeight, setFrameHeight] = useState(CARD_FRAME_MIN_PX);
+  const frameHeightRef = useRef(CARD_FRAME_MIN_PX);
   const onTokenRef = useRef(onToken);
   const onErrorRef = useRef(onError);
   const onReadyRef = useRef(onReady);
+  const onUnavailableRef = useRef(onUnavailable);
+  const readyRef = useRef(false);
+  const fatalReportedRef = useRef(false);
   onTokenRef.current = onToken;
   onErrorRef.current = onError;
   onReadyRef.current = onReady;
+  onUnavailableRef.current = onUnavailable;
+  readyRef.current = ready;
+  frameHeightRef.current = frameHeight;
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (!String(event.origin).includes('tap.company')) return;
       const payload = event.data as {
         event?: string;
-        data?: { errors?: { description?: string }[] };
+        data?: { height?: number; errors?: { description?: string; code?: string }[] };
       };
-      if (payload?.event !== 'error') return;
-      const description = payload.data?.errors?.[0]?.description || 'Card form error';
-      onErrorRef.current(description);
+      if (payload?.event === 'dimension') {
+        const reported = Number(payload.data?.height || 0);
+        if (reported >= 80) {
+          setFrameHeight(Math.max(CARD_FRAME_MIN_PX, Math.min(reported + 36, 420)));
+        }
+        return;
+      }
+      if (payload?.event !== 'error' || readyRef.current) return;
+      reportCardProblem(readTapCardError(payload.data || payload));
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  const reportCardProblem = (message: string) => {
+    console.error('[tap-card]', message);
+    if (!readyRef.current && isFatalTapCardError(message)) {
+      if (fatalReportedRef.current) return;
+      fatalReportedRef.current = true;
+      if (onUnavailableRef.current) {
+        setLoadError('');
+        onUnavailableRef.current(message);
+        return;
+      }
+    }
+    setLoadError(message);
+    onErrorRef.current(message);
+  };
+
   useEffect(() => {
     const root = document.getElementById(CARD_MOUNT_ID);
-    expandTapCardFrame(root);
+    expandTapCardFrame(root, frameHeight);
     if (!root) return;
-    const observer = new MutationObserver(() => expandTapCardFrame(root));
+    const observer = new MutationObserver(() => expandTapCardFrame(root, frameHeight));
     observer.observe(root, {
       childList: true,
       subtree: true,
@@ -123,7 +183,7 @@ export function TapCardFrame({
       attributeFilter: ['style', 'height'],
     });
     return () => observer.disconnect();
-  }, [ready]);
+  }, [frameHeight, ready]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,8 +200,6 @@ export function TapCardFrame({
         const sdk = window.CardSDK;
         if (!sdk || cancelled) return;
 
-        const brands =
-          method === 'mada' ? ['MADA'] : ['VISA', 'MASTERCARD'];
         const mounted = sdk.renderTapCard(CARD_MOUNT_ID, {
           publicKey: config.publicKey,
           ...(config.merchantId ? { merchant: { id: config.merchantId } } : {}),
@@ -150,11 +208,11 @@ export function TapCardFrame({
             currency: sdk.Currencies.SAR,
           },
           acceptance: {
-            supportedBrands: brands,
+            supportedBrands: ['MADA', 'VISA', 'MASTERCARD'],
             supportedCards: 'ALL',
           },
           fields: {
-            cardHolder: true,
+            cardHolder: false,
             expiry: true,
             cvv: true,
           },
@@ -171,16 +229,13 @@ export function TapCardFrame({
             direction: sdk.Direction.LTR,
           },
           onReady: () => {
+            readyRef.current = true;
             if (!cancelled) setReady(true);
-            expandTapCardFrame(document.getElementById(CARD_MOUNT_ID));
+            expandTapCardFrame(document.getElementById(CARD_MOUNT_ID), frameHeightRef.current);
             onReadyRef.current?.();
           },
-          onError: (data: { message?: string; description?: string } | string) => {
-            const message =
-              typeof data === 'string'
-                ? data
-                : data?.description || data?.message || 'Card form error';
-            onErrorRef.current(message);
+          onError: (data: unknown) => {
+            reportCardProblem(readTapCardError(data));
           },
           onSuccess: (data: { id?: string }) => {
             const tokenId = String(data?.id || '');
@@ -188,12 +243,12 @@ export function TapCardFrame({
           },
         });
         unmountCard = mounted?.unmount;
-        expandTapCardFrame(document.getElementById(CARD_MOUNT_ID));
+        expandTapCardFrame(document.getElementById(CARD_MOUNT_ID), frameHeightRef.current);
       } catch (error) {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : 'Could not load card form';
-        setLoadError(message);
-        onErrorRef.current(message);
+        reportCardProblem(
+          error instanceof Error ? error.message : 'Could not load card form'
+        );
       }
     }
 
@@ -214,7 +269,7 @@ export function TapCardFrame({
         #${CARD_MOUNT_ID},
         #${CARD_MOUNT_ID} > div {
           width: 100%;
-          min-height: ${CARD_FRAME_HEIGHT_PX}px;
+          min-height: ${frameHeight}px;
           height: auto;
           overflow: visible;
           direction: ltr;
@@ -222,8 +277,8 @@ export function TapCardFrame({
         #${CARD_MOUNT_ID} iframe {
           display: block !important;
           width: 100% !important;
-          min-height: ${CARD_FRAME_HEIGHT_PX}px !important;
-          height: ${CARD_FRAME_HEIGHT_PX}px !important;
+          min-height: ${frameHeight}px !important;
+          height: ${frameHeight}px !important;
           max-height: none !important;
           overflow: visible !important;
           border: 0 !important;
