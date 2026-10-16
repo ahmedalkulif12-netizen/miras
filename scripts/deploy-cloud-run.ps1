@@ -19,6 +19,7 @@ param(
   [string]$DeployEnv = "staging",
   [string]$TapSecretKey = $env:TAP_SECRET_KEY,
   [string]$TapPublicKey = $env:TAP_PUBLIC_KEY,
+  [string]$TapMerchantId = $(if ($env:TAP_MERCHANT_ID) { $env:TAP_MERCHANT_ID } else { "68064946" }),
   [string]$AppCheckEnforce = "false"
 )
 
@@ -77,7 +78,7 @@ gcloud run deploy $ServiceName `
   --cpu=1 `
   --min-instances=0 `
   --max-instances=10 `
-  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,TAP_SECRET_KEY=$TapSecretKey,TAP_PUBLIC_KEY=$TapPublicKey"
+  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,TAP_MERCHANT_ID=$TapMerchantId,TAP_SECRET_KEY=$TapSecretKey,TAP_PUBLIC_KEY=$TapPublicKey"
 
 $url = gcloud run services describe $ServiceName --project=$ProjectId --region=$Region --format="value(status.url)"
 Write-Host ""
