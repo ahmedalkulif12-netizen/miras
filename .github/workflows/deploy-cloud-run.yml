@@ -8,13 +8,13 @@ name: Deploy Cloud Run API
 # Optional JSON fallback: GCP_SA_KEY or FIREBASE_SERVICE_ACCOUNT.
 #
 # Optional (keep existing Cloud Run values when omitted):
-#   TAP_SECRET_KEY             — sk_test_* while MIRAS_DEPLOY_ENV=staging
-#   TAP_PUBLIC_KEY             — pk_test_* while MIRAS_DEPLOY_ENV=staging
+#   TAP_SECRET_KEY             — sk_live_* when MIRAS_DEPLOY_ENV=production; sk_test_* on staging
+#   TAP_PUBLIC_KEY             — pk_live_* when MIRAS_DEPLOY_ENV=production; pk_test_* on staging
 #
 # Optional repository / environment variables:
 #   MIRAS_DEPLOY_ENV           — staging (default) or production
 #   CLOUD_RUN_APP_URL          — https://hamula-cfc6c.web.app
-#   APP_CHECK_ENFORCE          — false (default)
+#   APP_CHECK_ENFORCE          — must be true when MIRAS_DEPLOY_ENV=production
 
 on:
   push:
