@@ -193,6 +193,16 @@ async function startServer() {
         const paymentData = payload?.data ?? payload;
         const id = paymentData?.id;
         const status = String(paymentData?.status || '');
+        const tapResponse = (paymentData?.response || {}) as Record<string, unknown>;
+        console.info(
+          '[payments] tap webhook',
+          JSON.stringify({
+            chargeId: id,
+            status,
+            responseCode: tapResponse.code || null,
+            responseMessage: tapResponse.message || null,
+          })
+        );
 
         if (!id || !status) {
           return res.status(400).json({ error: 'Invalid webhook payload' });
@@ -451,7 +461,22 @@ async function startServer() {
       const uid = req.firebaseUid!;
       let resolvedDraftId = draftId;
 
-      if (returnStatus && ['failed', 'voided', 'cancelled', 'canceled', 'abandoned', 'declined'].includes(returnStatus.toLowerCase())) {
+      console.info(
+        '[payments] return landing',
+        JSON.stringify({
+          draftId: draftId || null,
+          chargeId: tapChargeId || null,
+          queryStatus: returnStatus || null,
+        })
+      );
+
+      if (
+        returnStatus &&
+        !tapChargeId &&
+        ['failed', 'voided', 'cancelled', 'canceled', 'abandoned', 'declined'].includes(
+          returnStatus.toLowerCase()
+        )
+      ) {
         return res.json({
           success: false,
           orderId: orderId || draftId,

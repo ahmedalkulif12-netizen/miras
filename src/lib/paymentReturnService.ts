@@ -188,7 +188,7 @@ export async function verifyPaymentReturn(params: {
   const status = (params.status || '').toLowerCase();
   const draftId = params.draftId || params.orderId || '';
 
-  if (status && FAILED_PAYMENT_STATUSES.has(status)) {
+  if (status && FAILED_PAYMENT_STATUSES.has(status) && !params.tapChargeId) {
     return {
       success: false,
       orderId: draftId,

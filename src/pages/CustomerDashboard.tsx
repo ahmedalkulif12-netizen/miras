@@ -521,7 +521,16 @@ const CustomerDashboard: React.FC = () => {
     const onOrders = /\/orders\/?$/.test(location.pathname);
 
     if (params.get('payment') === 'failed') {
-      toast.error(isRtl ? 'فشل الدفع. يمكنك المحاولة مرة أخرى.' : 'Payment failed. You can try again.');
+      const reason = params.get('reason');
+      toast.error(
+        reason
+          ? isRtl
+            ? `فشل الدفع: ${reason}`
+            : `Payment failed: ${reason}`
+          : isRtl
+            ? 'فشل الدفع. يمكنك المحاولة مرة أخرى.'
+            : 'Payment failed. You can try again.'
+      );
       if (!onOrders) setStep('payment');
       return;
     }

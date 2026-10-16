@@ -50,32 +50,11 @@ const PaymentCallbackPage: React.FC = () => {
         searchParams.get('tapChargeId') ||
         searchParams.get('id');
       const status = searchParams.get('status');
-      const failedStatuses = new Set([
-        'failed',
-        'voided',
-        'cancelled',
-        'canceled',
-        'abandoned',
-        'declined',
-      ]);
 
       if (!draftId && !legacyOrderId && !tapChargeId) {
         if (!cancelled) {
           setState('error');
           setMessage(isRtl ? 'لم يتم العثور على جلسة الدفع' : 'Checkout session not found');
-          setTimeout(
-            () => navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true }),
-            1800
-          );
-        }
-        return;
-      }
-
-      if (status && failedStatuses.has(status.toLowerCase())) {
-        clearPendingCheckoutDraftId();
-        if (!cancelled) {
-          setState('error');
-          setMessage(isRtl ? 'فشل الدفع أو تم إلغاؤه' : 'Payment failed or was cancelled');
           setTimeout(
             () => navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true }),
             1800
@@ -103,7 +82,14 @@ const PaymentCallbackPage: React.FC = () => {
               (isRtl ? 'فشل التحقق من الدفع' : 'Payment was not completed')
           );
           setTimeout(
-            () => navigate(buildClientOrdersPath({ payment: 'failed' }), { replace: true }),
+            () =>
+              navigate(
+                buildClientOrdersPath({
+                  payment: 'failed',
+                  reason: result.message,
+                }),
+                { replace: true }
+              ),
             1800
           );
           return;
@@ -131,6 +117,14 @@ const PaymentCallbackPage: React.FC = () => {
           tapChargeId === 'demo' ||
           (tapChargeId?.startsWith('demo-') ?? false) ||
           (error instanceof Error && error.message === 'DEV_BYPASS_NO_FIREBASE_SESSION');
+        const failedStatuses = new Set([
+          'failed',
+          'voided',
+          'cancelled',
+          'canceled',
+          'abandoned',
+          'declined',
+        ]);
         if (allowsSandboxCheckout() && isDemo && status && !failedStatuses.has(status.toLowerCase())) {
           try {
             await promoteSharedOrderToBroadcasting(id);

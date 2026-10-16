@@ -27,6 +27,32 @@ export function isPaidTapStatus(status: unknown): boolean {
   return PAID_STATUSES.has(String(status || '').toLowerCase());
 }
 
+/** Tap response codes 000 and 001 are Captured and Authorized. */
+export function tapChargeOutcome(charge: Record<string, unknown> | null): {
+  status: string;
+  responseCode: string;
+  responseMessage: string;
+  paid: boolean;
+} {
+  const response = (charge?.response || {}) as Record<string, unknown>;
+  const status = String(charge?.status || '').toLowerCase();
+  const responseCode = String(response.code || '');
+  const responseMessage = String(response.message || '');
+  const paid = isPaidTapStatus(status) || responseCode === '000' || responseCode === '001';
+  return { status, responseCode, responseMessage, paid };
+}
+
+export function formatTapChargeLog(chargeId: string, outcome: ReturnType<typeof tapChargeOutcome>, found: boolean) {
+  return {
+    chargeId,
+    found,
+    status: outcome.status || null,
+    responseCode: outcome.responseCode || null,
+    responseMessage: outcome.responseMessage || null,
+    paid: outcome.paid,
+  };
+}
+
 export function isFailedTapStatus(status: unknown): boolean {
   return FAILED_STATUSES.has(String(status || '').toLowerCase());
 }

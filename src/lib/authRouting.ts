@@ -19,10 +19,13 @@ export const CLIENT_ORDERS_PATH = '/b2c/client/orders';
 export function buildClientOrdersPath(opts?: {
   placed?: string;
   payment?: 'success' | 'failed';
+  reason?: string;
 }): string {
   const params = new URLSearchParams();
   if (opts?.placed) params.set('placed', opts.placed);
   if (opts?.payment) params.set('payment', opts.payment);
+  const reason = String(opts?.reason || '').trim().slice(0, 160);
+  if (reason) params.set('reason', reason);
   const query = params.toString();
   return query ? `${CLIENT_ORDERS_PATH}?${query}` : CLIENT_ORDERS_PATH;
 }

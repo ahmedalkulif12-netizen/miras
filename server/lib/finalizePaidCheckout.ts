@@ -1,9 +1,11 @@
 import admin from 'firebase-admin';
 import { finalizeOrderFromCheckoutDraft } from './checkoutDraft.ts';
 import {
+  formatTapChargeLog,
   isPaidTapStatus,
   isTapTestSecret,
   retrieveTapCharge,
+  tapChargeOutcome,
 } from './tapPayments.ts';
 
 export { isTapTestSecret };
@@ -35,9 +37,34 @@ export async function finalizePaidCheckoutReturn(
   message?: string;
 }> {
   const testMode = isTapTestSecret(input.tapSecretKey);
-  const remote = await retrieveTapCharge(input.tapSecretKey, input.tapChargeId);
-  const remoteStatus = remote ? String(remote.status || '').toLowerCase() : null;
-  const paidOk = isPaidTapStatus(remoteStatus);
+  let remote = await retrieveTapCharge(input.tapSecretKey, input.tapChargeId);
+  let outcome = tapChargeOutcome(remote);
+  console.info(
+    '[payments] tap return',
+    JSON.stringify({
+      ...formatTapChargeLog(input.tapChargeId, outcome, Boolean(remote)),
+      queryStatus: input.returnStatus || null,
+      draftId: input.draftId,
+      attempt: 0,
+    })
+  );
+  for (let attempt = 1; attempt <= 4 && remote && !outcome.paid; attempt += 1) {
+    if (!['', 'initiated', 'pending', 'in_progress'].includes(outcome.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    remote = await retrieveTapCharge(input.tapSecretKey, input.tapChargeId);
+    outcome = tapChargeOutcome(remote);
+    console.info(
+      '[payments] tap return',
+      JSON.stringify({
+        ...formatTapChargeLog(input.tapChargeId, outcome, Boolean(remote)),
+        queryStatus: input.returnStatus || null,
+        draftId: input.draftId,
+        attempt,
+      })
+    );
+  }
+  const remoteStatus = outcome.status || null;
+  const paidOk = outcome.paid;
 
   if (!paidOk) {
     return {
@@ -47,7 +74,9 @@ export async function finalizePaidCheckoutReturn(
       orderStatus: 'awaiting_payment',
       startTracking: false,
       testMode,
-      message: 'Payment is not authorized yet',
+      message: remoteStatus
+        ? `Tap ${remoteStatus}${outcome.responseCode ? ` (${outcome.responseCode}${outcome.responseMessage ? ` ${outcome.responseMessage}` : ''})` : ''}`
+        : 'Could not read the Tap charge',
     };
   }
 
