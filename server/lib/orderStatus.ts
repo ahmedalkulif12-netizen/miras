@@ -1,5 +1,3 @@
-import admin from 'firebase-admin';
-
 export type OrderActorRole = 'customer' | 'driver' | 'admin' | 'system';
 
 /** Re-export transition rules for server (mirrors src/domain/order-status.ts). */
@@ -111,7 +109,7 @@ export function appendStatusHistory(
   const history = Array.isArray(existing) ? [...existing] : [];
   history.push({
     status: entry.status,
-    at: admin.firestore.FieldValue.serverTimestamp(),
+    at: new Date().toISOString(),
     by: entry.by,
     byRole: entry.byRole,
   });

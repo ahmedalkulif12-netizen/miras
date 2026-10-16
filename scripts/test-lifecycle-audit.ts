@@ -877,6 +877,14 @@ async function run(): Promise<void> {
     'mixed catalog does not collapse to 100% moving'
   );
 
+  const { appendStatusHistory } = await import('../server/lib/orderStatus.ts');
+  const history = appendStatusHistory([], {
+    status: 'broadcasting',
+    by: 'system',
+    byRole: 'system',
+  });
+  assert(typeof history[0]?.at === 'string', 'status history uses an ISO timestamp, not a Firestore sentinel');
+
   const { formatTapAmount, tapChargeOutcome, tapSourceId } = await import('../server/lib/tapPayments.ts');
   assert(tapSourceId('mada') === 'src_card', 'mada hosted checkout uses src_card');
   assert(tapSourceId('creditcard') === 'src_card', 'card hosted checkout uses src_card');

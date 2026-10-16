@@ -272,7 +272,7 @@ export async function createOrderSecure(
     statusHistory: [
       {
         status: 'awaiting_payment',
-        at: now,
+        at: new Date().toISOString(),
         by: userId,
         byRole: 'customer',
       },
