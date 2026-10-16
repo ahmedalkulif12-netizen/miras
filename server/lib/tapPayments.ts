@@ -31,17 +31,14 @@ export function isFailedTapStatus(status: unknown): boolean {
   return FAILED_STATUSES.has(String(status || '').toLowerCase());
 }
 
-/** Hosted-page source for the method the customer picked in checkout. */
+/**
+ * Hosted-page source. Card checkout uses `src_card` so Visa, Mastercard, and
+ * mada test cards can enable Pay Now. `src_sa.mada` hides non-mada cards.
+ * Apple Pay keeps its own source.
+ */
 export function tapSourceId(method: string): string {
-  switch (method) {
-    case 'creditcard':
-      return 'src_card';
-    case 'applepay':
-      return 'src_apple_pay';
-    case 'mada':
-    default:
-      return 'src_sa.mada';
-  }
+  if (method === 'applepay') return 'src_apple_pay';
+  return 'src_card';
 }
 
 export function toStringMetadata(input: Record<string, unknown>): Record<string, string> {
@@ -140,6 +137,8 @@ export interface TapChargeRequest {
   paymentMethod: CheckoutGatewayMethod;
   /** Card SDK token (`tok_...`). When set, the charge uses that card instead of a hosted source. */
   sourceId?: string;
+  /** Tap merchant id. Required for the hosted page to bind the charge to this account. */
+  merchantId?: string;
   customer: {
     firstName: string;
     email?: string;
@@ -180,9 +179,22 @@ export async function createTapCharge(
   secretKey: string,
   input: TapChargeRequest
 ): Promise<TapChargeResult> {
-  const currency = input.currency || 'SAR';
+  const currency = (input.currency || 'SAR').toUpperCase();
+  const amount = Number(formatTapAmount(input.amount, currency));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw Object.assign(new Error('Charge amount must be a positive number'), {
+      statusCode: 400,
+    });
+  }
+  const nameParts = String(input.customer.firstName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const firstName = (nameParts[0] || 'Customer').slice(0, 40);
+  const lastName = (nameParts.slice(1).join(' ') || 'Customer').slice(0, 40);
+  const merchantId = String(input.merchantId || '').trim();
   const payload = {
-    amount: Number(formatTapAmount(input.amount, currency)),
+    amount,
     currency,
     customer_initiated: true,
     threeDSecure: true,
@@ -201,10 +213,12 @@ export async function createTapCharge(
     },
     receipt: { email: false, sms: false },
     customer: {
-      first_name: input.customer.firstName.slice(0, 40) || 'Customer',
+      first_name: firstName,
+      last_name: lastName,
       email: input.customer.email || `customer@miras.app`,
       phone: input.customer.phone,
     },
+    ...(merchantId ? { merchant: { id: merchantId } } : {}),
     source: { id: input.sourceId || tapSourceId(input.paymentMethod) },
     post: { url: input.webhookUrl },
     redirect: { url: input.redirectUrl },

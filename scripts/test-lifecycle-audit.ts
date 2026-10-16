@@ -867,6 +867,13 @@ async function run(): Promise<void> {
     'mixed catalog does not collapse to 100% moving'
   );
 
+  const { formatTapAmount, tapSourceId } = await import('../server/lib/tapPayments.ts');
+  assert(tapSourceId('mada') === 'src_card', 'mada hosted checkout uses src_card');
+  assert(tapSourceId('creditcard') === 'src_card', 'card hosted checkout uses src_card');
+  assert(tapSourceId('applepay') === 'src_apple_pay', 'apple pay keeps its source');
+  assert(formatTapAmount(110, 'SAR') === '110.00', 'SAR charge amount keeps two decimals');
+  assert(Number(formatTapAmount(110, 'SAR')) > 0, 'SAR charge amount is a positive number');
+
   console.log('lifecycle-audit: all checks passed');
 }
 

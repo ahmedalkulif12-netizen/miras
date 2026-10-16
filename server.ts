@@ -1965,6 +1965,7 @@ async function startServer() {
         userId,
         paymentMethod,
         sourceId: tapToken || undefined,
+        merchantId: config.tapMerchantId || undefined,
         customer: {
           firstName: firstName || 'Customer',
           email: email || undefined,
