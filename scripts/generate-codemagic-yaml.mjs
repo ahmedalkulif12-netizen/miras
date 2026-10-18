@@ -157,7 +157,7 @@ workflows:
         XCODE_SCHEME: ${yamlQuote('App')}
         BUNDLE_ID: ${yamlQuote(canon.iosBundleId)}
         DEVELOPMENT_TEAM: ${yamlQuote('4TRJXRYK8A')}
-        IOS_MARKETING_VERSION: ${yamlQuote('1.0.5')}
+        IOS_MARKETING_VERSION: ${yamlQuote('1.0.6')}
         IOS_MIN_BUILD_NUMBER: ${yamlQuote('8')}
         APP_STORE_APPLE_ID: ${yamlQuote(prod.APP_STORE_APPLE_ID || '6807503584')}
         VITE_APP_STORE_APPLE_ID: ${yamlQuote(prod.VITE_APP_STORE_APPLE_ID || prod.APP_STORE_APPLE_ID || '6807503584')}
@@ -275,7 +275,7 @@ workflows:
           if [ "$NEW_BUILD" -lt "\${IOS_MIN_BUILD_NUMBER:-8}" ]; then
             NEW_BUILD="\${IOS_MIN_BUILD_NUMBER:-8}"
           fi
-          MARKETING="\${IOS_MARKETING_VERSION:-1.0.5}"
+          MARKETING="\${IOS_MARKETING_VERSION:-1.0.6}"
           agvtool new-version -all "$NEW_BUILD"
           agvtool new-marketing-version "$MARKETING"
           echo "Using CFBundleShortVersionString=$MARKETING CFBundleVersion=$NEW_BUILD"

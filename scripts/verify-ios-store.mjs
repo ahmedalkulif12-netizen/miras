@@ -74,8 +74,11 @@ async function main() {
   if (!nativeMaps.includes('https://www.google.com/maps/dir/?api=1&destination=')) {
     failures.push('nativeMaps.ts must use the Google Maps dir URL (api=1&destination=)');
   }
-  if (!pbxproj.includes('MARKETING_VERSION = 1.0.5;')) {
-    failures.push('Xcode MARKETING_VERSION must be 1.0.5 for this App Store submission');
+  if (!pbxproj.includes('MARKETING_VERSION = 1.0.6;')) {
+    failures.push('Xcode MARKETING_VERSION must be 1.0.6 for this App Store submission');
+  }
+  if (!infoPlist.includes('<string>1.0.6</string>')) {
+    failures.push('Info.plist CFBundleShortVersionString must be 1.0.6');
   }
   const iosBuild = Number((pbxproj.match(/CURRENT_PROJECT_VERSION = (\d+);/) || [])[1] || 0);
   if (!Number.isFinite(iosBuild) || iosBuild < 8) {
