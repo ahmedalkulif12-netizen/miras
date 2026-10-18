@@ -11,7 +11,8 @@ export type CoreServiceType =
   | 'water_tanker'
   | 'heavy_equipment'
   | 'refrigerated'
-  | 'goods_transport';
+  | 'goods_transport'
+  | 'gas_delivery';
 
 export type FleetServiceOption = {
   id: string;
@@ -29,15 +30,41 @@ export type FleetServiceCategory = {
   options: FleetServiceOption[];
 };
 
-/** Six core services with operator-facing subtype labels. */
+/** Shared body types for cargo and furniture. Each parent service prices them separately. */
+const FREIGHT_VEHICLE_OPTIONS: FleetServiceOption[] = [
+  {
+    id: 'small_van',
+    ar: 'فان صغير / دباب',
+    en: 'Small Van / Pickup',
+    hintAr: 'رينو إكسبريس / دوكر، تويوتا لايت إيس',
+    hintEn: 'Renault Express/Dokker, Toyota LiteAce',
+  },
+  {
+    id: 'hilux',
+    ar: 'وانيت / هايلكس',
+    en: 'Pickup Truck',
+    hintAr: 'هايلكس صندوق مكشوف',
+    hintEn: 'Hilux open bed',
+  },
+  {
+    id: 'closed_van',
+    ar: 'باص نقل بضائع مغلق',
+    en: 'Closed Cargo Van',
+    hintAr: 'تويوتا هايس، نيسان أورفان',
+    hintEn: 'Toyota HiAce, Nissan Urvan',
+  },
+  { id: 'open_dyna', ar: 'دينا شبك / مكشوف', en: 'Open/Cage Dyna Truck' },
+  { id: 'box_dyna', ar: 'دينا صندوق / نقل عفش', en: 'Closed Box Dyna Truck' },
+];
+
+/** Core services with operator-facing subtype labels. */
 export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
   {
     id: 'furniture_moving',
     ar: 'نقل العفش',
     en: 'Moving',
     options: [
-      { id: 'small_truck', ar: 'دباب (فان صغير)', en: 'Small Van (Dabbab)' },
-      { id: 'medium_truck', ar: 'دينا', en: 'Medium Dyna' },
+      ...FREIGHT_VEHICLE_OPTIONS,
       { id: 'large_truck', ar: 'تريلا', en: 'Large Trailer' },
     ],
   },
@@ -46,8 +73,8 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
     ar: 'السطحات',
     en: 'Towing & Flatbeds',
     options: [
-      { id: 'normal', ar: 'سطحة عادية', en: 'Normal Flatbed' },
       { id: 'hydraulic', ar: 'سطحة هيدروليك', en: 'Hydraulic Flatbed' },
+      { id: 'normal', ar: 'سطحة عادي', en: 'Standard Flatbed' },
       { id: 'box', ar: 'سطحة بوكس', en: 'Box Flatbed' },
     ],
   },
@@ -56,7 +83,9 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
     ar: 'صهاريج المياه',
     en: 'Water Tankers',
     options: [
-      { id: '1000L', ar: '1,000 لتر', en: '1,000L' },
+      { id: '300L', ar: 'خزان 300 لتر', en: '300L Tank' },
+      { id: '500L', ar: 'خزان 500 لتر', en: '500L Tank' },
+      { id: '1000L', ar: 'خزان 1000 لتر', en: '1000L Tank' },
       { id: '3000L', ar: '3,000 لتر', en: '3,000L' },
       { id: '5000L', ar: '5,000 لتر', en: '5,000L' },
       { id: '7000L', ar: '7,000 لتر', en: '7,000L' },
@@ -97,6 +126,7 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
     ar: 'النقل المبرد',
     en: 'Refrigerated Transport',
     options: [
+      { id: 'refrigerated_van', ar: 'دينا / فان مبرّد', en: 'Refrigerated Truck / Van' },
       { id: 'chilled', ar: 'تبريد خفيف', en: 'Light Cooling' },
       { id: 'cold_normal', ar: 'تبريد عادي', en: 'Normal Cooling' },
       {
@@ -111,9 +141,17 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
     ar: 'نقل البضائع',
     en: 'Cargo & Goods Transport',
     options: [
-      { id: 'van', ar: 'فان صغير', en: 'Small Van' },
-      { id: 'dyna', ar: 'دينا', en: 'Medium Dyna' },
+      ...FREIGHT_VEHICLE_OPTIONS,
       { id: 'trailer', ar: 'تريلا', en: 'Large Trailer' },
+    ],
+  },
+  {
+    id: 'gas_delivery',
+    ar: 'توصيل أسطوانات الغاز للمنازل',
+    en: 'Home Gas Cylinder Delivery',
+    options: [
+      { id: 'cylinder_swap', ar: 'استبدال أسطوانة', en: 'Gas Cylinder Swap' },
+      { id: 'new_cylinder', ar: 'شراء أسطوانة جديدة', en: 'New Cylinder Purchase' },
     ],
   },
 ];

@@ -10,6 +10,7 @@ const CORE_SERVICE_TYPES = new Set([
   'heavy_equipment',
   'goods_transport',
   'water_tanker',
+  'gas_delivery',
 ]);
 
 const SERVICE_ALIASES: Record<string, string> = {
@@ -38,12 +39,19 @@ const SERVICE_ALIASES: Record<string, string> = {
   light_equip: 'heavy_equipment',
   medium_equip: 'heavy_equipment',
   heavy_equip: 'heavy_equipment',
+  '300l': 'water_tanker',
+  '500l': 'water_tanker',
   '1000l': 'water_tanker',
   '3000l': 'water_tanker',
   '5000l': 'water_tanker',
   '7000l': 'water_tanker',
   '10000l': 'water_tanker',
   '12000l': 'water_tanker',
+  gas: 'gas_delivery',
+  gas_cylinder: 'gas_delivery',
+  refrigerated_van: 'refrigerated',
+  cylinder_swap: 'gas_delivery',
+  new_cylinder: 'gas_delivery',
 };
 
 export function canonicalizeServiceType(

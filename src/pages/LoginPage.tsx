@@ -1116,6 +1116,7 @@ const LoginPage: React.FC<{
                             <option value="heavy_equipment">{isRtl ? 'معدات ثقيلة' : 'Heavy Equipment'}</option>
                             <option value="refrigerated">{isRtl ? 'نقل مبرد' : 'Refrigerated'}</option>
                             <option value="goods_transport">{isRtl ? 'نقل بضائع' : 'Cargo Transport'}</option>
+                            <option value="gas_delivery">{isRtl ? 'توصيل أسطوانات الغاز' : 'Gas Cylinder Delivery'}</option>
                           </select>
                         </div>
                         <div className="space-y-2">

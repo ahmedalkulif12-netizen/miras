@@ -19,5 +19,5 @@ export function isDeliveryOnlyOrder(order: {
 }): boolean {
   if (order.deliveryOnly === true) return true;
   if (order.locationMode === 'delivery_only') return true;
-  return isWaterTankerService(order.serviceType);
+  return isWaterTankerService(order.serviceType) || canonicalizeServiceType(order.serviceType) === 'gas_delivery';
 }

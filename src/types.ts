@@ -12,6 +12,7 @@ export type LogisticsServiceType =
   | 'heavy_equipment' // نقل معدات ثقيلة
   | 'refrigerated' // نقل مبرد
   | 'goods_transport' // نقل بضائع
+  | 'gas_delivery' // توصيل أسطوانات الغاز
 
 export interface ServiceDetail {
   label: string;

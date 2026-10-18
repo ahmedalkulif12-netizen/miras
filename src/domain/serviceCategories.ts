@@ -18,6 +18,7 @@ export const CORE_SERVICE_TYPES = [
   'heavy_equipment',
   'goods_transport',
   'water_tanker',
+  'gas_delivery',
 ] as const;
 
 export type CoreServiceType = (typeof CORE_SERVICE_TYPES)[number];
@@ -65,12 +66,21 @@ const SERVICE_ALIASES: Record<string, CoreServiceType> = {
   light_equip: 'heavy_equipment',
   medium_equip: 'heavy_equipment',
   heavy_equip: 'heavy_equipment',
+  '300l': 'water_tanker',
+  '500l': 'water_tanker',
   '1000l': 'water_tanker',
   '3000l': 'water_tanker',
   '5000l': 'water_tanker',
   '7000l': 'water_tanker',
   '10000l': 'water_tanker',
   '12000l': 'water_tanker',
+  gas: 'gas_delivery',
+  gas_cylinder: 'gas_delivery',
+  refrigerated_van: 'refrigerated',
+  cylinder_swap: 'gas_delivery',
+  new_cylinder: 'gas_delivery',
+  'توصيل الغاز': 'gas_delivery',
+  'توصيل أسطوانات الغاز': 'gas_delivery',
 };
 
 /**
@@ -161,6 +171,15 @@ const SERVICE_OPTION_LISTS: Record<CoreServiceType, readonly string[]> = {
   heavy_equipment: SERVICE_OPTIONS.heavy_equipment,
   goods_transport: SERVICE_OPTIONS.goods_transport,
   water_tanker: SERVICE_OPTIONS.water_tanker,
+  gas_delivery: SERVICE_OPTIONS.gas_delivery,
+};
+
+/** Older freight keys still match the closest vehicle the customer can book. */
+const LEGACY_OPTION_ALIASES: Record<string, string> = {
+  van: 'small_van',
+  smalltruck: 'small_van',
+  dyna: 'open_dyna',
+  mediumtruck: 'open_dyna',
 };
 
 function optionToken(raw: unknown): string {
@@ -180,7 +199,8 @@ export function normalizeServiceOption(
   const token = optionToken(raw);
   if (!token) return null;
   const list = SERVICE_OPTION_LISTS[service];
-  return list.find((item) => optionToken(item) === token) || null;
+  const aliased = optionToken(LEGACY_OPTION_ALIASES[token] || token);
+  return list.find((item) => optionToken(item) === aliased) || null;
 }
 
 type OrderOptionSource = {
@@ -285,6 +305,14 @@ const VEHICLE_OPTION_KEYS = new Set([
   'light_equip',
   'medium_equip',
   'heavy_equip',
+  'small_van',
+  'hilux',
+  'closed_van',
+  'open_dyna',
+  'box_dyna',
+  'refrigerated_van',
+  'cylinder_swap',
+  'new_cylinder',
 ]);
 
 function mapServiceName(raw: unknown): CoreServiceType | null {

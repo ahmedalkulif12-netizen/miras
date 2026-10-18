@@ -90,6 +90,7 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
         {
           ...defaultPricingForService(serviceId),
           tier_prices: tierPrices,
+          delivery_fee: Number(config.delivery_fee) || 0,
           customer_service_fee_percentage: Number(config.customer_service_fee_percentage) || 5,
           platform_commission_percentage: Number(config.platform_commission_percentage) || 15,
           driver_commission_tiers: copyTiers(config),
@@ -135,8 +136,18 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                 <thead>
                   <tr className="text-[10px] uppercase tracking-widest text-gray-400">
                     <th className="py-2 text-start">{isRtl ? 'الخيار' : 'Option'}</th>
-                    <th className="py-2 text-start">{isRtl ? 'السعر الأساسي' : 'Base price'}</th>
-                    <th className="py-2 text-start">{isRtl ? 'لكل كم' : 'Per km'}</th>
+                    <th className="py-2 text-start">
+                      {service.id === 'gas_delivery'
+                        ? isRtl
+                          ? 'أجرة الخدمة'
+                          : 'Service fare'
+                        : isRtl
+                          ? 'السعر الأساسي'
+                          : 'Base price'}
+                    </th>
+                    {service.id !== 'gas_delivery' && (
+                      <th className="py-2 text-start">{isRtl ? 'لكل كم' : 'Per km'}</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -144,7 +155,14 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                     const rate = config.tier_prices?.[option.id] || { base_price: 0, price_per_km: 0 };
                     return (
                       <tr key={option.id} className="border-t border-gray-50">
-                        <td className="py-3 font-bold">{isRtl ? option.ar : option.en}</td>
+                        <td className="py-3 font-bold">
+                          <span className="block">{isRtl ? option.ar : option.en}</span>
+                          {(isRtl ? option.hintAr : option.hintEn) && (
+                            <span className="block text-[11px] font-medium text-gray-400">
+                              {isRtl ? option.hintAr : option.hintEn}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3">
                           <input
                             type="number"
@@ -155,22 +173,45 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                             className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
                           />
                         </td>
-                        <td className="py-3">
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            value={rate.price_per_km}
-                            onChange={(event) => patchTier(service.id, option.id, 'price_per_km', event.target.value)}
-                            className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
-                          />
-                        </td>
+                        {service.id !== 'gas_delivery' && (
+                          <td className="py-3">
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              value={rate.price_per_km}
+                              onChange={(event) => patchTier(service.id, option.id, 'price_per_km', event.target.value)}
+                              className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
+                            />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             </div>
+            {service.id === 'gas_delivery' && (
+              <label className="text-xs font-bold text-gray-400 space-y-1 block max-w-xs">
+                {isRtl ? 'رسوم التوصيل' : 'Delivery fee'}
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={config.delivery_fee ?? 0}
+                  onChange={(event) =>
+                    setConfigs((prev) => ({
+                      ...prev,
+                      [service.id]: {
+                        ...config,
+                        delivery_fee: Number(event.target.value) || 0,
+                      },
+                    }))
+                  }
+                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black"
+                />
+              </label>
+            )}
             <div className="grid sm:grid-cols-2 gap-4">
               <label className="text-xs font-bold text-gray-400 space-y-1">
                 {isRtl ? 'رسوم العميل %' : 'Customer fee %'}

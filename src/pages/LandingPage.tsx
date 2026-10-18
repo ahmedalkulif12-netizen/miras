@@ -199,6 +199,12 @@ const LandingPage: React.FC = () => {
               description={t('service_distribution_desc')}
               isRtl={isRtl}
             />
+            <ServiceCard
+              icon={React.createElement(getServiceIcon('gas_delivery'), { className: 'w-10 h-10 text-primary' })}
+              title={t('service_gas_title')}
+              description={t('service_gas_desc')}
+              isRtl={isRtl}
+            />
           </div>
         </div>
       </section>

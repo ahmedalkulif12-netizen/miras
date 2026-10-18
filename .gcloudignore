@@ -28,6 +28,9 @@ firebase-applet-config.json
 **/*.jks
 **/*.keystore
 **/keystore.properties
+*.aab
+*.pdf
+store/play-console/
 agent-transcripts
 terminals
 canvases

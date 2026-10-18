@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="JZ Logistics">
+  <circle cx="64" cy="64" r="64" fill="#FFCC00"/>
+  <path fill="#000000" d="M22 36h28v11H39v16c0 9-6 15-15 15h-1v-11h2c2.2 0 3.2-1.2 3.2-3.2V47H22V36z"/>
+  <path fill="#000000" d="M58 36h46v12H78.5L104 78v14H58V80h25.5L58 48V36z"/>
+</svg>

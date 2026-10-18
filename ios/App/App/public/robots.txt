@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hamula-cfc6c.web.app/sitemap.xml

@@ -24,6 +24,7 @@ const VEHICLE_TYPES = [
   { id: 'heavy_equipment', ar: 'معدات ثقيلة', en: 'Heavy Equipment' },
   { id: 'refrigerated', ar: 'نقل مبرد', en: 'Refrigerated' },
   { id: 'goods_transport', ar: 'نقل بضائع', en: 'Cargo Transport' },
+  { id: 'gas_delivery', ar: 'توصيل أسطوانات الغاز', en: 'Gas Cylinder Delivery' },
 ] as const;
 
 function optionsForVehicleType(vehicleType: string): string[] {

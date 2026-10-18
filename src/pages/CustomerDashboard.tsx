@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/DashboardLayout';
-import { MapPin, Navigation, Clock, CreditCard, ChevronLeft, Truck, Package, Droplets, Container, ShieldCheck, CheckCircle2, Navigation2, Search, ArrowRight, Share2, Info, AlertCircle, History, Wallet } from 'lucide-react';
+import { MapPin, Navigation, Clock, CreditCard, ChevronLeft, Truck, Package, Droplets, Container, ShieldCheck, CheckCircle2, Navigation2, Search, ArrowRight, Share2, Info, AlertCircle, History, Wallet, Flame } from 'lucide-react';
 import { Order, LogisticsServiceType } from '@/types';
 import { fetchPricing, PricingConfig, db, ensureFirebaseReady, auth, waitForFirebaseAuthUid } from '@/lib/firebase';
 import { calculateOrderPrice } from '@/lib/pricing';
@@ -76,6 +76,7 @@ import {
   waterTankerExtraKm,
 } from '@/lib/waterTankerDistance';
 import {
+  FRESH_WATER_TANK_CAPACITIES,
   WATER_SERVICE_TYPES,
   WATER_TANKER_CAPACITIES,
   type WaterServiceType,
@@ -91,20 +92,21 @@ import {
   resolveDispatchWindow,
 } from '@/domain/dispatchMatching';
 import { isWaterTankerService } from '@/domain/waterTanker';
+import { getFleetOptions } from '@/lib/fleetServiceCatalog';
 import { buildClientOrdersPath } from '@/lib/authRouting';
 
 /** Water tanker is delivery-only (GPS = dropoff). All other services use GPS as pickup. */
 function isDeliveryOnlyService(service: LogisticsServiceType): boolean {
-  return isWaterTankerService(service);
+  return isWaterTankerService(service) || service === 'gas_delivery';
 }
 
-const services = (t: any) => [
+const services = (t: any, isRtl: boolean) => [
   { 
     id: 'furniture_moving', 
     label: t('furniture_moving'), 
     icon: <Package size={20} />,
     details: {
-      label: t('furniture_size') || 'Furniture Size'
+      label: isRtl ? 'نوع المركبة' : 'Vehicle type'
     }
   },
   { 
@@ -136,7 +138,7 @@ const services = (t: any) => [
     label: t('refrigerated'), 
     icon: <ShieldCheck size={20} />,
     details: {
-      label: t('cooling_type') || 'Cooling Type'
+      label: isRtl ? 'نوع المركبة / التبريد' : 'Vehicle or cooling type'
     }
   },
   { 
@@ -144,8 +146,16 @@ const services = (t: any) => [
     label: t('cargo') || 'Cargo Transport', 
     icon: <Package size={20} />, 
     details: { 
-      label: t('cargo_type') || 'Cargo Type'
+      label: isRtl ? 'نوع المركبة' : 'Vehicle type'
     } 
+  },
+  {
+    id: 'gas_delivery',
+    label: t('gas_delivery'),
+    icon: <Flame size={20} />,
+    details: {
+      label: isRtl ? 'نوع الطلب' : 'Order type'
+    }
   },
 ];
 
@@ -155,13 +165,13 @@ const CustomerDashboard: React.FC = () => {
   const isRtl = i18n.language === 'ar';
   const location = useLocation();
   const navigate = useNavigate();
-  const serviceList = services(t);
+  const serviceList = services(t, isRtl);
   const [step, setStep] = useState<'booking' | 'payment' | 'tracking' | 'rating'>('booking');
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState('');
   const [serviceType, setServiceType] = useState<LogisticsServiceType>('furniture_moving');
   const [serviceOption, setServiceOption] = useState<string>('');
-  const [waterType, setWaterType] = useState<WaterServiceType | ''>('');
+  const [waterType, setWaterType] = useState<WaterServiceType | ''>('fresh');
   const [goodsType, setGoodsType] = useState('');
   const [truckCount, setTruckCount] = useState(1);
   const [furnitureDescription, setFurnitureDescription] = useState('');
@@ -1365,6 +1375,8 @@ const CustomerDashboard: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                   setWaterType(wt);
+                                  setServiceOption('');
+                                  setTankCapacityLabel('');
                                   setIsCalculated(false);
                                 }}
                                 className={`px-4 py-2 rounded-xl border text-sm transition-all ${
@@ -1379,9 +1391,18 @@ const CustomerDashboard: React.FC = () => {
                           </div>
                         </div>
                         <div className="space-y-3">
-                          <p className="text-sm font-bold text-gray-500">{t('water_capacity')}</p>
+                          <p className="text-sm font-bold text-gray-500">
+                            {!waterType || waterType === 'fresh'
+                              ? isRtl
+                                ? 'تعبئة المياه العذبة بحسب حجم الخزان'
+                                : 'Fresh water by tank size'
+                              : t('water_capacity')}
+                          </p>
                           <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            {WATER_TANKER_CAPACITIES.map((cap) => (
+                            {(!waterType || waterType === 'fresh'
+                              ? FRESH_WATER_TANK_CAPACITIES
+                              : WATER_TANKER_CAPACITIES.filter((cap) => !FRESH_WATER_TANK_CAPACITIES.includes(cap as (typeof FRESH_WATER_TANK_CAPACITIES)[number]))
+                            ).map((cap) => (
                               <button
                                 key={cap}
                                 type="button"
@@ -1410,7 +1431,10 @@ const CustomerDashboard: React.FC = () => {
                         <p className="text-sm font-bold text-gray-500">{(serviceList.find(s => s.id === serviceType) as any)?.details?.label}</p>
                         
                         <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                          {((SERVICE_OPTIONS as any)[SERVICE_KEY_MAP[serviceType] || serviceType] || (serviceList.find(s => s.id === serviceType) as any)?.details?.options)?.map((opt: string) => (
+                          {((SERVICE_OPTIONS as any)[SERVICE_KEY_MAP[serviceType] || serviceType] || (serviceList.find(s => s.id === serviceType) as any)?.details?.options)?.map((opt: string) => {
+                            const fleetOpt = getFleetOptions(serviceType).find((row) => row.id === opt);
+                            const hint = fleetOpt ? (isRtl ? fleetOpt.hintAr : fleetOpt.hintEn) : '';
+                            return (
                             <button
                               key={opt}
                               onClick={() => {
@@ -1422,11 +1446,13 @@ const CustomerDashboard: React.FC = () => {
                                   );
                                 }
                               }}
-                              className={`px-4 py-2 rounded-xl border text-sm transition-all ${serviceOption === opt ? 'bg-black text-white border-black font-bold' : 'border-gray-200 hover:border-black font-medium'}`}
+                              className={`px-4 py-2 rounded-xl border text-sm transition-all text-center ${serviceOption === opt ? 'bg-black text-white border-black font-bold' : 'border-gray-200 hover:border-black font-medium'}`}
                             >
-                              {t(OPTION_LABELS[opt] || opt)}
+                              <span className="block">{t(OPTION_LABELS[opt] || opt)}</span>
+                              {hint ? <span className="block text-[10px] font-normal opacity-70">{hint}</span> : null}
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                         {serviceType === 'furniture_moving' && (
                           <div className={`p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2 text-[10px] text-blue-700 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>

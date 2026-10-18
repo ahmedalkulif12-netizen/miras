@@ -1,6 +1,6 @@
 /**
  * Water-tanker distance helpers.
- * Tank capacity (1000L–12000L) must NEVER enter kilometer math.
+ * Tank capacity (300L–12000L) must NEVER enter kilometer math.
  */
 
 import {

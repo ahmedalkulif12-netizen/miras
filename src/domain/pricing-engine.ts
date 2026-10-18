@@ -40,6 +40,8 @@ export interface PricingConfigInput {
   surge_multiplier?: number;
   capacity_prices?: Record<string, number>;
   tier_prices?: Record<string, { base_price: number; price_per_km: number }>;
+  /** Flat fee added to gas-cylinder service fare. */
+  delivery_fee?: number;
 }
 
 export interface ComputeTripFareParams {
@@ -128,9 +130,17 @@ export function computeTripFare(
         ? pricing.free_km
         : INCLUDED_KM;
 
-  const extraKm = Math.max(0, Math.round((safeDistance - includedKm) * 10) / 10);
-  const extraKmCost = Math.round(extraKm * rate * 100) / 100;
+  let extraKm = Math.max(0, Math.round((safeDistance - includedKm) * 10) / 10);
+  let extraKmCost = Math.round(extraKm * rate * 100) / 100;
   let tripFare = Math.round((base + extraKmCost) * 100) / 100;
+
+  if (service === 'gas_delivery') {
+    const deliveryFee = Math.max(0, Number(pricing.delivery_fee) || 0);
+    extraKm = 0;
+    rate = 0;
+    extraKmCost = deliveryFee;
+    tripFare = Math.round((base + deliveryFee) * 100) / 100;
+  }
 
   // Optional multi-truck for cargo only (operational), applied after base formula.
   if ((service === 'goods_transport' || serviceType === 'cargo') && truckCount > 1) {

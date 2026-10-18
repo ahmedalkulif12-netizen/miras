@@ -36,6 +36,8 @@ export interface PricingConfig {
   platform_commission_percentage: number;
   /** Customer checkout fee, percent of trip fare. Firestore may override 5. */
   customer_service_fee_percentage?: number;
+  /** Flat delivery fee added to gas-cylinder fares. Other services leave this at 0. */
+  delivery_fee?: number;
   /**
    * Driver commission by completed-order count.
    * When missing, the 0-order band uses platform_commission_percentage.
@@ -62,19 +64,27 @@ export const WATER_TANKER_INCLUDED_KM = INCLUDED_KM;
 export const SERVICE_TIER_PRICES: Record<string, Record<string, TierRate>> = {
   // Service 1 — Moving (نقل العفش)
   furniture_moving: {
-    small_truck: { base_price: 80, price_per_km: 1.0 }, // دباب
-    medium_truck: { base_price: 350, price_per_km: 1.0 }, // دينا
-    large_truck: { base_price: 750, price_per_km: 2.0 }, // تريلا
+    small_van: { base_price: 80, price_per_km: 1.0 },
+    hilux: { base_price: 110, price_per_km: 1.0 },
+    closed_van: { base_price: 140, price_per_km: 1.2 },
+    open_dyna: { base_price: 200, price_per_km: 1.5 },
+    box_dyna: { base_price: 350, price_per_km: 1.0 },
+    large_truck: { base_price: 750, price_per_km: 2.0 },
+    // Legacy keys stay priced so older registrations still quote.
+    small_truck: { base_price: 80, price_per_km: 1.0 },
+    medium_truck: { base_price: 350, price_per_km: 1.0 },
   },
   // Service 2 — Towing & Flatbeds (السطحات)
   flatbed: {
-    normal: { base_price: 110, price_per_km: 0.75 }, // سطحة عادية
-    hydraulic: { base_price: 150, price_per_km: 1.0 }, // هيدروليك
-    box: { base_price: 200, price_per_km: 1.5 }, // بوكس
+    normal: { base_price: 110, price_per_km: 0.75 }, // سطحة عادي
+    hydraulic: { base_price: 150, price_per_km: 1.0 }, // سطحة هيدروليك
+    box: { base_price: 200, price_per_km: 1.5 }, // سطحة بوكس
   },
-  // Service 3 — Water Tankers (صهاريج المياه) — capacity tiers (type multiplier applied separately)
+  // Service 3 — Water. Household fresh tanks are a fixed fare (per-km 0).
   water_tanker: {
-    '1000L': { base_price: 80, price_per_km: 0.75 },
+    '300L': { base_price: 25, price_per_km: 0 },
+    '500L': { base_price: 35, price_per_km: 0 },
+    '1000L': { base_price: 80, price_per_km: 0 },
     '3000L': { base_price: 120, price_per_km: 1.2 },
     '5000L': { base_price: 200, price_per_km: 2.0 },
     '7000L': { base_price: 260, price_per_km: 2.5 },
@@ -89,28 +99,51 @@ export const SERVICE_TIER_PRICES: Record<string, Record<string, TierRate>> = {
   },
   // Service 5 — Refrigerated Transport (النقل المبرد)
   refrigerated: {
+    refrigerated_van: { base_price: 400, price_per_km: 1.5 },
     chilled: { base_price: 300, price_per_km: 1.0 }, // تبريد خفيف
     cold_normal: { base_price: 400, price_per_km: 1.5 }, // تبريد عادي
     frozen: { base_price: 550, price_per_km: 2.0 }, // تجميد
   },
   // Service 6 — Cargo & Goods Transport (نقل البضائع)
   goods_transport: {
-    van: { base_price: 80, price_per_km: 1.0 }, // فان
-    dyna: { base_price: 200, price_per_km: 1.5 }, // دينا
-    trailer: { base_price: 750, price_per_km: 2.0 }, // تريلا
+    small_van: { base_price: 80, price_per_km: 1.0 },
+    hilux: { base_price: 110, price_per_km: 1.0 },
+    closed_van: { base_price: 140, price_per_km: 1.2 },
+    open_dyna: { base_price: 200, price_per_km: 1.5 },
+    box_dyna: { base_price: 280, price_per_km: 1.5 },
+    trailer: { base_price: 750, price_per_km: 2.0 },
+    van: { base_price: 80, price_per_km: 1.0 },
+    dyna: { base_price: 200, price_per_km: 1.5 },
+  },
+  // Home gas cylinders. Base is the cylinder fare; delivery_fee is added on top.
+  gas_delivery: {
+    cylinder_swap: { base_price: 20, price_per_km: 0 },
+    new_cylinder: { base_price: 80, price_per_km: 0 },
   },
 };
 
+/** Flat home-delivery fee for gas cylinders. Admin can change it on /admin/pricing. */
+export const GAS_DELIVERY_FEE = 15;
+
 /** Default tier key when the customer has not picked an option yet. */
 export const DEFAULT_TIER_BY_SERVICE: Record<string, string> = {
-  furniture_moving: 'small_truck',
+  furniture_moving: 'small_van',
   flatbed: 'normal',
   water_tanker: '1000L',
   heavy_equipment: 'light_equip',
-  refrigerated: 'chilled',
-  goods_transport: 'van',
+  refrigerated: 'refrigerated_van',
+  goods_transport: 'small_van',
+  gas_delivery: 'cylinder_swap',
   cold: 'chilled',
-  cargo: 'van',
+  cargo: 'small_van',
+};
+
+/** Older booking keys that still quote as the closest current vehicle. */
+const LEGACY_TIER_ALIASES: Record<string, string> = {
+  van: 'small_van',
+  small_truck: 'small_van',
+  dyna: 'open_dyna',
+  medium_truck: 'open_dyna',
 };
 
 /** Capacity → base only (legacy helpers). Prefer resolveTierRate. */
@@ -143,6 +176,7 @@ export const PRICING_DOC_FALLBACKS: Record<string, string[]> = {
   refrigerated: ['refrigerated', 'default'],
   water_tanker: ['water_tanker', 'default'],
   goods_transport: ['goods_transport', 'default'],
+  gas_delivery: ['gas_delivery', 'default'],
   flatbed: ['flatbed', 'default'],
 };
 
@@ -154,6 +188,7 @@ export const PRICING_SEED_SERVICES = [
   'heavy_equipment',
   'refrigerated',
   'goods_transport',
+  'gas_delivery',
   'default',
 ] as const;
 
@@ -167,14 +202,14 @@ export function pricingDocCandidates(serviceType: string): string[] {
 export function normalizeWaterTankerCapacity(raw: string | null | undefined): string {
   if (!raw) return '1000L';
   const digits = String(raw).replace(/\D/g, '');
-  const allowed = new Set(['1000', '3000', '5000', '7000', '10000', '12000']);
+  const allowed = new Set(['300', '500', '1000', '3000', '5000', '7000', '10000', '12000']);
   if (allowed.has(digits)) {
     return `${digits}L`;
   }
   const trimmed = String(raw).trim().toUpperCase();
   if (trimmed in SERVICE_TIER_PRICES.water_tanker) return trimmed;
   // Composite keys like fresh_3000L
-  const match = trimmed.match(/(1000|3000|5000|7000|10000|12000)L?$/);
+  const match = trimmed.match(/(12000|10000|7000|5000|3000|1000|500|300)L?$/);
   if (match) return `${match[1]}L`;
   return '1000L';
 }
@@ -194,6 +229,7 @@ export function normalizeServiceType(serviceType: string): string {
   if (serviceType === 'furniture_transport') return 'furniture_moving';
   if (serviceType === 'towing') return 'flatbed';
   if (serviceType === 'tanker' || serviceType === 'water') return 'water_tanker';
+  if (serviceType === 'gas' || serviceType === 'gas_cylinder') return 'gas_delivery';
   return serviceType;
 }
 
@@ -216,6 +252,8 @@ export function resolveTierKey(
 
   const raw = (option || fallbacks.truckType || '').trim();
   if (raw && raw in tiers) return raw;
+  const aliased = LEGACY_TIER_ALIASES[raw];
+  if (aliased && aliased in tiers) return aliased;
 
   // Flatbed: box is a distinct tier; hydraulic/normal map directly.
   if (service === 'flatbed' && fallbacks.truckType) {
@@ -300,6 +338,7 @@ function configFromTiers(serviceType: string): PricingConfig {
     driver_commission_tiers: DEFAULT_DRIVER_COMMISSION_TIERS.map((tier) => ({ ...tier })),
     tier_prices: { ...tiers },
     capacity_prices: capacityPrices,
+    delivery_fee: service === 'gas_delivery' ? GAS_DELIVERY_FEE : 0,
   };
 }
 
@@ -329,8 +368,14 @@ export function mergePricingConfig(
     ...row,
     included_km: included,
     free_km: INCLUDED_KM,
-    tier_prices: row.tier_prices || defaults.tier_prices || {},
-    capacity_prices: row.capacity_prices || defaults.capacity_prices || {},
+    tier_prices: {
+      ...(defaults.tier_prices || {}),
+      ...(row.tier_prices || {}),
+    },
+    capacity_prices: {
+      ...(defaults.capacity_prices || {}),
+      ...(row.capacity_prices || {}),
+    },
     customer_service_fee_percentage: resolveCustomerServiceFeePercentage({
       customer_service_fee_percentage:
         row.customer_service_fee_percentage ?? defaults.customer_service_fee_percentage,
@@ -346,6 +391,10 @@ export function mergePricingConfig(
     heavy_multiplier: 1,
     cold_multiplier: 1,
     hydraulic_multiplier: 1,
+    delivery_fee:
+      typeof row.delivery_fee === 'number' && Number.isFinite(row.delivery_fee)
+        ? row.delivery_fee
+        : defaults.delivery_fee ?? 0,
   };
 }
 

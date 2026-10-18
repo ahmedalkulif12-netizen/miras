@@ -11,8 +11,18 @@ export const WATER_SERVICE_TYPES: readonly WaterServiceType[] = [
   'sewage',
 ] as const;
 
+/**
+ * Household fresh-water tanks. Fixed base prices live in pricing defaults
+ * and stay editable on `/admin/pricing`.
+ */
+export const FRESH_WATER_TANK_CAPACITIES = ['300L', '500L', '1000L'] as const;
+
+export type FreshWaterTankCapacity = (typeof FRESH_WATER_TANK_CAPACITIES)[number];
+
 /** Capacities offered in the booking UI (liters). */
 export const WATER_TANKER_CAPACITIES = [
+  '300L',
+  '500L',
   '1000L',
   '3000L',
   '5000L',
@@ -67,7 +77,7 @@ export function waterTypeMultiplier(raw: string | null | undefined): number {
 
 /** Liter integers that must never be treated as km in distance math. */
 export const WATER_CAPACITY_LITER_VALUES: readonly number[] = [
-  1000, 3000, 5000, 7000, 10000, 12000,
+  300, 500, 1000, 3000, 5000, 7000, 10000, 12000,
 ];
 
 export function formatWaterOrderSummary(

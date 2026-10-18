@@ -1,0 +1,25 @@
+{
+  "name": "JZ Logistics",
+  "short_name": "JZ Logistics",
+  "description": "JZ Logistics — منصة الخدمات اللوجستية والنقل",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "ar",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/jz-app-icon.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    },
+    {
+      "src": "/jz-app-icon.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "maskable"
+    }
+  ]
+}

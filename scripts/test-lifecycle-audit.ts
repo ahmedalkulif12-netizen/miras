@@ -88,8 +88,11 @@ import {
 import {
   CORE_SERVICE_TYPES,
   aggregateServiceDistribution,
+  driverMatchesOrderService,
   resolveStoredOrderServiceType,
 } from '../src/domain/serviceCategories.ts';
+import { computeTripFare } from '../src/domain/pricing-engine.ts';
+import { defaultPricingForService } from '../src/lib/pricingDefaults.ts';
 
 const store = new Map<string, string>();
 const memoryStorage = {
@@ -643,22 +646,39 @@ async function run(): Promise<void> {
   assert(charged.platformFee === 45, 'driver commission is 15% of trip fare');
   assert(charged.driverNet === 255, 'driver net matches waived and charged trips');
 
-  assert(SERVICE_TIER_PRICES.furniture_moving.small_truck.base_price === 80, 'dabbab base is 80 SAR');
-  assert(SERVICE_TIER_PRICES.furniture_moving.small_truck.price_per_km === 1, 'dabbab extra km stays 1 SAR');
+  assert(SERVICE_TIER_PRICES.furniture_moving.small_van.base_price === 80, 'small van base is 80 SAR');
+  assert(SERVICE_TIER_PRICES.furniture_moving.small_van.price_per_km === 1, 'small van extra km stays 1 SAR');
+  assert(SERVICE_TIER_PRICES.furniture_moving.small_truck.base_price === 80, 'legacy dabbab base stays 80 SAR');
   assert(SERVICE_TIER_PRICES.furniture_moving.large_truck.price_per_km === 2, 'furniture trailer extra km is 2 SAR');
-  assert(SERVICE_TIER_PRICES.goods_transport.van.price_per_km === 1, 'cargo van extra km is 1 SAR');
+  assert(SERVICE_TIER_PRICES.goods_transport.small_van.price_per_km === 1, 'cargo small van extra km is 1 SAR');
+  assert(SERVICE_TIER_PRICES.goods_transport.van.price_per_km === 1, 'legacy cargo van extra km is 1 SAR');
+  assert(SERVICE_OPTIONS.goods_transport.includes('hilux'), 'cargo selection includes the Hilux');
+  assert(SERVICE_OPTIONS.goods_transport.includes('box_dyna'), 'cargo selection includes the closed box dyna');
+  assert(SERVICE_OPTIONS.furniture_moving.includes('box_dyna'), 'moving selection includes the furniture box dyna');
+  assert(SERVICE_OPTIONS.refrigerated.includes('refrigerated_van'), 'refrigerated selection includes the cooled van');
   assert(
-    Object.keys(SERVICE_TIER_PRICES.goods_transport).join(',') === 'van,dyna,trailer',
-    'cargo pricing keeps van, dyna, and trailer'
+    SERVICE_OPTIONS.gas_delivery.join(',') === 'cylinder_swap,new_cylinder',
+    'gas delivery offers a swap and a new cylinder'
   );
+  assert(SERVICE_TIER_PRICES.gas_delivery.cylinder_swap.base_price === 20, 'cylinder swap fare is 20 SAR');
+  assert(SERVICE_TIER_PRICES.gas_delivery.new_cylinder.base_price === 80, 'new cylinder fare is 80 SAR');
   assert(
     !('cement_mixer' in SERVICE_TIER_PRICES.goods_transport),
     'cement mixer is not a priced cargo option'
   );
   assert(
-    SERVICE_OPTIONS.goods_transport.join(',') === 'van,dyna,trailer',
-    'cargo selection lists three options'
+    driverMatchesOrderService(
+      { vehicleType: 'goods_transport', vehicleOption: 'van' },
+      { serviceType: 'goods_transport', serviceDetails: { type: 'small_van' } }
+    ),
+    'a legacy van registration still matches a small van cargo order'
   );
+  const gasFare = computeTripFare(defaultPricingForService('gas_delivery'), {
+    distance: 40,
+    serviceType: 'gas_delivery',
+    option: 'cylinder_swap',
+  });
+  assert(gasFare.tripFare === 35, 'gas swap fare is the cylinder price plus the delivery fee');
   const cooldown = payoutBlockedUntil('2026-10-01T00:00:00.000Z', 14, new Date('2026-10-10T00:00:00.000Z'));
   assert(cooldown?.toISOString().startsWith('2026-10-15'), '14-day payout cooldown lands on the 15th');
   assert(
@@ -982,8 +1002,9 @@ async function run(): Promise<void> {
   assert(byType.refrigerated === 1, 'refrigerated is counted');
   assert(byType.goods_transport === 1, 'cargo alias counts as goods_transport');
   assert(byType.heavy_equipment === 1, 'heavy equipment is counted');
+  assert(byType.gas_delivery === 0, 'gas delivery stays in the catalog when it has no orders');
   assert(
-    dist.every((row) => row.percentage > 0),
+    dist.filter((row) => row.count > 0).every((row) => row.percentage > 0),
     'mixed catalog does not collapse to 100% moving'
   );
 

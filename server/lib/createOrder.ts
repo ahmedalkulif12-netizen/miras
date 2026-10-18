@@ -93,7 +93,7 @@ export function validateCreateOrderPayload(body: CreateOrderPayload): void {
   if (!canonical) {
     throw Object.assign(
       new Error(
-        'serviceType must be one of: furniture_moving, flatbed, refrigerated, heavy_equipment, goods_transport, water_tanker'
+        'serviceType must be one of: furniture_moving, flatbed, refrigerated, heavy_equipment, goods_transport, water_tanker, gas_delivery'
       ),
       { statusCode: 400 }
     );
@@ -110,11 +110,14 @@ export function validateCreateOrderPayload(body: CreateOrderPayload): void {
   // Water tanker: customer only provides drop-off (موقع التنزيل). Pickup is the
   // nearest tanker origin when known; otherwise we synthesize from drop-off so
   // the document schema stays consistent without requiring a "from" address.
-  if (canonical === 'water_tanker') {
+  if (canonical === 'water_tanker' || canonical === 'gas_delivery') {
     body.deliveryOnly = true;
     body.locationMode = 'delivery_only';
     if (!body.pickupAddress?.trim() || body.pickupAddress.trim().length < 3) {
-      body.pickupAddress = 'صهريج مملوء — يتوجه لموقع التنزيل';
+      body.pickupAddress =
+        canonical === 'gas_delivery'
+          ? 'توصيل أسطوانة غاز — يتوجه لموقع المنزل'
+          : 'صهريج مملوء — يتوجه لموقع التنزيل';
     }
     if (!isValidCoord(body.pickupLat, body.pickupLng)) {
       body.pickupLat = body.dropoffLat;
