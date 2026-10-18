@@ -2,18 +2,19 @@ import React, { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import ProfileAvatar from '@/components/ProfileAvatar';
 import { useAuth } from '@/hooks/useAuth';
-import { User, Phone, Save, ShieldCheck, Truck } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { User, Phone, Save, ShieldCheck, Truck, LogOut } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ServiceFeedbackForm } from '@/components/ServiceFeedbackForm';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { OPTION_LABELS } from '@/constants';
-import { isDriverRole } from '@/domain/user-schema';
+import { isAdminRole, isDriverRole } from '@/domain/user-schema';
 
 const ProfilePage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language === 'ar';
-  const { profile, updateProfile } = useAuth();
+  const { profile, updateProfile, logout } = useAuth();
+  const navigate = useNavigate();
   const [name, setName] = useState(profile?.name || '');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -153,6 +154,22 @@ const ProfilePage: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {isAdminRole(profile?.role) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void logout().then(() => {
+                    navigate('/', { replace: true });
+                    toast.success(isRtl ? 'تم تسجيل الخروج بنجاح' : 'Logout successful');
+                  });
+                }}
+                className="w-full py-5 bg-white text-black border-2 border-black rounded-[32px] font-black text-xl hover:bg-stone-50 transition-all flex items-center justify-center gap-3"
+              >
+                <LogOut size={24} />
+                {isRtl ? 'تسجيل الخروج' : 'Log out'}
+              </button>
+            ) : null}
 
             <button
               type="button"

@@ -9,10 +9,9 @@ export const SERVICE_OPTIONS = {
   water_tanker: ['1000L', '3000L', '5000L', '7000L', '10000L', '12000L'],
   heavy_equipment: ['light_equip', 'medium_equip', 'heavy_equip'],
   cold: ['chilled', 'cold_normal', 'frozen'],
-  // Small van → medium dyna → large trailer + specialty cargo
-  cargo: ['van', 'dyna', 'trailer', 'cement_mixer', 'brick_transporter'],
-  // Canonical alias (same options as cargo)
-  goods_transport: ['van', 'dyna', 'trailer', 'cement_mixer', 'brick_transporter'],
+  // Small van, medium dyna, large trailer.
+  cargo: ['van', 'dyna', 'trailer'],
+  goods_transport: ['van', 'dyna', 'trailer'],
   refrigerated: ['chilled', 'cold_normal', 'frozen'],
 };
 

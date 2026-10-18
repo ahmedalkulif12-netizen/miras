@@ -584,17 +584,105 @@ async function startServer() {
       if (!(rating >= 1 && rating <= 5)) {
         return res.status(400).json({ error: 'Rating must be from 1 to 5', code: 'RATING_REQUIRED' });
       }
-      await db.collection('feedback').add({
-        uid,
-        rating,
-        comment,
-        orderId,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      let driverId: string | null = null;
+      if (orderId) {
+        const orderSnap = await db.collection('orders').doc(orderId).get();
+        if (orderSnap.exists) {
+          const order = orderSnap.data() as Record<string, unknown>;
+          const owner = String(order.userId || order.customerId || '');
+          if (owner === uid) {
+            const assigned = String(order.driverId || '').trim();
+            driverId = assigned || null;
+          }
+        }
+      }
+      const feedbackRef = db.collection('feedback').doc();
+      await db.runTransaction(async (tx) => {
+        let ratingCount = 0;
+        let ratingSum = 0;
+        const driverRef = driverId ? db.collection('drivers').doc(driverId) : null;
+        if (driverRef) {
+          const driverSnap = await tx.get(driverRef);
+          const driver = driverSnap.exists
+            ? (driverSnap.data() as Record<string, unknown>)
+            : {};
+          ratingCount = Number(driver.ratingCount) || 0;
+          ratingSum = Number(driver.ratingSum) || 0;
+        }
+        tx.set(feedbackRef, {
+          uid,
+          rating,
+          comment,
+          orderId,
+          ...(driverId ? { driverId } : {}),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        if (driverRef && driverId) {
+          const nextCount = ratingCount + 1;
+          const nextSum = ratingSum + rating;
+          tx.set(
+            driverRef,
+            {
+              ratingCount: nextCount,
+              ratingSum: nextSum,
+              ratingAverage: Math.round((nextSum / nextCount) * 10) / 10,
+            },
+            { merge: true }
+          );
+        }
       });
       return res.status(201).json({ ok: true });
     } catch (error: any) {
       console.error('[feedback] save failed:', error?.code, error?.message || error);
       return res.status(500).json({ error: 'Failed to save feedback', code: 'FEEDBACK_FAILED' });
+    }
+  });
+
+  app.get('/api/driver/ratings', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const uid = req.firebaseUid;
+      if (!uid) return res.status(401).json({ error: 'Not authenticated' });
+      const [driverSnap, feedbackSnap] = await Promise.all([
+        db.collection('drivers').doc(uid).get(),
+        db.collection('feedback').where('driverId', '==', uid).limit(40).get(),
+      ]);
+      const driver = driverSnap.exists ? (driverSnap.data() as Record<string, unknown>) : {};
+      const reviews = feedbackSnap.docs
+        .map((row) => {
+          const data = row.data() as Record<string, unknown>;
+          const created = data.createdAt;
+          let createdAt: string | null = null;
+          if (created && typeof created === 'object' && 'toDate' in created) {
+            try {
+              createdAt = (created as { toDate: () => Date }).toDate().toISOString();
+            } catch {
+              createdAt = null;
+            }
+          } else if (typeof created === 'string') {
+            createdAt = created;
+          }
+          return {
+            id: row.id,
+            rating: Number(data.rating) || 0,
+            comment: String(data.comment || ''),
+            createdAt,
+          };
+        })
+        .filter((row) => row.rating >= 1)
+        .sort((a, b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''));
+      const storedCount = Number(driver.ratingCount) || 0;
+      const storedAverage = Number(driver.ratingAverage);
+      const count = Math.max(storedCount, reviews.length);
+      const average =
+        count > 0 && Number.isFinite(storedAverage) && storedAverage > 0
+          ? storedAverage
+          : reviews.length
+            ? Math.round((reviews.reduce((sum, row) => sum + row.rating, 0) / reviews.length) * 10) / 10
+            : null;
+      return res.json({ average, count, reviews });
+    } catch (error: any) {
+      console.error('[ratings] load failed:', error?.code, error?.message || error);
+      return res.status(500).json({ error: 'Failed to load ratings' });
     }
   });
 

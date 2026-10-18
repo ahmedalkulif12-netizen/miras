@@ -8,6 +8,10 @@ import {
   creditWalletForCompletedTrip,
   readOrderTripMoney,
 } from './driverWallet.ts';
+import {
+  driverCompletedCountFields,
+  resolveOrderDriverCommission,
+} from './driverCommission.ts';
 
 export interface CompleteOrderInput {
   orderId: string;
@@ -71,8 +75,8 @@ export async function executeCompleteOrder(
       });
     }
 
-    const money = readOrderTripMoney(order);
-    if (money.tripFare <= 0 && money.driverNet <= 0) {
+    const quoted = readOrderTripMoney(order);
+    if (quoted.tripFare <= 0 && quoted.driverNet <= 0) {
       throw Object.assign(new Error('Order has no financials to credit'), {
         statusCode: 400,
       });
@@ -118,8 +122,25 @@ export async function executeCompleteOrder(
       byRole: 'driver',
     });
 
+    const walletData = walletSnap.exists
+      ? (walletSnap.data() as Record<string, unknown>)
+      : null;
+    const loyalty = await resolveOrderDriverCommission(
+      db,
+      tx,
+      order,
+      driverId,
+      walletData
+    );
+    const money = {
+      tripFare: loyalty.financials.tripFare,
+      platformFee: loyalty.financials.platformFee,
+      driverNet: loyalty.financials.driverNet,
+    };
+
     const now = admin.firestore.FieldValue.serverTimestamp();
     tx.update(orderRef, {
+      ...(alreadyCredited ? {} : loyalty.moneyFields),
       status: OrderStatus.COMPLETED,
       driverId,
       walletCredited: true,
@@ -127,6 +148,17 @@ export async function executeCompleteOrder(
       statusHistory,
       updatedAt: now,
     });
+
+    if (!alreadyCredited) {
+      tx.set(
+        db.collection('drivers').doc(driverId),
+        {
+          ...driverCompletedCountFields(loyalty.completedOrdersCount + 1),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
 
     const wallet = alreadyCredited
       ? {

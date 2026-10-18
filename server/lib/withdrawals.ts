@@ -1,4 +1,9 @@
 import admin from 'firebase-admin';
+import {
+  formatPayoutCooldownNotice,
+  normalizePayoutIntervalDays,
+  payoutBlockedUntil,
+} from '../../src/domain/payoutPolicy.ts';
 import { recordWalletPayoutPaid } from './driverWallet.ts';
 
 export type WithdrawalStatus = 'pending' | 'paid' | 'rejected';
@@ -232,15 +237,34 @@ export async function createWithdrawalRequest(
 
   const withdrawalRef = db.collection('withdrawals').doc();
   const walletRef = db.collection('wallets').doc(driverId);
+  const driverRef = db.collection('drivers').doc(driverId);
+  const settingsRef = db.collection('settings').doc('payouts');
 
   const result = await db.runTransaction(async (tx) => {
-    const walletSnap = await tx.get(walletRef);
+    const [walletSnap, driverTxSnap, settingsSnap] = await Promise.all([
+      tx.get(walletRef),
+      tx.get(driverRef),
+      tx.get(settingsRef),
+    ]);
     const balance = walletSnap.exists
       ? roundMoney(Number((walletSnap.data() as { balance?: number }).balance) || 0)
       : 0;
 
     if (amount > balance) {
       throw httpError('Insufficient wallet balance', 400);
+    }
+
+    const intervalDays = normalizePayoutIntervalDays(
+      settingsSnap.exists
+        ? (settingsSnap.data() as { payoutIntervalDays?: unknown }).payoutIntervalDays
+        : undefined
+    );
+    const driverTx = driverTxSnap.exists
+      ? (driverTxSnap.data() as Record<string, unknown>)
+      : {};
+    const blockedUntil = payoutBlockedUntil(driverTx.lastPayoutRequestAt, intervalDays);
+    if (blockedUntil) {
+      throw httpError(formatPayoutCooldownNotice(intervalDays, blockedUntil, false), 429);
     }
 
     // Block duplicate pending requests for the same driver (simple guard)
@@ -269,6 +293,14 @@ export async function createWithdrawalRequest(
     };
 
     tx.set(withdrawalRef, doc);
+    tx.set(
+      driverRef,
+      {
+        lastPayoutRequestAt: new Date().toISOString(),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
 
     if (!walletSnap.exists) {
       tx.set(walletRef, {

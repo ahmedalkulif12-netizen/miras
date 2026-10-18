@@ -33,7 +33,7 @@
                 <data android:scheme="@string/custom_url_scheme" />
             </intent-filter>
 
-            <!-- App Links: Moyasar HTTPS return → com.miras.app -->
+            <!-- App Links: Tap HTTPS return → com.miras.app -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

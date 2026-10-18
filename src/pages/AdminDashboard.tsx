@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Routes, Route, useLocation, Navigate, Link } from 'react-router-dom';
 import DashboardLayout from '@/components/DashboardLayout';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Users, Truck, Package, DollarSign, Search, Filter, Download, MoreHorizontal, ShieldAlert, UserX, UserCheck, AlertTriangle, TrendingUp, PieChart as PieChartIcon, X, Eye, FileText, CheckCircle2, ShieldOff } from 'lucide-react';
+import { Users, Truck, Package, DollarSign, MoreHorizontal, ShieldAlert, UserX, UserCheck, AlertTriangle, TrendingUp, PieChart as PieChartIcon, X, Eye, FileText, CheckCircle2, ShieldOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { motion, AnimatePresence } from 'motion/react';
 import { DriverAccountStatus } from '@/types';
 import { normalizeOrderStatus } from '@/domain/order-status';
@@ -34,6 +35,9 @@ import {
 import AdminCorporateContractsPanel from '@/components/admin/AdminCorporateContractsPanel';
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
+import { AdminPricingPanel } from '@/components/admin/AdminPricingPanel';
+import { AdminPayoutSchedule } from '@/components/admin/AdminPayoutSchedule';
+import { AdminDriverApprovals } from '@/components/admin/AdminDriverApprovals';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
 import { AdminUserAvatar } from '@/components/AdminUserAvatar';
 import { isReviewQueueDriverStatus } from '@/domain/driver-review';
@@ -74,6 +78,25 @@ interface Driver {
 }
 
 const EMPTY_DOC: AdminDriverDocumentMeta = { status: 'not_uploaded', expiresAt: null };
+
+function isSyntheticAdminFeed(order: { id: string; userId?: string; customerName?: string | null }): boolean {
+  const id = String(order.id || '').toLowerCase().replace(/^driver:/, '');
+  const userId = String(order.userId || '').toLowerCase();
+  const name = String(order.customerName || '').trim();
+  if (
+    id.startsWith('demo-') ||
+    id.startsWith('dev-') ||
+    id.startsWith('e2e-') ||
+    id.startsWith('test-') ||
+    userId.startsWith('demo-') ||
+    userId.startsWith('dev-') ||
+    userId.startsWith('e2e-') ||
+    userId.startsWith('test-')
+  ) {
+    return true;
+  }
+  return /^(e2e\s|dev\s|test\s|dummy\s)/i.test(name);
+}
 
 function mapOrderRowStatus(
   status: string,
@@ -448,7 +471,7 @@ const AdminDashboard: React.FC = () => {
     });
     const byKey = new Map(buckets.map((b) => [b.key, b]));
     const transportOrders = (overview?.recentOrders || []).filter(
-      (order) => order.kind !== 'driver_registration'
+      (order) => order.kind !== 'driver_registration' && !isSyntheticAdminFeed(order)
     );
     (transportOrders).forEach((order) => {
       if (!order.createdAt) return;
@@ -464,38 +487,47 @@ const AdminDashboard: React.FC = () => {
   const serviceDistribution = useMemo(() => {
     const palette = ['bg-blue-500', 'bg-orange-500', 'bg-cyan-500', 'bg-purple-500', 'bg-emerald-500', 'bg-gray-300'];
     const serverRows = overview?.serviceDistribution;
-    if (Array.isArray(serverRows) && serverRows.length > 0) {
-      return serverRows.map((row, index) => ({
+    const liveOrders = (overview?.recentOrders || []).filter(
+      (order) => order.kind !== 'driver_registration' && !isSyntheticAdminFeed(order)
+    );
+    const source =
+      Array.isArray(serverRows) && serverRows.some((row) => row.count > 0)
+        ? serverRows
+        : aggregateServiceDistribution(liveOrders as unknown as Record<string, unknown>[]);
+    return source
+      .filter((row) => row.count > 0)
+      .map((row, index) => ({
         serviceType: row.serviceType,
         label: formatOrderServiceLabel(row.serviceType, null, t).title,
         percentage: row.percentage,
         count: row.count,
-        color: palette[index] || 'bg-gray-300',
+        color: palette[CORE_SERVICE_TYPES.indexOf(row.serviceType as (typeof CORE_SERVICE_TYPES)[number])] || palette[index] || 'bg-gray-300',
       }));
-    }
-    const orders = (overview?.recentOrders || []).filter(
-      (order) => order.kind !== 'driver_registration'
-    );
-    return aggregateServiceDistribution(orders as unknown as Record<string, unknown>[]).map(
-      (row, index) => ({
-        serviceType: row.serviceType,
-        label: formatOrderServiceLabel(row.serviceType, null, t).title,
-        percentage: row.percentage,
-        count: row.count,
-        color: palette[CORE_SERVICE_TYPES.indexOf(row.serviceType)] || palette[index] || 'bg-gray-300',
-      })
-    );
   }, [overview?.serviceDistribution, overview?.recentOrders, t]);
+
+  const liveFeed = useMemo(
+    () => (overview?.recentOrders || []).filter((order) => !isSyntheticAdminFeed(order)),
+    [overview?.recentOrders]
+  );
+  const latestOrders = useMemo(
+    () => liveFeed.filter((order) => order.kind !== 'driver_registration'),
+    [liveFeed]
+  );
+  const registrationRequests = useMemo(
+    () => liveFeed.filter((order) => order.kind === 'driver_registration'),
+    [liveFeed]
+  );
 
   const reportMetrics = useMemo(() => {
     const completed = overview?.stats.completedOrders ?? 0;
     const payments = overview?.stats.clientPaymentsSar ?? 0;
-    const cancelled = (overview?.recentOrders || []).filter(
-      (order) =>
-        order.kind !== 'driver_registration' && mapOrderRowStatus(order.status, order.kind) === 'cancelled'
+    const liveOrders = (overview?.recentOrders || []).filter(
+      (order) => order.kind !== 'driver_registration' && !isSyntheticAdminFeed(order)
+    );
+    const cancelled = liveOrders.filter(
+      (order) => mapOrderRowStatus(order.status, order.kind) === 'cancelled'
     ).length;
-    const recentCount =
-      (overview?.recentOrders || []).filter((order) => order.kind !== 'driver_registration').length || 0;
+    const recentCount = liveOrders.length;
     return {
       averageOrder: completed > 0 ? (payments / completed).toFixed(2) : '0.00',
       totalLoads: completed,
@@ -504,6 +536,9 @@ const AdminDashboard: React.FC = () => {
   }, [overview]);
 
   const getPageTitle = () => {
+    if (location.pathname === '/admin/pricing') {
+      return isRtl ? 'تسعير الخدمات' : 'Service Pricing';
+    }
     if (location.pathname === '/admin/drivers') return t('manage_drivers');
     if (location.pathname === '/admin/directory') {
       return isRtl ? 'دليل المستخدمين والسائقين' : 'Users & drivers directory';
@@ -511,7 +546,7 @@ const AdminDashboard: React.FC = () => {
     if (location.pathname === '/admin/clients') return isRtl ? 'إدارة العملاء' : 'Manage clients';
     if (location.pathname === '/admin/finance') return isRtl ? 'المحاسبة المالية' : 'Financial ledger';
     if (location.pathname === '/admin/withdrawals') {
-      return isRtl ? 'طلبات سحب أرباح السائقين' : 'Driver payout requests';
+      return isRtl ? 'طلبات السحب' : 'Withdrawal Requests';
     }
     if (location.pathname === '/admin/corporate-contracts') {
       return isRtl ? 'عقود الشركات' : 'Corporate contracts';
@@ -901,13 +936,7 @@ const AdminDashboard: React.FC = () => {
               {/* Charts Section */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                  <div className="lg:col-span-2 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6 text-right">
-                    <div className={`flex justify-between items-center ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                       <h3 className="text-xl font-bold">{isRtl ? 'تحليل الإيرادات والأوامر' : 'Revenue & Orders Analysis'}</h3>
-                       <select className="bg-gray-50 border-none outline-none text-xs font-bold p-2 rounded-xl">
-                          <option>{isRtl ? 'آخر 7 أيام' : 'Last 7 Days'}</option>
-                          <option>{isRtl ? 'آخر شهر' : 'Last Month'}</option>
-                       </select>
-                    </div>
+                    <h3 className="text-xl font-bold">{isRtl ? 'تحليل الإيرادات والأوامر' : 'Revenue & Orders Analysis'}</h3>
                     <div className="h-[300px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartData}>
@@ -943,103 +972,33 @@ const AdminDashboard: React.FC = () => {
                  </div>
               </div>
 
-              {/* Orders Table */}
-              <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
-                 <div className={`p-8 border-b flex flex-col md:flex-row justify-between items-center gap-4 ${isRtl ? 'text-right' : 'text-left'}`}>
-                    <h3 className="text-xl font-bold">
-                      {isRtl ? 'أحدث الطلبات وطلبات التسجيل' : 'Recent orders & applications'}
-                    </h3>
-                    <div className="flex items-center gap-2 w-full md:w-auto">
-                       <div className={`flex items-center gap-2 bg-gray-50 px-4 py-2 rounded-xl border border-gray-100 flex-1 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                          <Search size={16} className="text-gray-400" />
-                          <input type="text" placeholder={isRtl ? 'البحث برقم الطلب...' : 'Search by order number...'} className={`bg-transparent border-none outline-none text-xs w-full ${isRtl ? 'text-right' : 'text-left'}`} />
-                       </div>
-                    </div>
-                 </div>
-                 
-                 <div className="overflow-x-auto">
-                    <table className={`w-full ${isRtl ? 'text-right' : 'text-left'}`}>
-                       <thead>
-                          <tr className="bg-gray-50/50 text-[10px] uppercase font-extrabold text-gray-400 tracking-widest">
-                             <th className="px-8 py-4">{isRtl ? 'رقم الطلب' : 'Order ID'}</th>
-                             <th className="px-8 py-4">{isRtl ? 'العميل' : 'Customer'}</th>
-                             <th className="px-8 py-4">{isRtl ? 'الخدمة' : 'Service'}</th>
-                             <th className="px-8 py-4">{isRtl ? 'ملاحظات المركبة' : 'Vehicle notes'}</th>
-                             <th className="px-8 py-4">{isRtl ? 'المبلغ' : 'Amount'}</th>
-                             <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
-                             <th className={`px-8 py-4 ${isRtl ? 'text-left' : 'text-right'}`}>{isRtl ? 'الإجراءات' : 'Actions'}</th>
-                          </tr>
-                       </thead>
-                       <tbody className="divide-y divide-gray-50">
-                          {loadingOverview ? (
-                            <tr>
-                              <td colSpan={7} className="px-8 py-10 text-center text-sm text-gray-400">
-                                {isRtl ? 'جاري تحميل الطلبات...' : 'Loading orders...'}
-                              </td>
-                            </tr>
-                          ) : overview?.recentOrders?.length ? (
-                            overview.recentOrders.map((order) => {
-                              const isDriverApp = order.kind === 'driver_registration';
-                              const label = isDriverApp
-                                ? {
-                                    title: isRtl ? 'تسجيل سائق' : 'Driver registration',
-                                    subtitle: undefined as string | undefined,
-                                  }
-                                : formatOrderServiceLabel(
-                                    order.serviceType,
-                                    {
-                                      waterType: order.waterType,
-                                      capacity: order.capacity,
-                                      type: order.serviceOption || order.capacity,
-                                    },
-                                    t
-                                  );
-                              return (
-                              <OrderRow
-                                key={order.id}
-                                id={`#${order.id.replace(/^driver:/, '').slice(0, 8).toUpperCase()}`}
-                                user={
-                                  order.customerName ||
-                                  order.userId.slice(0, 8) ||
-                                  '—'
-                                }
-                                service={
-                                  label.subtitle
-                                    ? `${label.title} — ${label.subtitle}`
-                                    : label.title
-                                }
-                                amount={
-                                  isDriverApp ? '—' : `${order.amount} ${t('sar')}`
-                                }
-                                status={mapOrderRowStatus(order.status, order.kind)}
-                                fieldNotes={
-                                  isDriverApp
-                                    ? isRtl
-                                      ? 'طلب تسجيل سائق'
-                                      : 'Driver application'
-                                    : formatVehicleFieldNotes(order.vehicleFieldNotes, isRtl)
-                                }
-                                href={isDriverApp ? '/admin/drivers' : undefined}
-                                isRtl={isRtl}
-                              />
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={7} className="px-8 py-10 text-center text-sm text-gray-400">
-                                {isRtl ? 'لا توجد طلبات أو طلبات تسجيل حديثة' : 'No recent orders or applications'}
-                              </td>
-                            </tr>
-                          )}
-                       </tbody>
-                    </table>
-                 </div>
-              </div>
+              <AdminLiveTable
+                title={isRtl ? 'أحدث الطلبات' : 'Latest Orders'}
+                rows={latestOrders}
+                loading={loadingOverview}
+                emptyLabel={isRtl ? 'لا توجد طلبات حقيقية حديثة' : 'No live orders yet'}
+                loadingLabel={isRtl ? 'جاري تحميل الطلبات...' : 'Loading orders...'}
+                isRtl={isRtl}
+                t={t}
+              />
+              <AdminLiveTable
+                title={isRtl ? 'طلبات التسجيل' : 'Registration Requests'}
+                rows={registrationRequests}
+                loading={loadingOverview}
+                emptyLabel={isRtl ? 'لا توجد طلبات تسجيل حقيقية' : 'No live registration requests'}
+                loadingLabel={isRtl ? 'جاري تحميل طلبات التسجيل...' : 'Loading registration requests...'}
+                isRtl={isRtl}
+                t={t}
+              />
             </>
           } />
 
+          <Route path="approvals" element={<Navigate to="/admin/drivers" replace />} />
+          <Route path="pricing" element={<AdminPricingPanel isRtl={isRtl} />} />
+
           <Route path="drivers" element={
             <div className="space-y-8">
+              <AdminDriverApprovals isRtl={isRtl} />
               {/* Drivers Table */}
               <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-8 border-b flex flex-col gap-4 md:flex-row md:justify-between md:items-center">
@@ -1510,6 +1469,7 @@ const AdminDashboard: React.FC = () => {
 
           <Route path="withdrawals" element={
             <div className="space-y-8">
+              <AdminPayoutSchedule isRtl={isRtl} />
               <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-8 border-b flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>
@@ -1700,12 +1660,7 @@ const AdminDashboard: React.FC = () => {
 
                <div className="grid md:grid-cols-2 gap-8">
                   <div className="bg-white p-10 rounded-[50px] border border-gray-100 shadow-sm space-y-8 text-right">
-                     <div className={`flex justify-between items-center ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                        <h3 className="text-2xl font-black">{isRtl ? 'نمو الإيرادات الشهري' : 'Monthly Revenue Growth'}</h3>
-                        <button className="p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
-                           <Download size={20} />
-                        </button>
-                     </div>
+                     <h3 className="text-2xl font-black">{isRtl ? 'نمو الإيرادات الشهري' : 'Monthly Revenue Growth'}</h3>
                      <div className="h-[300px]">
                         <ResponsiveContainer width="100%" height="100%">
                            <LineChart data={chartData}>
@@ -1946,6 +1901,96 @@ function formatVehicleFieldNotes(
   const extra = typeof notes.extraNotes === 'string' ? notes.extraNotes.trim() : '';
   if (extra) parts.push(extra.slice(0, 60));
   return parts.length ? parts.join(' · ') : '—';
+}
+
+function AdminLiveTable({
+  title,
+  rows,
+  loading,
+  emptyLabel,
+  loadingLabel,
+  isRtl,
+  t,
+}: {
+  title: string;
+  rows: AdminOverviewResponse['recentOrders'];
+  loading: boolean;
+  emptyLabel: string;
+  loadingLabel: string;
+  isRtl: boolean;
+  t: TFunction;
+}) {
+  return (
+    <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
+      <div className={`p-8 border-b ${isRtl ? 'text-right' : 'text-left'}`}>
+        <h3 className="text-xl font-bold">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className={`w-full ${isRtl ? 'text-right' : 'text-left'}`}>
+          <thead>
+            <tr className="bg-gray-50/50 text-[10px] uppercase font-extrabold text-gray-400 tracking-widest">
+              <th className="px-8 py-4">{isRtl ? 'رقم الطلب' : 'Order ID'}</th>
+              <th className="px-8 py-4">{isRtl ? 'العميل' : 'Customer'}</th>
+              <th className="px-8 py-4">{isRtl ? 'الخدمة' : 'Service'}</th>
+              <th className="px-8 py-4">{isRtl ? 'ملاحظات المركبة' : 'Vehicle notes'}</th>
+              <th className="px-8 py-4">{isRtl ? 'المبلغ' : 'Amount'}</th>
+              <th className="px-8 py-4">{isRtl ? 'الحالة' : 'Status'}</th>
+              <th className={`px-8 py-4 ${isRtl ? 'text-left' : 'text-right'}`}>{isRtl ? 'الإجراءات' : 'Actions'}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {loading ? (
+              <tr>
+                <td colSpan={7} className="px-8 py-10 text-center text-sm text-gray-400">
+                  {loadingLabel}
+                </td>
+              </tr>
+            ) : rows.length ? (
+              rows.map((order) => {
+                const isDriverApp = order.kind === 'driver_registration';
+                const label = isDriverApp
+                  ? { title: isRtl ? 'تسجيل سائق' : 'Driver registration', subtitle: undefined as string | undefined }
+                  : formatOrderServiceLabel(
+                      order.serviceType,
+                      {
+                        waterType: order.waterType,
+                        capacity: order.capacity,
+                        type: order.serviceOption || order.capacity,
+                      },
+                      t
+                    );
+                return (
+                  <OrderRow
+                    key={order.id}
+                    id={`#${order.id.replace(/^driver:/, '').slice(0, 8).toUpperCase()}`}
+                    user={order.customerName || order.userId.slice(0, 8) || '—'}
+                    service={label.subtitle ? `${label.title} — ${label.subtitle}` : label.title}
+                    amount={isDriverApp ? '—' : `${order.amount} ${t('sar')}`}
+                    status={mapOrderRowStatus(order.status, order.kind)}
+                    fieldNotes={
+                      isDriverApp
+                        ? isRtl
+                          ? 'طلب تسجيل سائق'
+                          : 'Driver application'
+                        : formatVehicleFieldNotes(order.vehicleFieldNotes, isRtl)
+                    }
+                    href={isDriverApp ? '/admin/drivers' : undefined}
+                    isRtl={isRtl}
+                  />
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={7} className="px-8 py-10 text-center text-sm text-gray-400">
+                  {emptyLabel}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 const OrderRow: React.FC<{

@@ -7,7 +7,13 @@ import { isDevBypassAuthSession } from '@/lib/authApi';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { computeTripFare } from '@/domain/pricing-engine';
-import { buildTripFinancials, shouldWaiveServiceFee, normalizeTripFinancials } from '@/domain/financials';
+import {
+  buildTripFinancials,
+  shouldWaiveServiceFee,
+  normalizeTripFinancials,
+  resolveCustomerServiceFeePercentage,
+  resolveDriverCommissionPercentage,
+} from '@/domain/financials';
 import { calculateTotal } from '@/lib/checkoutTotal';
 import { defaultPricingForService } from '@/lib/pricingDefaults';
 import {
@@ -286,6 +292,12 @@ export async function prepareCheckoutDraft(
   const financials = normalizeTripFinancials(
     buildTripFinancials(tripFare, {
       waiveServiceFee: shouldWaiveServiceFee(paidCount),
+      customerServiceFeePercentage: resolveCustomerServiceFeePercentage(pricing),
+      driverCommissionPercentage: resolveDriverCommissionPercentage({
+        completedOrdersCount: 0,
+        tiers: pricing.driver_commission_tiers,
+        basePercentage: pricing.platform_commission_percentage,
+      }),
     })
   );
   const checkout = calculateTotal({

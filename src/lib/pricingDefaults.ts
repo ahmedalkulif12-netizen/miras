@@ -1,7 +1,16 @@
+import {
+  DEFAULT_DRIVER_COMMISSION_TIERS,
+  type DriverCommissionTier,
+  normalizeDriverCommissionTiers,
+  resolveCustomerServiceFeePercentage,
+} from '@/domain/financials';
+
 /**
  * Shared default pricing when Firestore `pricing/{serviceType}` docs are missing.
  * Universal rule: first 25 km included in base; extra km billed at tier rate.
- * Client service fee 5% and driver commission 15% live in domain/financials.ts.
+ * Customer service fee and driver commission default to 5% and 15%.
+ * Checkout reads those percentages from Firestore `pricing/{service}`; driver
+ * loyalty bands live on `driver_commission_tiers` (see domain/financials.ts).
  */
 
 export interface TierRate {
@@ -25,6 +34,13 @@ export interface PricingConfig {
   minimum_price: number;
   surge_multiplier: number;
   platform_commission_percentage: number;
+  /** Customer checkout fee, percent of trip fare. Firestore may override 5. */
+  customer_service_fee_percentage?: number;
+  /**
+   * Driver commission by completed-order count.
+   * When missing, the 0-order band uses platform_commission_percentage.
+   */
+  driver_commission_tiers?: DriverCommissionTier[];
   /** Kilometers included in base price (all services: 25). */
   included_km?: number;
   /** Per-vehicle / capacity tier rates: base up to included_km + SAR/km after. */
@@ -46,9 +62,9 @@ export const WATER_TANKER_INCLUDED_KM = INCLUDED_KM;
 export const SERVICE_TIER_PRICES: Record<string, Record<string, TierRate>> = {
   // Service 1 — Moving (نقل العفش)
   furniture_moving: {
-    small_truck: { base_price: 60, price_per_km: 1.0 }, // دباب
+    small_truck: { base_price: 80, price_per_km: 1.0 }, // دباب
     medium_truck: { base_price: 350, price_per_km: 1.0 }, // دينا
-    large_truck: { base_price: 750, price_per_km: 0.75 }, // تريلا
+    large_truck: { base_price: 750, price_per_km: 2.0 }, // تريلا
   },
   // Service 2 — Towing & Flatbeds (السطحات)
   flatbed: {
@@ -79,11 +95,9 @@ export const SERVICE_TIER_PRICES: Record<string, Record<string, TierRate>> = {
   },
   // Service 6 — Cargo & Goods Transport (نقل البضائع)
   goods_transport: {
-    van: { base_price: 80, price_per_km: 0.75 }, // فان
+    van: { base_price: 80, price_per_km: 1.0 }, // فان
     dyna: { base_price: 200, price_per_km: 1.5 }, // دينا
     trailer: { base_price: 750, price_per_km: 2.0 }, // تريلا
-    cement_mixer: { base_price: 500, price_per_km: 2.0 }, // خلاطات أسمنت
-    brick_transporter: { base_price: 450, price_per_km: 1.75 }, // ناقلات طوب
   },
 };
 
@@ -116,6 +130,8 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   minimum_price: 110,
   surge_multiplier: 1.0,
   platform_commission_percentage: 15,
+  customer_service_fee_percentage: 5,
+  driver_commission_tiers: DEFAULT_DRIVER_COMMISSION_TIERS.map((tier) => ({ ...tier })),
   tier_prices: { ...SERVICE_TIER_PRICES.flatbed },
   capacity_prices: {},
 };
@@ -280,6 +296,8 @@ function configFromTiers(serviceType: string): PricingConfig {
     minimum_price: defaultTier.base_price,
     surge_multiplier: 1.0,
     platform_commission_percentage: 15,
+    customer_service_fee_percentage: 5,
+    driver_commission_tiers: DEFAULT_DRIVER_COMMISSION_TIERS.map((tier) => ({ ...tier })),
     tier_prices: { ...tiers },
     capacity_prices: capacityPrices,
   };
@@ -313,6 +331,18 @@ export function mergePricingConfig(
     free_km: INCLUDED_KM,
     tier_prices: row.tier_prices || defaults.tier_prices || {},
     capacity_prices: row.capacity_prices || defaults.capacity_prices || {},
+    customer_service_fee_percentage: resolveCustomerServiceFeePercentage({
+      customer_service_fee_percentage:
+        row.customer_service_fee_percentage ?? defaults.customer_service_fee_percentage,
+    }),
+    driver_commission_tiers: Array.isArray(row.driver_commission_tiers)
+      ? normalizeDriverCommissionTiers(row.driver_commission_tiers)
+      : normalizeDriverCommissionTiers(
+          null,
+          typeof row.platform_commission_percentage === 'number'
+            ? row.platform_commission_percentage
+            : defaults.platform_commission_percentage
+        ),
     heavy_multiplier: 1,
     cold_multiplier: 1,
     hydraulic_multiplier: 1,
@@ -324,8 +354,9 @@ export function firestorePricingDoc(serviceType: string): Record<string, unknown
   const cfg = defaultPricingForService(serviceType);
   return {
     ...cfg,
-    fee_policy_version: '2026-08',
-    customer_service_fee_percentage: 5,
+    fee_policy_version: '2026-10',
+    customer_service_fee_percentage: cfg.customer_service_fee_percentage ?? 5,
+    driver_commission_tiers: cfg.driver_commission_tiers || [],
     included_km: INCLUDED_KM,
     free_km: INCLUDED_KM,
     capacity_prices: cfg.capacity_prices || {},

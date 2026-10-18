@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import {
   DRIVER_COMMISSION_RATE,
   normalizeTripFinancials,
+  readCompletedOrdersCount,
 } from '../../src/domain/financials.ts';
 
 export { DRIVER_COMMISSION_RATE };
@@ -79,7 +80,7 @@ export function readWalletSnapshot(
       | string
       | null,
     payoutCount: Number(data.payoutCount) || 0,
-    completedOrderCount: Number(data.completedOrderCount) || 0,
+    completedOrderCount: readCompletedOrdersCount(data),
     currency: 'SAR',
   };
 }

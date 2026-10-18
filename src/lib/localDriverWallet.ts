@@ -1,3 +1,5 @@
+import { readCompletedOrdersCount } from '@/domain/financials';
+
 /**
  * Localhost-only wallet mirror when Admin Firestore is unavailable.
  * Production credits always go through POST /api/orders/:id/complete.
@@ -193,7 +195,7 @@ export function walletFromFirestoreData(
     lastPayoutAmount: roundMoney(Number(data.lastPayoutAmount ?? lastPayout?.amount) || 0),
     lastPayoutAt,
     payoutCount: Number(data.payoutCount) || 0,
-    completedOrderCount: Number(data.completedOrderCount) || 0,
+    completedOrderCount: readCompletedOrdersCount(data),
     creditedOrderIds: Array.isArray(data.creditedOrderIds)
       ? data.creditedOrderIds.map(String).slice(-200)
       : [],

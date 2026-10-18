@@ -114,8 +114,6 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
       { id: 'van', ar: 'فان صغير', en: 'Small Van' },
       { id: 'dyna', ar: 'دينا', en: 'Medium Dyna' },
       { id: 'trailer', ar: 'تريلا', en: 'Large Trailer' },
-      { id: 'cement_mixer', ar: 'خلاطات أسمنت', en: 'Cement Mixers' },
-      { id: 'brick_transporter', ar: 'ناقلات طوب', en: 'Brick Transporters' },
     ],
   },
 ];

@@ -486,6 +486,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // ── driver_presence — own read/write; any signed-in user may read for match ───
 
     match /driver_presence/{driverId} {

@@ -50,7 +50,18 @@ import {
   normalizeTripFinancials,
   FREE_SERVICE_FEE_ORDERS,
   toCustomerQuoteDisplay,
+  resolveDriverCommissionPercentage,
+  resolveCustomerServiceFeePercentage,
+  financialsWithDriverCommission,
+  readCompletedOrdersCount,
+  readDriverProfileCommissionPercentage,
 } from '../src/domain/financials.ts';
+import { SERVICE_TIER_PRICES } from '../src/lib/pricingDefaults.ts';
+import { SERVICE_OPTIONS } from '../src/constants.ts';
+import {
+  formatPayoutCooldownNotice,
+  payoutBlockedUntil,
+} from '../src/domain/payoutPolicy.ts';
 import { getDriverOfferMetrics } from '../src/lib/driverOfferMetrics.ts';
 import { financialsToFirestorePricingFields } from '../src/domain/order-schema.ts';
 import { getOrderPickupLatLng, getOrderDropoffLatLng } from '../src/lib/orderGeo.ts';
@@ -632,6 +643,80 @@ async function run(): Promise<void> {
   assert(charged.platformFee === 45, 'driver commission is 15% of trip fare');
   assert(charged.driverNet === 255, 'driver net matches waived and charged trips');
 
+  assert(SERVICE_TIER_PRICES.furniture_moving.small_truck.base_price === 80, 'dabbab base is 80 SAR');
+  assert(SERVICE_TIER_PRICES.furniture_moving.small_truck.price_per_km === 1, 'dabbab extra km stays 1 SAR');
+  assert(SERVICE_TIER_PRICES.furniture_moving.large_truck.price_per_km === 2, 'furniture trailer extra km is 2 SAR');
+  assert(SERVICE_TIER_PRICES.goods_transport.van.price_per_km === 1, 'cargo van extra km is 1 SAR');
+  assert(
+    Object.keys(SERVICE_TIER_PRICES.goods_transport).join(',') === 'van,dyna,trailer',
+    'cargo pricing keeps van, dyna, and trailer'
+  );
+  assert(
+    !('cement_mixer' in SERVICE_TIER_PRICES.goods_transport),
+    'cement mixer is not a priced cargo option'
+  );
+  assert(
+    SERVICE_OPTIONS.goods_transport.join(',') === 'van,dyna,trailer',
+    'cargo selection lists three options'
+  );
+  const cooldown = payoutBlockedUntil('2026-10-01T00:00:00.000Z', 14, new Date('2026-10-10T00:00:00.000Z'));
+  assert(cooldown?.toISOString().startsWith('2026-10-15'), '14-day payout cooldown lands on the 15th');
+  assert(
+    payoutBlockedUntil('2026-10-01T00:00:00.000Z', 14, new Date('2026-10-16T00:00:00.000Z')) === null,
+    'payout is allowed after the cooldown'
+  );
+  assert(
+    formatPayoutCooldownNotice(14, new Date('2026-10-15T00:00:00.000Z'), false).includes(
+      'once every 2 weeks'
+    ),
+    'default cooldown notice says every 2 weeks'
+  );
+
+  assert(resolveDriverCommissionPercentage({ completedOrdersCount: 0 }) === 15, '0 completed orders stay at 15%');
+  assert(resolveDriverCommissionPercentage({ completedOrdersCount: 149 }) === 15, '149 completed orders stay at 15%');
+  assert(resolveDriverCommissionPercentage({ completedOrdersCount: 150 }) === 12, '150 completed orders drop to 12%');
+  assert(resolveDriverCommissionPercentage({ completedOrdersCount: 299 }) === 12, '299 completed orders stay at 12%');
+  assert(resolveDriverCommissionPercentage({ completedOrdersCount: 300 }) === 10, '300 completed orders drop to 10%');
+  assert(
+    resolveDriverCommissionPercentage({
+      completedOrdersCount: 400,
+      profilePercentage: 9,
+    }) === 9,
+    'driver profile commission overrides loyalty'
+  );
+  assert(
+    resolveCustomerServiceFeePercentage({ customer_service_fee_percentage: 7 }) === 7,
+    'customer fee percentage is read from pricing config'
+  );
+  assert(resolveCustomerServiceFeePercentage(null) === 5, 'missing customer fee stays at 5%');
+  const loyal = financialsWithDriverCommission(
+    { tripFare: 200, serviceFee: 10, customerTotal: 210, platformFee: 30, driverNet: 170 },
+    10,
+    300
+  );
+  assert(loyal.customerTotal === 210, 'loyalty does not change the customer total');
+  assert(loyal.serviceFee === 10, 'loyalty does not change the service fee');
+  assert(loyal.platformFee === 20, '300 completed orders take 10% of trip fare');
+  assert(loyal.driverNet === 180, 'driver net is trip fare minus 10%');
+  assert(
+    readCompletedOrdersCount(
+      { completed_orders_count: 150 },
+      { completedOrderCount: 40 }
+    ) === 150,
+    'completed order count uses the higher profile or wallet value'
+  );
+  assert(
+    readDriverProfileCommissionPercentage({ platform_commission_percentage: 11 }) === 11,
+    'profile platform_commission_percentage is an explicit override'
+  );
+  const customFee = buildTripFinancials(100, {
+    customerServiceFeePercentage: 7,
+    driverCommissionPercentage: 12,
+  });
+  assert(customFee.serviceFee === 7, 'quote uses the Firestore customer fee percent');
+  assert(customFee.platformFee === 12, 'quote uses the Firestore driver commission percent');
+  assert(customFee.customerTotal === 107, 'customer total follows the configured fee');
+
   const recoveredWaived = normalizeTripFinancials({
     totalPrice: 300,
     serviceFee: 0,
@@ -677,6 +762,31 @@ async function run(): Promise<void> {
   assert(driverView?.platformFee === 45, 'driver card shows app commission');
   assert(driverView?.driverNet === 255, 'driver card shows net earning');
   assert(driverView?.tripFare === 300, 'driver card trip fare matches snapshot');
+
+  const loyalOffer = getDriverOfferMetrics(
+    {
+      id: 'ord-loyal',
+      financials: waived,
+      totalPrice: 300,
+      status: 'broadcasting',
+    } as unknown as Parameters<typeof getDriverOfferMetrics>[0],
+    undefined,
+    { completedOrdersCount: 300 }
+  );
+  assert(loyalOffer?.clientTotal === 300, 'loyalty preview keeps the customer total');
+  assert(loyalOffer?.platformFee === 30, 'open offer shows 10% after 300 trips');
+  assert(loyalOffer?.driverNet === 270, 'open offer net is trip fare minus 10%');
+  const assignedOffer = getDriverOfferMetrics(
+    {
+      id: 'ord-assigned',
+      driverId: 'driver-1',
+      financials: waived,
+      status: 'assigned',
+    } as unknown as Parameters<typeof getDriverOfferMetrics>[0],
+    undefined,
+    { completedOrdersCount: 300 }
+  );
+  assert(assignedOffer?.driverNet === 255, 'assigned trip keeps the accept snapshot');
 
   const nestedPrice = getDriverOfferMetrics({
     id: 'ord-2',

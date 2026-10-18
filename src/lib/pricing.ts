@@ -1,6 +1,12 @@
 import { LogisticsServiceType } from '@/types';
 import type { TripFinancials } from '@/domain/financials';
-import { buildTripFinancials, toLegacyPricingFields, shouldWaiveServiceFee } from '@/domain/financials';
+import {
+  buildTripFinancials,
+  toLegacyPricingFields,
+  shouldWaiveServiceFee,
+  resolveCustomerServiceFeePercentage,
+  resolveDriverCommissionPercentage,
+} from '@/domain/financials';
 import { computeTripFare } from '@/domain/pricing-engine';
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
@@ -109,7 +115,17 @@ function buildLocalDevPrice(
   const tripFare =
     fare.surgeApplied || truckCount > 1 ? fare.tripFare : lineSubtotal;
   const isServiceFeeFree = shouldWaiveServiceFee(previousOrdersCount);
-  const financials = buildTripFinancials(tripFare, { waiveServiceFee: isServiceFeeFree });
+  const customerFeePercentage = resolveCustomerServiceFeePercentage(pricing);
+  const driverCommissionPercentage = resolveDriverCommissionPercentage({
+    completedOrdersCount: 0,
+    tiers: pricing.driver_commission_tiers,
+    basePercentage: pricing.platform_commission_percentage,
+  });
+  const financials = buildTripFinancials(tripFare, {
+    waiveServiceFee: isServiceFeeFree,
+    customerServiceFeePercentage: customerFeePercentage,
+    driverCommissionPercentage,
+  });
   const checkout = calculateTotal({
     basePrice: fare.base,
     extraDistanceFee: fare.extraKmCost,
@@ -117,6 +133,8 @@ function buildLocalDevPrice(
   });
   const aligned = buildTripFinancials(checkout.basePrice + checkout.extraDistanceFee, {
     waiveServiceFee: isServiceFeeFree,
+    customerServiceFeePercentage: customerFeePercentage,
+    driverCommissionPercentage,
   });
   return {
     ...toLegacyPricingFields(aligned, {
@@ -132,7 +150,8 @@ function buildLocalDevPrice(
         price_per_km: fare.rate,
         surge_multiplier: pricing.surge_multiplier,
         minimum_price: pricing.minimum_price,
-        platform_commission_percentage: pricing.platform_commission_percentage,
+        platform_commission_percentage: driverCommissionPercentage,
+        customer_service_fee_percentage: customerFeePercentage,
         included_km: fare.includedKm,
         capacity: fare.capacity,
         tier: fare.tier,

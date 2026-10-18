@@ -1,6 +1,8 @@
 import type { Order } from '@/types';
 import {
+  financialsWithDriverCommission,
   normalizeTripFinancials,
+  resolveDriverCommissionPercentage,
   type TripFinancials,
 } from '@/domain/financials';
 
@@ -30,14 +32,24 @@ function addressFromUnknown(value: unknown): string {
   return '';
 }
 
+export interface DriverOfferCommissionContext {
+  completedOrdersCount?: number;
+  profilePercentage?: unknown;
+  tiers?: unknown;
+  basePercentage?: number;
+}
+
 /**
  * Extracts route + money metrics for the driver offer / active-trip card.
  * Prefers immutable `financials` snapshot; derives missing pieces from the
- * canonical money model (never mixes customer 5% fee with driver 15% commission).
+ * canonical money model (never mixes customer service fee with driver commission).
+ * Open offers reprice net payout from the driver's loyalty band. Assigned
+ * trips keep the snapshot written at accept.
  */
 export function getDriverOfferMetrics(
   order: Order | null | undefined,
-  fallbacks?: { clientTotal?: number; driverNet?: number }
+  fallbacks?: { clientTotal?: number; driverNet?: number },
+  commission?: DriverOfferCommissionContext
 ): DriverOfferMetrics | null {
   if (!order) return null;
 
@@ -85,8 +97,30 @@ export function getDriverOfferMetrics(
     driver_earning: legacy.driver_earning,
   });
 
-  let clientTotal = financials.customerTotal;
-  let driverNet = financials.driverNet;
+  const assigned = Boolean(order.driverId);
+  const priced =
+    !assigned && commission
+      ? financialsWithDriverCommission(
+          {
+            financials,
+            tripFare: financials.tripFare,
+            serviceFee: financials.serviceFee,
+            customerTotal: financials.customerTotal,
+            platformFee: financials.platformFee,
+            driverNet: financials.driverNet,
+          },
+          resolveDriverCommissionPercentage({
+            completedOrdersCount: commission.completedOrdersCount,
+            tiers: commission.tiers,
+            basePercentage: commission.basePercentage,
+            profilePercentage: commission.profilePercentage,
+          }),
+          commission.completedOrdersCount
+        )
+      : financials;
+
+  let clientTotal = priced.customerTotal;
+  let driverNet = priced.driverNet;
   if (clientTotal <= 0 && fallbacks?.clientTotal) clientTotal = fallbacks.clientTotal;
   if (driverNet <= 0 && fallbacks?.driverNet) driverNet = fallbacks.driverNet;
 
@@ -95,10 +129,10 @@ export function getDriverOfferMetrics(
     dropoffLabel,
     distanceKm: Math.max(0, Math.round(distanceKm * 10) / 10),
     clientTotal,
-    tripFare: financials.tripFare,
-    platformFee: financials.platformFee,
+    tripFare: priced.tripFare,
+    platformFee: priced.platformFee,
     driverNet,
-    serviceFee: financials.serviceFee,
-    currency: financials.currency || 'SAR',
+    serviceFee: priced.serviceFee,
+    currency: priced.currency || 'SAR',
   };
 }

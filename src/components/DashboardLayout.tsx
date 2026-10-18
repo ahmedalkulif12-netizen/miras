@@ -16,7 +16,6 @@ import {
   CreditCard,
   Star,
   Settings,
-  ShieldCheck,
   Building2,
   Warehouse,
   DollarSign,
@@ -151,12 +150,13 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
 
             {isAdminRole(profile?.role) && (
               <>
-                <SidebarLink to="/admin" icon={<LayoutDashboard size={20} />} label={t('admin_dashboard')} end />
-                <SidebarLink to="/admin/directory" icon={<Users size={20} />} label={isRtl ? 'دليل المستخدمين' : 'User directory'} />
-                <SidebarLink to="/admin/drivers" icon={<ShieldCheck size={20} />} label={t('manage_drivers')} />
-                <SidebarLink to="/admin/clients" icon={<Users size={20} />} label={isRtl ? 'إدارة العملاء' : 'Manage clients'} />
-                <SidebarLink to="/admin/finance" icon={<CreditCard size={20} />} label={isRtl ? 'المحاسبة المالية' : 'Financial ledger'} />
+                <SidebarLink to="/admin" icon={<LayoutDashboard size={20} />} label={isRtl ? 'الطلبات والإيرادات' : 'Orders & revenue'} end />
+                <SidebarLink to="/admin/drivers" icon={<Truck size={20} />} label={t('manage_drivers')} />
+                <SidebarLink to="/admin/pricing" icon={<DollarSign size={20} />} label={isRtl ? 'تسعير الخدمات' : 'Service Pricing'} />
+                <SidebarLink to="/admin/clients" icon={<Users size={20} />} label={isRtl ? 'العملاء' : 'Customers'} />
+                <SidebarLink to="/admin/finance" icon={<CreditCard size={20} />} label={isRtl ? 'الإيرادات' : 'Revenue'} />
                 <SidebarLink to="/admin/withdrawals" icon={<DollarSign size={20} />} label={isRtl ? 'طلبات السحب' : 'Payout requests'} />
+                <SidebarLink to="/admin/directory" icon={<Users size={20} />} label={isRtl ? 'الدليل' : 'Directory'} />
                 {B2B_MODULES_ENABLED ? (
                   <SidebarLink to="/admin/corporate-contracts" icon={<Building2 size={20} />} label={isRtl ? 'عقود الشركات' : 'Corporate contracts'} />
                 ) : null}
@@ -234,6 +234,16 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
               </button>
             ) : null}
 
+            {isAdminRole(profile?.role) ? (
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/20 px-3 py-2 text-xs font-bold text-white hover:bg-white/10"
+              >
+                <LogOut size={16} />
+                {t('logout')}
+              </button>
+            ) : null}
             <Link
               to="/profile"
               className="flex items-center gap-3 rounded-xl hover:bg-white/10 p-1 pr-2 transition-colors"

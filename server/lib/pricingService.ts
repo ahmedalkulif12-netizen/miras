@@ -1,6 +1,12 @@
 import admin from 'firebase-admin';
 import { computeTripFare } from '../../src/domain/pricing-engine.ts';
-import { buildTripFinancials, toLegacyPricingFields, shouldWaiveServiceFee } from '../../src/domain/financials.ts';
+import {
+  buildTripFinancials,
+  toLegacyPricingFields,
+  shouldWaiveServiceFee,
+  resolveCustomerServiceFeePercentage,
+  resolveDriverCommissionPercentage,
+} from '../../src/domain/financials.ts';
 import { countPaidCustomerOrders, remainingFreeServiceFeeOrders } from './customerOrderCount.ts';
 import {
   defaultPricingForService,
@@ -22,7 +28,8 @@ export type PricingService = ReturnType<typeof createPricingService>;
 /**
  * Server-authoritative pricing (single source of truth for trip totals).
  * Formula: tripFare = base + max(0, distanceKm − 25) × tierRate
- * Customer total = tripFare + 5% · Driver net = tripFare − 15%
+ * Customer total = tripFare + pricing.customer_service_fee_percentage.
+ * Driver net = tripFare − the loyalty band (or profile override) on that pricing doc.
  */
 export function createPricingService(db: admin.firestore.Firestore) {
   let cachedPricing: Record<string, { data: Record<string, unknown>; fetchedAt: number }> = {};
@@ -132,14 +139,26 @@ export function createPricingService(db: admin.firestore.Firestore) {
       fare.surgeApplied || truckCount > 1 ? fare.tripFare : lineSubtotal;
 
     const isServiceFeeFree = shouldWaiveServiceFee(previousOrdersCount);
+    const customerFeePercentage = resolveCustomerServiceFeePercentage(
+      pricing as { customer_service_fee_percentage?: unknown }
+    );
+    // No driver is assigned at quote time, so the published 0-order band is the estimate.
+    // Accept and completion reprice from the driver's completed_orders_count.
+    const driverCommissionPercentage = resolveDriverCommissionPercentage({
+      completedOrdersCount: 0,
+      tiers: pricing.driver_commission_tiers,
+      basePercentage: Number(pricing.platform_commission_percentage),
+    });
     const financials = buildTripFinancials(tripFareForTotals, {
       waiveServiceFee: isServiceFeeFree,
+      customerServiceFeePercentage: customerFeePercentage,
+      driverCommissionPercentage,
     });
 
     const pricingSnapshot = withDefinedPricingMaps({
       ...pricing,
-      platform_commission_percentage: 15,
-      customer_service_fee_percentage: 5,
+      platform_commission_percentage: driverCommissionPercentage,
+      customer_service_fee_percentage: customerFeePercentage,
       fee_policy_version: financials.feePolicyVersion,
       included_km: fare.includedKm,
       tier: fare.tier,

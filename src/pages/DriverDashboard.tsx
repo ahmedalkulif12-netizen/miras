@@ -48,7 +48,19 @@ import { geocodePlaceName } from '@/lib/cityCoordinates';
 import { openNativeMapsNavigation } from '@/lib/nativeMaps';
 import DriverProfilePage from '@/pages/DriverProfilePage';
 import { getDriverOfferMetrics } from '@/lib/driverOfferMetrics';
-import { MIN_WITHDRAWAL_SAR } from '@/domain/financials';
+import {
+  MIN_WITHDRAWAL_SAR,
+  readCompletedOrdersCount,
+  readDriverProfileCommissionPercentage,
+} from '@/domain/financials';
+import {
+  DEFAULT_PAYOUT_INTERVAL_DAYS,
+  formatPayoutCooldownNotice,
+  normalizePayoutIntervalDays,
+  parsePayoutInstant,
+  payoutBlockedUntil,
+} from '@/domain/payoutPolicy';
+import { fetchMyDriverRatings, type DriverReview } from '@/lib/feedbackService';
 import {
   applyLocalWalletCredit,
   loadLocalDriverWallet,
@@ -257,6 +269,13 @@ const DriverDashboard: React.FC = () => {
   const [wallet, setWallet] = useState<DriverWalletView>(() =>
     loadLocalDriverWallet(profile?.uid || '')
   );
+  const [driverLoyaltySource, setDriverLoyaltySource] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const [payoutIntervalDays, setPayoutIntervalDays] = useState(DEFAULT_PAYOUT_INTERVAL_DAYS);
+  const [driverReviews, setDriverReviews] = useState<DriverReview[]>([]);
+  const [ratingAverage, setRatingAverage] = useState<number | null>(null);
+  const [ratingCount, setRatingCount] = useState(0);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [showCustomerCallModal, setShowCustomerCallModal] = useState(false);
@@ -335,6 +354,7 @@ const DriverDashboard: React.FC = () => {
             (snap) => {
               if (!snap.exists()) {
                 hasDriverDoc = false;
+                setDriverLoyaltySource(null);
                 if (profile.playReview === true) {
                   applyAccountStatus('approved');
                   return;
@@ -364,6 +384,7 @@ const DriverDashboard: React.FC = () => {
               }
               hasDriverDoc = true;
               const data = snap.data() as Record<string, unknown>;
+              setDriverLoyaltySource(data);
               applyAccountStatus(data.accountStatus, data);
             },
             (err) => {
@@ -793,6 +814,40 @@ const DriverDashboard: React.FC = () => {
   }, [profile?.uid, profile?.name, location.pathname]);
 
   useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, 'settings', 'payouts'),
+      (snap) => {
+        setPayoutIntervalDays(
+          normalizePayoutIntervalDays(snap.exists() ? snap.data()?.payoutIntervalDays : undefined)
+        );
+      },
+      (error) => {
+        console.warn('[driver] payout settings listener failed:', error);
+        setPayoutIntervalDays(DEFAULT_PAYOUT_INTERVAL_DAYS);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!profile?.uid) return;
+    let cancelled = false;
+    void fetchMyDriverRatings()
+      .then((summary) => {
+        if (cancelled) return;
+        setDriverReviews(summary.reviews);
+        setRatingAverage(summary.average);
+        setRatingCount(summary.count);
+      })
+      .catch((error) => {
+        console.warn('[driver] ratings load failed:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.uid]);
+
+  useEffect(() => {
     if (!profile?.uid) return;
     setWallet((prev) => {
       const local = loadLocalDriverWallet(profile.uid);
@@ -803,7 +858,23 @@ const DriverDashboard: React.FC = () => {
     });
   }, [profile?.uid]);
 
+  const lastPayoutRequestAt = (() => {
+    const fromProfile = parsePayoutInstant(driverLoyaltySource?.lastPayoutRequestAt);
+    const fromRequests = myWithdrawals
+      .filter((row) => row.status !== 'rejected' && row.createdAt)
+      .map((row) => parsePayoutInstant(row.createdAt))
+      .filter((value): value is Date => Boolean(value));
+    const stamps = [fromProfile, ...fromRequests].filter((value): value is Date => Boolean(value));
+    if (!stamps.length) return null;
+    return new Date(Math.max(...stamps.map((value) => value.getTime())));
+  })();
+  const payoutLockUntil = payoutBlockedUntil(lastPayoutRequestAt, payoutIntervalDays);
+
   const openWithdrawModal = () => {
+    if (payoutLockUntil) {
+      toast.info(formatPayoutCooldownNotice(payoutIntervalDays, payoutLockUntil, isRtl));
+      return;
+    }
     if (!bankDetails?.iban) {
       toast.info(
         isRtl
@@ -922,6 +993,15 @@ const DriverDashboard: React.FC = () => {
     }
   };
 
+  const driverCommissionContext = {
+    completedOrdersCount: readCompletedOrdersCount(driverLoyaltySource, {
+      completedOrderCount: wallet.completedOrderCount,
+    }),
+    profilePercentage: readDriverProfileCommissionPercentage(driverLoyaltySource),
+    tiers: pricingConfig?.driver_commission_tiers,
+    basePercentage: pricingConfig?.platform_commission_percentage,
+  };
+
   const handleCompleteOrder = async (order: Order) => {
     if (!profile?.uid) return;
     
@@ -930,7 +1010,7 @@ const DriverDashboard: React.FC = () => {
       return;
     }
 
-    const metrics = getDriverOfferMetrics(order);
+    const metrics = getDriverOfferMetrics(order, undefined, driverCommissionContext);
     const tripFare = metrics?.tripFare || 0;
     const platformFee = metrics?.platformFee || 0;
     const driverNet = metrics?.driverNet ?? null;
@@ -987,13 +1067,15 @@ const DriverDashboard: React.FC = () => {
         return remaining;
       });
 
+      const paidNet =
+        result.wallet && result.wallet.creditedNet > 0 ? result.wallet.creditedNet : driverNet;
       toast.success(
         isRtl
-          ? driverNet != null
-            ? `تمت المهمة بنجاح — صافي أرباحك ${driverNet.toFixed(2)} ر.س`
+          ? paidNet != null
+            ? `تمت المهمة بنجاح — صافي أرباحك ${paidNet.toFixed(2)} ر.س`
             : 'تمت المهمة بنجاح'
-          : driverNet != null
-            ? `Task completed — your net payout ${driverNet.toFixed(2)} SAR`
+          : paidNet != null
+            ? `Task completed — your net payout ${paidNet.toFixed(2)} SAR`
             : 'Task completed successfully'
       );
     } catch (error) {
@@ -1441,8 +1523,8 @@ const DriverDashboard: React.FC = () => {
     if (!canStartWork) {
       toast.warning(
         isRtl
-          ? 'الحساب قيد المراجعة (خلال 24 ساعة). لا يمكنك استقبال الطلبات حتى الاعتماد.'
-          : 'Account under review (within 24 hours). You cannot receive orders until an admin approves your account.'
+          ? 'حسابك قيد المراجعة من قبل الإدارة.'
+          : 'Your account is currently under review by admin.'
       );
       return;
     }
@@ -1686,7 +1768,14 @@ const DriverDashboard: React.FC = () => {
                     ? <>{isRtl ? <ToggleRight size={18} /> : <ToggleLeft size={18} />} {t('end_shift')}</>
                     : <>{isRtl ? <ToggleLeft size={18} /> : <ToggleRight size={18} />} {t('start_work')}</>
                   }
-                </button>
+                  </button>
+                {accountStatusLoaded && !canStartWork && accountStatus !== 'rejected' && accountStatus !== 'suspended' && accountStatus !== 'banned' && (
+                  <p className="text-[11px] font-bold text-amber-800 leading-snug">
+                    {isRtl
+                      ? 'حسابك قيد المراجعة من قبل الإدارة.'
+                      : 'Your account is currently under review by admin.'}
+                  </p>
+                )}
                 {isLocalDevRuntime() && accountStatus !== 'approved' && (
                   <button
                     type="button"
@@ -2098,22 +2187,30 @@ const DriverDashboard: React.FC = () => {
                 <StatCard
                   icon={<Users className="text-orange-500" size={16} />}
                   label={isRtl ? 'الرحلات المكتملة' : 'Completed trips'}
-                  value={String(wallet.completedOrderCount)}
+                  value={String(driverCommissionContext.completedOrdersCount)}
                   subValue={isRtl ? 'عملية' : 'Trips'}
                   isRtl={isRtl}
                 />
                 <StatCard
                   icon={<Star className="text-primary fill-primary" size={16} />}
                   label={t('overall_rating')}
-                  value="4.8"
-                  subValue={isRtl ? '128 تقييم' : '128 reviews'}
+                  value={ratingCount > 0 && ratingAverage != null ? ratingAverage.toFixed(1) : '—'}
+                  subValue={
+                    ratingCount > 0
+                      ? isRtl
+                        ? `${ratingCount} تقييم`
+                        : `${ratingCount} reviews`
+                      : isRtl
+                        ? 'لا توجد تقييمات بعد'
+                        : 'No reviews yet'
+                  }
                   isRtl={isRtl}
                 />
                 <StatCard
                   icon={<FileText className="text-purple-500" size={16} />}
                   label={isRtl ? 'الأداء' : 'Performance'}
-                  value="98.5%"
-                  subValue={isRtl ? 'نسبة القبول' : 'Acceptance rate'}
+                  value={ratingCount > 0 ? String(ratingCount) : '—'}
+                  subValue={isRtl ? 'تقييمات الرحلات' : 'Trip reviews'}
                   isRtl={isRtl}
                 />
               </div>
@@ -2178,7 +2275,8 @@ const DriverDashboard: React.FC = () => {
                           <button 
                             type="button"
                             onClick={openWithdrawModal}
-                            className="bg-primary text-black px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-all shadow-xl shadow-primary/20"
+                            disabled={Boolean(payoutLockUntil)}
+                            className="bg-primary text-black px-8 py-4 rounded-2xl font-black text-sm hover:scale-105 transition-all shadow-xl shadow-primary/20 disabled:opacity-40 disabled:hover:scale-100"
                           >
                             {isRtl ? 'طلب سحب' : 'Request Payout'}
                           </button>
@@ -2197,6 +2295,11 @@ const DriverDashboard: React.FC = () => {
                             {t('bank_details')}
                           </button>
                        </div>
+                       {payoutLockUntil ? (
+                         <p className="text-amber-200 text-xs font-bold leading-relaxed">
+                           {formatPayoutCooldownNotice(payoutIntervalDays, payoutLockUntil, isRtl)}
+                         </p>
+                       ) : null}
                     </div>
                  </div>
 
@@ -2306,56 +2409,51 @@ const DriverDashboard: React.FC = () => {
 
           <Route path="ratings" element={
             <div className="space-y-8">
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  <div className="bg-white p-10 rounded-[40px] border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
-                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('overall_rating')}</p>
-                     <div className="flex items-center gap-2">
-                        <h2 className="text-6xl font-black">4.8</h2>
-                        <Star className="text-primary fill-primary" size={40} />
-                     </div>
-                     <div className="flex gap-1">
-                        {[1, 2, 3, 4].map(i => <Star key={i} className="text-primary fill-primary" size={16} />)}
-                        <Star className="text-primary/30" size={16} />
-                     </div>
-                     <p className="text-xs text-muted-foreground italic">(128 {t('reviews')})</p>
+               <div className="bg-white p-10 rounded-[40px] border border-gray-100 shadow-sm flex flex-col items-center justify-center text-center space-y-4">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">{t('overall_rating')}</p>
+                  <div className="flex items-center gap-2">
+                     <h2 className="text-6xl font-black">
+                       {ratingCount > 0 && ratingAverage != null ? ratingAverage.toFixed(1) : '—'}
+                     </h2>
+                     <Star className="text-primary fill-primary" size={40} />
                   </div>
-
-                  <div className="md:col-span-2 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
-                     <h3 className="font-bold text-lg">{t('performance_stats')}</h3>
-                     <div className="space-y-4">
-                        <RatingBar label={isRtl ? 'جودة النقل' : 'Cargo Quality'} value={95} />
-                        <RatingBar label={isRtl ? 'الالتزام بالمواعيد' : 'Punctuality'} value={88} />
-                        <RatingBar label={isRtl ? 'الاحترافية' : 'Professionalism'} value={92} />
-                        <RatingBar label={isRtl ? 'نظافة المركبة' : 'Vehicle Cleanliness'} value={90} />
-                     </div>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {ratingCount > 0
+                      ? isRtl
+                        ? `${ratingCount} تقييم من الرحلات المكتملة`
+                        : `${ratingCount} reviews from completed trips`
+                      : isRtl
+                        ? 'لا توجد تقييمات بعد'
+                        : 'No reviews yet'}
+                  </p>
                </div>
 
-               <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-8">
+               <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6">
                   <h3 className="font-bold text-lg px-2">{t('latest_reviews')}</h3>
-                  <div className="divide-y divide-gray-50">
-                     <ReviewItem 
-                       name={isRtl ? 'محمد خالد' : 'Mohammed Khalid'}
-                       rating={5}
-                       comment={isRtl ? 'سائق محترف جداً وخلوق، وصل في الموعد تماماً وقام بمساعدتي في ترتيب العفش بحرص شديد. أنصح به بشدة.' : 'Very professional and polite driver, arrived exactly on time and helped me carefully arrange the furniture. I highly recommend him.'}
-                       date={isRtl ? 'منذ يومين' : '2 days ago'}
-                       isRtl={isRtl}
-                     />
-                     <ReviewItem 
-                       name={isRtl ? 'سارة المنصور' : 'Sara Al-Mansour'}
-                       rating={4}
-                       comment={isRtl ? 'الخدمة كانت جيدة جداً، السائق كان متعاوناً جداً. فقط تأخر 10 دقائق عن الموعد الأصلي لكنه عوض ذلك بالسرعة في العمل.' : 'The service was very good, the driver was very cooperative. He was only 10 minutes late from the original time but compensated for that with speed in work.'}
-                       date={isRtl ? 'منذ أسبوع' : 'A week ago'}
-                       isRtl={isRtl}
-                     />
-                     <ReviewItem 
-                       name={isRtl ? 'عبدالله حسن' : 'Abdullah Hassan'}
-                       rating={5}
-                       comment={isRtl ? 'ممتاز وسريع وأمين. شكراً جزيلاً.' : 'Excellent, fast and honest. Thank you very much.'}
-                       date={isRtl ? 'منذ شهر' : 'A month ago'}
-                       isRtl={isRtl}
-                     />
-                  </div>
+                  {driverReviews.length ? (
+                    <div className="divide-y divide-gray-50">
+                      {driverReviews.map((review) => (
+                        <ReviewItem
+                          key={review.id}
+                          name={isRtl ? 'عميل' : 'Customer'}
+                          rating={review.rating}
+                          comment={review.comment || (isRtl ? 'بدون تعليق' : 'No comment')}
+                          date={
+                            review.createdAt
+                              ? new Date(review.createdAt).toLocaleDateString(isRtl ? 'ar-SA' : 'en-GB')
+                              : ''
+                          }
+                          isRtl={isRtl}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 px-2">
+                      {isRtl
+                        ? 'ستظهر هنا تقييمات العملاء بعد إكمال الرحلات.'
+                        : 'Customer ratings appear here after completed trips.'}
+                    </p>
+                  )}
                </div>
             </div>
           } />
@@ -2538,21 +2636,6 @@ const HistoryItem: React.FC<{ type: string, price: number, date: string, isRtl: 
       </div>
     </div>
     <p className="font-mono font-bold text-xs shrink-0">{price.toFixed(2)} {t('sar')}</p>
-  </div>
-);
-
-const RatingBar: React.FC<{ label: string, value: number }> = ({ label, value }) => (
-  <div className="space-y-2">
-    <div className="flex justify-between text-xs font-bold uppercase tracking-wider">
-      <span className="text-gray-500">{label}</span>
-      <span>{value}%</span>
-    </div>
-    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-      <div 
-        className="h-full bg-primary transition-all duration-1000" 
-        style={{ width: `${value}%` }}
-      />
-    </div>
   </div>
 );
 

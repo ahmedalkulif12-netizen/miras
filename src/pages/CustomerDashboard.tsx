@@ -256,15 +256,19 @@ const CustomerDashboard: React.FC = () => {
   });
   const checkoutTotal = checkoutBreakdown.total;
   const tripFareDisplay = checkoutBreakdown.basePrice + checkoutBreakdown.extraDistanceFee;
-  const listedServiceFee = pricing.isServiceFeeFree
-    ? roundMoney(tripFareDisplay * CUSTOMER_SERVICE_FEE_RATE)
-    : pricing.serviceFee;
 
   const [previousOrdersCount, setPreviousOrdersCount] = useState(0);
   const [pricingConfig, setPricingConfig] = useState<PricingConfig | null>(null);
   const [isLoadingPricing, setIsLoadingPricing] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [isMapVisible, setIsMapVisible] = useState(false);
+  const listedFeeRate =
+    typeof pricingConfig?.customer_service_fee_percentage === 'number'
+      ? pricingConfig.customer_service_fee_percentage / 100
+      : CUSTOMER_SERVICE_FEE_RATE;
+  const listedServiceFee = pricing.isServiceFeeFree
+    ? roundMoney(tripFareDisplay * listedFeeRate)
+    : pricing.serviceFee;
 
   const geocodingLib = useMapsLibrary('geocoding');
   const map = useMap();

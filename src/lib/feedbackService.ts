@@ -20,6 +20,33 @@ function rememberLocally(input: ServiceFeedbackInput) {
   }
 }
 
+export interface DriverReview {
+  id: string;
+  rating: number;
+  comment: string;
+  createdAt: string | null;
+}
+
+export interface DriverRatingSummary {
+  average: number | null;
+  count: number;
+  reviews: DriverReview[];
+}
+
+/** Trip ratings left for the signed-in driver. */
+export async function fetchMyDriverRatings(): Promise<DriverRatingSummary> {
+  const response = await authFetch(resolveApiUrl('/api/driver/ratings'));
+  if (!response.ok) {
+    throw new Error(`RATINGS_${response.status}`);
+  }
+  const payload = (await response.json()) as Partial<DriverRatingSummary>;
+  return {
+    average: typeof payload.average === 'number' ? payload.average : null,
+    count: Number(payload.count) || 0,
+    reviews: Array.isArray(payload.reviews) ? payload.reviews : [],
+  };
+}
+
 /** Saves a star rating and comment. Falls back to this device if the API is unreachable. */
 export async function submitServiceFeedback(input: ServiceFeedbackInput): Promise<void> {
   const rating = Math.round(input.rating);

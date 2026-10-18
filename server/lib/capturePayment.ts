@@ -8,6 +8,10 @@ import {
   creditWalletForCompletedTrip,
   readOrderTripMoney,
 } from './driverWallet.ts';
+import {
+  driverCompletedCountFields,
+  resolveOrderDriverCommission,
+} from './driverCommission.ts';
 
 export interface CapturePaymentInput {
   paymentId: string;
@@ -75,8 +79,23 @@ export async function executeCapturePayment(
       throw Object.assign(new Error('Payment not in valid state for capture'), { statusCode: 400 });
     }
 
-    const money = readOrderTripMoney(orderData);
-    const capturedAmount = Number(paymentData.amount) || money.tripFare;
+    const quoted = readOrderTripMoney(orderData);
+    const walletData = walletSnap.exists
+      ? (walletSnap.data() as Record<string, unknown>)
+      : null;
+    const loyalty = await resolveOrderDriverCommission(
+      db,
+      transaction,
+      orderData,
+      driverId,
+      walletData
+    );
+    const money = {
+      tripFare: loyalty.financials.tripFare || quoted.tripFare,
+      platformFee: loyalty.financials.platformFee,
+      driverNet: loyalty.financials.driverNet,
+    };
+    const capturedAmount = Number(paymentData.amount) || quoted.tripFare;
 
     transaction.update(paymentRef, {
       status: 'captured',
@@ -88,6 +107,8 @@ export async function executeCapturePayment(
 
     const orderStatus = String(orderData.status || '');
     const normalized = normalizeOrderStatus(orderStatus);
+    const alreadyCompleted =
+      orderStatus === OrderStatus.COMPLETED || normalized === OrderStatus.COMPLETED;
     const completable = [
       OrderStatus.ASSIGNED,
       OrderStatus.DRIVER_ARRIVED,
@@ -96,29 +117,48 @@ export async function executeCapturePayment(
       'arrived',
       'on_the_way',
     ];
-    if (!completable.includes(orderStatus) && !completable.includes(normalized)) {
+    if (
+      !alreadyCompleted &&
+      !completable.includes(orderStatus) &&
+      !completable.includes(normalized)
+    ) {
       throw Object.assign(
         new Error(`Order not ready for completion (status: ${orderStatus})`),
         { statusCode: 400 }
       );
     }
 
-    const statusHistory = appendStatusHistory(orderData.statusHistory, {
-      status: OrderStatus.COMPLETED,
-      by: driverId,
-      byRole: 'driver',
-    });
+    const statusHistory = alreadyCompleted
+      ? orderData.statusHistory
+      : appendStatusHistory(orderData.statusHistory, {
+          status: OrderStatus.COMPLETED,
+          by: driverId,
+          byRole: 'driver',
+        });
 
     const alreadyCredited = orderData.walletCredited === true;
+    const capturedAt = admin.firestore.FieldValue.serverTimestamp();
     transaction.update(orderRef, {
+      ...(alreadyCredited ? {} : loyalty.moneyFields),
       status: OrderStatus.COMPLETED,
       paymentStatus: 'captured',
       driverId,
       walletCredited: true,
-      walletCreditedAt: admin.firestore.FieldValue.serverTimestamp(),
-      statusHistory,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      walletCreditedAt: capturedAt,
+      ...(statusHistory !== undefined ? { statusHistory } : {}),
+      updatedAt: capturedAt,
     });
+
+    if (!alreadyCredited) {
+      transaction.set(
+        db.collection('drivers').doc(driverId),
+        {
+          ...driverCompletedCountFields(loyalty.completedOrdersCount + 1),
+          updatedAt: capturedAt,
+        },
+        { merge: true }
+      );
+    }
 
     if (!alreadyCredited && money.driverNet > 0) {
       creditWalletForCompletedTrip(transaction, walletRef, walletSnap, {

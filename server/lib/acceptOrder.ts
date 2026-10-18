@@ -6,6 +6,7 @@ import {
   appendStatusHistory,
 } from './orderStatus.ts';
 import { driverMatchesOrderService } from '../../src/domain/serviceCategories.ts';
+import { resolveOrderDriverCommission } from './driverCommission.ts';
 
 export interface AcceptOrderInput {
   orderId: string;
@@ -109,7 +110,17 @@ export async function executeAcceptOrder(
       byRole: 'driver',
     });
 
+    const loyalty = await resolveOrderDriverCommission(
+      db,
+      transaction,
+      order,
+      driverId
+    );
+    const moneyFields =
+      loyalty.financials.tripFare > 0 ? loyalty.moneyFields : {};
+
     transaction.update(orderRef, {
+      ...moneyFields,
       status: OrderStatus.ASSIGNED,
       driverId,
       driverName,
