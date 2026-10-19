@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
+import { publicKeyForCheckout } from '@/lib/tapLivePublicKey';
 
 const TAP_CARD_SDK_URL = 'https://tap-sdks.b-cdn.net/card/1.0.2/index.js';
 const CARD_MOUNT_ID = 'tap-card-frame';
@@ -192,16 +193,21 @@ export function TapCardFrame({
     async function mount() {
       try {
         const response = await authFetch('/api/payments/tap-config');
-        if (!response.ok) {
+        let config: { publicKey?: string; merchantId?: string; testMode?: boolean } = {};
+        if (response.ok) {
+          config = await readApiJson<typeof config>(response);
+        } else if (!import.meta.env.PROD) {
           throw new Error(await readApiErrorMessage(response, 'Tap is not configured'));
+        } else {
+          console.warn('[tap-card] tap-config unavailable — using the live merchant public key.');
         }
-        const config = await readApiJson<{ publicKey: string; merchantId?: string }>(response);
+        const publicKey = publicKeyForCheckout(config);
         await loadTapCardScript();
         const sdk = window.CardSDK;
         if (!sdk || cancelled) return;
 
         const mounted = sdk.renderTapCard(CARD_MOUNT_ID, {
-          publicKey: config.publicKey,
+          publicKey,
           ...(config.merchantId ? { merchant: { id: config.merchantId } } : {}),
           transaction: {
             amount: Number(amount.toFixed(2)),

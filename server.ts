@@ -10,6 +10,7 @@ import {
 } from './server/config/env.ts';
 import { verifyFirebaseToken, adminOverviewTokenOptions, type AuthenticatedRequest } from './server/middleware/verifyFirebaseToken.ts';
 import { verifyAppCheck } from './server/middleware/verifyAppCheck.ts';
+import { publicKeyForCheckout } from './src/lib/tapLivePublicKey.ts';
 import {
   captureRawBody,
   verifyTapWebhookHash,
@@ -1949,10 +1950,11 @@ async function startServer() {
   app.get('/api/payments/tap-config', ...secureApi, (_req: AuthenticatedRequest, res: any) => {
     try {
       assertTapConfigured(config);
+      const testMode = isTapTestSecret(config.tapSecretKey);
       res.json({
-        publicKey: config.tapPublicKey,
+        publicKey: publicKeyForCheckout({ testMode, publicKey: config.tapPublicKey }),
         merchantId: config.tapMerchantId || '',
-        testMode: isTapTestSecret(config.tapSecretKey),
+        testMode,
       });
     } catch (error: any) {
       res.status(error?.statusCode ?? 503).json({

@@ -1816,6 +1816,8 @@ const CustomerDashboard: React.FC = () => {
                                        <>
                                          {routeDistanceKm} {t('km')}
                                        </>
+                                     ) : pricingError ? (
+                                       <span className="text-sm text-red-600">{pricingError}</span>
                                      ) : t('waiting_calc')}
                                    </p>
                                    {isCalculated && (

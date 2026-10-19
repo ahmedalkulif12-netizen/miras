@@ -28,6 +28,8 @@ export class E2eApiClient {
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
+      Origin: 'https://hamula-cfc6c.web.app',
+      'Sec-Fetch-Site': 'same-origin',
     };
     if (options.body !== undefined) {
       headers['Content-Type'] = 'application/json';

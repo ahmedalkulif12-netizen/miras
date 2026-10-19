@@ -8,7 +8,8 @@ import type { ScenarioResult } from './fullLifecycle.ts';
 /**
  * App Check compatibility:
  * - When enforcement is OFF, APIs accept Bearer-only requests (staging default).
- * - When enforcement is ON, missing App Check header must be rejected unless debug token supplied.
+ * - When enforcement is ON, a browser request missing App Check must be rejected unless a debug token is supplied.
+ *   Native shells (no Origin / Sec-Fetch-Site) are allowed through; this client sends browser metadata.
  */
 export async function runAppCheckCompatScenario(
   ctx: AdminContext,

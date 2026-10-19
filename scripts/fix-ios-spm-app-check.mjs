@@ -57,6 +57,27 @@ function stripTestTargets(text) {
 
 copyPluginPackage();
 
+const deviceCheckFactory = `import Foundation
+import FirebaseCore
+import FirebaseAppCheck
+
+public class CustomAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
+    /// The App Store profile cannot include the App Attest entitlement.
+    /// AppAttestProvider never returns a token on TestFlight, so API calls
+    /// leave without X-Firebase-AppCheck. DeviceCheck works on a real device
+    /// without that entitlement.
+    public func createProvider(with app: FirebaseApp) -> AppCheckProvider? {
+        return DeviceCheckProvider(app: app)
+    }
+}
+`;
+const factoryPath = path.join(destDir, 'ios', 'Plugin', 'CustomAppCheckProviderFactory.swift');
+if (!fs.existsSync(factoryPath)) {
+  console.error(`Missing App Check factory at ${factoryPath}`);
+  process.exit(1);
+}
+fs.writeFileSync(factoryPath, deviceCheckFactory);
+
 const copiedManifest = path.join(destDir, 'Package.swift');
 if (!fs.existsSync(copiedManifest)) {
   console.error(`Copied plugin is missing Package.swift at ${copiedManifest}`);
