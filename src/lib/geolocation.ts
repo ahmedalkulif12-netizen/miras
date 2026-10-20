@@ -9,6 +9,57 @@ export interface GeoCoordinates {
   accuracy?: number;
 }
 
+/** Riyadh center. Used when GPS times out so the map stays usable. */
+export const DEFAULT_MAP_CENTER: GeoCoordinates = { lat: 24.7136, lng: 46.6753 };
+
+const HIGH_ACCURACY_MS = 12_000;
+const COARSE_MS = 10_000;
+const PERMISSION_MS = 8_000;
+
+function coded(code: string): Error {
+  return Object.assign(new Error(code), { code });
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(coded(code)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
+/** Normalize browser and Capacitor Geolocation failures to a stable code. */
+export function locationFailureCode(error: unknown): string {
+  const err = error as { code?: string | number; message?: string };
+  const code = String(err?.code ?? '');
+  const message = String(err?.message || '');
+  if (
+    code === 'LOCATION_PERMISSION_DENIED' ||
+    code === 'LOCATION_SERVICES_DISABLED' ||
+    code === 'OS-PLUG-GLOC-0003' ||
+    code === 'OS-PLUG-GLOC-0007' ||
+    code === 'OS-PLUG-GLOC-0008' ||
+    code === '1'
+  ) {
+    return code === 'OS-PLUG-GLOC-0007' || code === 'LOCATION_SERVICES_DISABLED'
+      ? 'LOCATION_SERVICES_DISABLED'
+      : 'LOCATION_PERMISSION_DENIED';
+  }
+  if (/denied|not enabled|restricted/i.test(message)) return 'LOCATION_PERMISSION_DENIED';
+  if (code === 'LOCATION_TIMEOUT' || code === 'OS-PLUG-GLOC-0010' || /timeout/i.test(message)) {
+    return 'LOCATION_TIMEOUT';
+  }
+  return 'LOCATION_UNAVAILABLE';
+}
+
 /**
  * Request location permission (Capacitor native + browser).
  * Web browsers prompt on first watchPosition/getCurrentPosition call.
@@ -31,45 +82,68 @@ export async function requestLocationPermission(): Promise<boolean> {
   }
 }
 
+async function readNativePosition(
+  enableHighAccuracy: boolean,
+  timeout: number,
+  maximumAge: number
+): Promise<GeoCoordinates> {
+  const position = await withTimeout(
+    Geolocation.getCurrentPosition({ enableHighAccuracy, timeout, maximumAge }),
+    timeout + 1_500,
+    'LOCATION_TIMEOUT'
+  );
+  return mapCapacitorPosition(position);
+}
+
 /**
  * One-shot live GPS fix for booking maps (customer current location).
- * Requests permission first, then returns high-accuracy coordinates.
+ * Requests When In Use permission, tries a precise fix, then a coarser cached
+ * fix. Always settles so the map can fall back to a manual pin.
  */
 export async function getCurrentPosition(): Promise<GeoCoordinates> {
-  const allowed = await requestLocationPermission();
+  const allowed = await withTimeout(requestLocationPermission(), PERMISSION_MS, 'LOCATION_TIMEOUT');
   if (!allowed) {
-    throw Object.assign(new Error('LOCATION_PERMISSION_DENIED'), {
-      code: 'LOCATION_PERMISSION_DENIED',
-    });
+    throw coded('LOCATION_PERMISSION_DENIED');
   }
 
   if (Capacitor.isNativePlatform()) {
-    const position = await Geolocation.getCurrentPosition({
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 10000,
-    });
-    return mapCapacitorPosition(position);
+    try {
+      return await readNativePosition(true, HIGH_ACCURACY_MS, 5_000);
+    } catch (error) {
+      const code = locationFailureCode(error);
+      if (code === 'LOCATION_PERMISSION_DENIED' || code === 'LOCATION_SERVICES_DISABLED') {
+        throw coded(code);
+      }
+      try {
+        return await readNativePosition(false, COARSE_MS, 120_000);
+      } catch (retryError) {
+        const retryCode = locationFailureCode(retryError);
+        if (retryCode === 'LOCATION_PERMISSION_DENIED' || retryCode === 'LOCATION_SERVICES_DISABLED') {
+          throw coded(retryCode);
+        }
+        throw coded('LOCATION_UNAVAILABLE');
+      }
+    }
   }
 
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    throw Object.assign(new Error('GEOLOCATION_UNSUPPORTED'), {
-      code: 'GEOLOCATION_UNSUPPORTED',
-    });
+    throw coded('GEOLOCATION_UNSUPPORTED');
   }
 
-  return new Promise<GeoCoordinates>((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve(mapWebPosition(pos)),
-      (err) =>
-        reject(
-          Object.assign(new Error(err.message || 'GEOLOCATION_FAILED'), {
-            code: err.code === 1 ? 'LOCATION_PERMISSION_DENIED' : 'GEOLOCATION_FAILED',
-          })
-        ),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  });
+  return withTimeout(
+    new Promise<GeoCoordinates>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(mapWebPosition(pos)),
+        (err) =>
+          reject(
+            coded(err.code === 1 ? 'LOCATION_PERMISSION_DENIED' : 'LOCATION_UNAVAILABLE')
+          ),
+        { enableHighAccuracy: true, timeout: HIGH_ACCURACY_MS, maximumAge: 10_000 }
+      );
+    }),
+    HIGH_ACCURACY_MS + 1_500,
+    'LOCATION_TIMEOUT'
+  );
 }
 
 function mapCapacitorPosition(position: Position): GeoCoordinates {

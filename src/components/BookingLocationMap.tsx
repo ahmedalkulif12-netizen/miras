@@ -7,6 +7,7 @@ import {
 } from '@vis.gl/react-google-maps';
 import { Crosshair, MapPin } from 'lucide-react';
 import { RouteDisplay } from '@/components/RouteDisplay';
+import { DEFAULT_MAP_CENTER } from '@/lib/geolocation';
 import { cityFromAddressComponents } from '@/lib/saudiGeo';
 
 export type BookingPinTarget = 'pickup' | 'destination';
@@ -36,9 +37,11 @@ interface BookingLocationMapProps {
   centerPin?: boolean;
   /** Bump to pan the camera to the current GPS / active pin once. */
   focusNonce?: number;
+  /** GPS failed. The map stays on the default city so the pin can be placed by hand. */
+  manualSelection?: boolean;
 }
 
-const RIYADH_CENTER: google.maps.LatLngLiteral = { lat: 24.7136, lng: 46.6753 };
+const RIYADH_CENTER: google.maps.LatLngLiteral = DEFAULT_MAP_CENTER;
 
 async function reverseGeocode(
   geocoder: google.maps.Geocoder,
@@ -216,6 +219,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
   locating = false,
   centerPin = false,
   focusNonce = 0,
+  manualSelection = false,
 }) => {
   const geocodingLib = useMapsLibrary('geocoding');
   const geocoder = useMemo(
@@ -374,7 +378,11 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
             isRtl ? 'text-right' : 'text-left'
           }`}
         >
-          {deliveryOnly
+          {manualSelection
+            ? isRtl
+              ? 'تعذر تحديد موقعك الحالي. حرّك الخريطة أو ابحث عن العنوان.'
+              : 'Current location is unavailable. Drag the map or search for the address.'
+            : deliveryOnly
             ? isRtl
               ? 'موقع التنزيل فقط — اسحب الدبوس أو انقر على الخريطة لتعديل الموقع'
               : 'Drop-off only — drag the pin or tap the map to set the location'

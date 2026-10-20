@@ -60,7 +60,7 @@ import { SERVICE_OPTIONS, OPTION_LABELS, SERVICE_KEY_MAP } from '@/constants';
 import { LocationAutocomplete } from '@/components/LocationAutocomplete';
 import { BookingLocationMap, type BookingPinTarget } from '@/components/BookingLocationMap';
 import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { getCurrentPosition } from '@/lib/geolocation';
+import { getCurrentPosition, locationFailureCode } from '@/lib/geolocation';
 import {
   findNearestOnlineDriver,
   type NearestDriverMatch,
@@ -342,6 +342,18 @@ const CustomerDashboard: React.FC = () => {
     setIsCalculated(false);
   };
 
+  const gpsFailureMessage = (error: unknown) => {
+    const code = locationFailureCode(error);
+    if (code === 'LOCATION_PERMISSION_DENIED' || code === 'LOCATION_SERVICES_DISABLED') {
+      return isRtl
+        ? 'يرجى السماح بالموقع أثناء استخدام التطبيق، أو حدّد الموقع على الخريطة.'
+        : 'Allow location while using the app, or choose the point on the map.';
+    }
+    return isRtl
+      ? 'تعذر تحديد موقعك الحالي. الخريطة على الرياض — حرّك الدبوس أو ابحث عن العنوان.'
+      : 'Current location is unavailable. The map is on Riyadh — drag the pin or search.';
+  };
+
   const locateUser = async (force = false) => {
     setLocatingGps(true);
     setGpsError(null);
@@ -354,15 +366,7 @@ const CustomerDashboard: React.FC = () => {
       );
     } catch (err) {
       console.warn('[booking] geolocation failed:', err);
-      const code = (err as { code?: string })?.code;
-      const msg =
-        code === 'LOCATION_PERMISSION_DENIED'
-          ? isRtl
-            ? 'يرجى السماح بالوصول إلى الموقع لاستخدام الخريطة'
-            : 'Please allow location access to use the map'
-          : isRtl
-            ? 'تعذر الحصول على موقعك الحالي'
-            : 'Could not get your current location';
+      const msg = gpsFailureMessage(err);
       setGpsError(msg);
       toast.error(msg);
     } finally {
@@ -390,16 +394,7 @@ const CustomerDashboard: React.FC = () => {
       } catch (err) {
         if (cancelled) return;
         console.warn('[booking] geolocation failed:', err);
-        const code = (err as { code?: string })?.code;
-        const msg =
-          code === 'LOCATION_PERMISSION_DENIED'
-            ? isRtl
-              ? 'يرجى السماح بالوصول إلى الموقع لاستخدام الخريطة'
-              : 'Please allow location access to use the map'
-            : isRtl
-              ? 'تعذر الحصول على موقعك الحالي'
-              : 'Could not get your current location';
-        setGpsError(msg);
+        setGpsError(gpsFailureMessage(err));
       } finally {
         if (!cancelled) setLocatingGps(false);
       }
@@ -1709,6 +1704,7 @@ const CustomerDashboard: React.FC = () => {
                             userLocation={userLocation}
                             locating={locatingGps}
                             onRequestUserLocation={() => void locateUser(true)}
+                            manualSelection={Boolean(gpsError)}
                             centerPin={locationPhase !== 'summary'}
                             focusNonce={mapFocusNonce}
                             showRoute={
