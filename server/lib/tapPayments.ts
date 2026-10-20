@@ -58,13 +58,16 @@ export function isFailedTapStatus(status: unknown): boolean {
 }
 
 /**
- * Hosted-page source. Card checkout uses `src_card` so Visa, Mastercard, and
- * mada test cards can enable Pay Now. `src_sa.mada` hides non-mada cards.
- * Apple Pay keeps its own source.
+ * Hosted checkout source. `src_all` lets Tap show every method enabled on the
+ * merchant (mada, Visa, Mastercard, and any other live option). A single
+ * source such as `src_sa.mada` or `src_card` hides the rest and fails when
+ * that one source is not enabled. Apple Pay stays its own source.
  */
+export const TAP_HOSTED_SOURCE = 'src_all';
+
 export function tapSourceId(method: string): string {
   if (method === 'applepay') return 'src_apple_pay';
-  return 'src_card';
+  return TAP_HOSTED_SOURCE;
 }
 
 export function toStringMetadata(input: Record<string, unknown>): Record<string, string> {
@@ -205,7 +208,7 @@ export async function createTapCharge(
   secretKey: string,
   input: TapChargeRequest
 ): Promise<TapChargeResult> {
-  const currency = (input.currency || 'SAR').toUpperCase();
+  const currency = 'SAR';
   const amount = Number(formatTapAmount(input.amount, currency));
   if (!Number.isFinite(amount) || amount <= 0) {
     throw Object.assign(new Error('Charge amount must be a positive number'), {

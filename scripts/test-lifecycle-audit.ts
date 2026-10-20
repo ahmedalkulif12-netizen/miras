@@ -1017,8 +1017,8 @@ async function run(): Promise<void> {
   assert(typeof history[0]?.at === 'string', 'status history uses an ISO timestamp, not a Firestore sentinel');
 
   const { formatTapAmount, tapChargeOutcome, tapSourceId } = await import('../server/lib/tapPayments.ts');
-  assert(tapSourceId('mada') === 'src_card', 'mada hosted checkout uses src_card');
-  assert(tapSourceId('creditcard') === 'src_card', 'card hosted checkout uses src_card');
+  assert(tapSourceId('mada') === 'src_all', 'mada hosted checkout uses every enabled Tap method');
+  assert(tapSourceId('creditcard') === 'src_all', 'card hosted checkout uses every enabled Tap method');
   assert(tapSourceId('applepay') === 'src_apple_pay', 'apple pay keeps its source');
   assert(formatTapAmount(110, 'SAR') === '110.00', 'SAR charge amount keeps two decimals');
   assert(Number(formatTapAmount(110, 'SAR')) > 0, 'SAR charge amount is a positive number');

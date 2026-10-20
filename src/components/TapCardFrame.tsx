@@ -96,7 +96,7 @@ export function readTapCardError(data: unknown): string {
 
 /** Init failures. Field mistakes after the form is ready are not fatal. */
 export function isFatalTapCardError(message: string): boolean {
-  return /key not found|invalid api key|2104|1224|7017|merchant public key|not configured|card script failed|could not load card form|card form error/i.test(
+  return /key not found|invalid api key|2104|1224|1242|7017|merchant public key|not configured|card script failed|could not load card form|card form error|payment methods are not available/i.test(
     message
   );
 }
@@ -206,15 +206,15 @@ export function TapCardFrame({
         const sdk = window.CardSDK;
         if (!sdk || cancelled) return;
 
+        const chargeAmount = Number(amount.toFixed(2));
         const mounted = sdk.renderTapCard(CARD_MOUNT_ID, {
           publicKey,
           ...(config.merchantId ? { merchant: { id: config.merchantId } } : {}),
           transaction: {
-            amount: Number(amount.toFixed(2)),
-            currency: sdk.Currencies.SAR,
+            amount: chargeAmount,
+            currency: sdk.Currencies?.SAR || 'SAR',
           },
           acceptance: {
-            supportedBrands: ['MADA', 'VISA', 'MASTERCARD'],
             supportedCards: 'ALL',
           },
           fields: {

@@ -62,6 +62,7 @@ import {
   isFailedTapStatus,
   isPaidTapStatus,
   splitSaudiPhone,
+  TAP_HOSTED_SOURCE,
   type CheckoutGatewayMethod,
 } from './server/lib/tapPayments.ts';
 import {
@@ -1955,6 +1956,8 @@ async function startServer() {
         publicKey: publicKeyForCheckout({ testMode, publicKey: config.tapPublicKey }),
         merchantId: config.tapMerchantId || '',
         testMode,
+        currency: 'SAR',
+        source: TAP_HOSTED_SOURCE,
       });
     } catch (error: any) {
       res.status(error?.statusCode ?? 503).json({
