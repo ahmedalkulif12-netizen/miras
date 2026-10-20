@@ -42,7 +42,9 @@ export async function bootstrapNativeShell(): Promise<void> {
     const { StatusBar, Style } = await import('@capacitor/status-bar');
     await StatusBar.setStyle({ style: Style.Dark });
     if (Capacitor.getPlatform() === 'android') {
-      await StatusBar.setBackgroundColor({ color: '#F8F9FB' });
+      // Draw the status bar above the WebView so system icons cannot cover the logo.
+      await StatusBar.setOverlaysWebView({ overlay: false });
+      await StatusBar.setBackgroundColor({ color: '#000000' });
     }
     await StatusBar.show();
   } catch (err) {

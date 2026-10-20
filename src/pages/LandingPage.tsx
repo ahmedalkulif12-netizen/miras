@@ -41,9 +41,9 @@ const LandingPage: React.FC = () => {
   return (
     <div className="flex flex-col min-h-dvh bg-[#F6F6F4]">
       {/* Header */}
-      <header className="sticky top-0 w-full z-50 bg-black text-white border-b border-black app-header-safe">
-        <div className="max-w-7xl mx-auto px-4 py-4 md:py-5 flex justify-between items-center gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+      <header className="sticky top-0 w-full z-50 bg-black text-white border-b border-black app-header-safe notranslate" translate="no">
+        <div className="app-header-row max-w-7xl mx-auto px-4 py-4 md:py-5">
+          <div className="app-header-brand">
             <BrandLogo size={32} withWordmark onDark />
           </div>
           <nav className="hidden md:flex gap-10 text-sm font-semibold text-white/80">
@@ -55,19 +55,19 @@ const LandingPage: React.FC = () => {
               <span className="text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-all">للمدير</span>
             </Link>
           </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="app-header-actions sm:gap-3">
             <LanguageToggle className="hidden sm:inline-flex" />
             <button
               type="button"
               onClick={() => openAuth('login')}
-              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full border border-white/25 text-xs sm:text-sm font-bold text-white hover:bg-white hover:text-black transition-all text-center leading-tight"
+              className="hidden sm:inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full border border-white/25 text-xs sm:text-sm font-bold text-white hover:bg-white hover:text-black transition-all text-center leading-tight"
             >
               {t('auth_login')}
             </button>
             <button
               type="button"
               onClick={() => openAuth('register')}
-              className="inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full bg-[#FFCC00] text-black text-xs sm:text-sm font-bold hover:bg-[#ffe14d] transition-all text-center leading-tight"
+              className="hidden sm:inline-flex px-3 sm:px-5 py-2 sm:py-2.5 rounded-full bg-[#FFCC00] text-black text-xs sm:text-sm font-bold hover:bg-[#ffe14d] transition-all text-center leading-tight"
             >
               {t('auth_register')}
             </button>

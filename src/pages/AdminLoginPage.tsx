@@ -177,8 +177,8 @@ const AdminLoginPage: React.FC = () => {
 
       <div className="max-w-md w-full flex flex-col gap-8 bg-white p-10 rounded-[40px] shadow-xl border border-stone-100">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-3 mb-4">
-            <div className="flex items-center gap-2">
+          <div className="app-header-row mb-4">
+            <div className="app-header-brand flex flex-col items-start gap-1">
               <BrandLogo size={36} withChip withWordmark />
               <span className="text-sm font-black text-neutral-400 tracking-widest uppercase">Admin</span>
             </div>

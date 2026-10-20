@@ -76,9 +76,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   return (
     <div
-      className={`inline-flex min-w-0 ${
+      className={`inline-flex shrink-0 notranslate ${
         wordmarkBelow ? 'flex-col items-center' : 'flex-row items-center gap-2.5'
       }`}
+      translate="no"
     >
       {mark}
       {wordmark}

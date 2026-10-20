@@ -105,12 +105,14 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
               : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="p-5 md:p-6 border-b border-black bg-black flex items-center justify-between">
-          <BrandLogo size={28} withWordmark onDark />
+        <div className="app-header-row p-5 md:p-6 border-b border-black bg-black notranslate" translate="no">
+          <div className="app-header-brand">
+            <BrandLogo size={28} withWordmark onDark />
+          </div>
           <button
             type="button"
             onClick={() => setIsSidebarOpen(false)}
-            className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
+            className="lg:hidden shrink-0 p-2 text-white hover:bg-white/10 rounded-lg"
             aria-label={isRtl ? 'إغلاق القائمة' : 'Close menu'}
           >
             {isRtl ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
@@ -196,20 +198,20 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="min-h-16 md:h-20 bg-black text-white border-b border-black flex items-center justify-between gap-3 px-4 md:px-6 lg:px-8 app-header-safe">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="app-header-row min-h-16 md:h-20 bg-black text-white border-b border-black px-4 md:px-6 lg:px-8 app-header-safe notranslate" translate="no">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
               type="button"
               onClick={() => setIsSidebarOpen(true)}
-              className="lg:hidden p-2 text-white hover:bg-white/10 rounded-lg"
+              className="lg:hidden shrink-0 p-2 text-white hover:bg-white/10 rounded-lg"
               aria-label={isRtl ? 'فتح القائمة' : 'Open menu'}
             >
               <Menu size={24} />
             </button>
-            <h1 className="text-lg md:text-xl font-bold truncate text-white">{title}</h1>
+            <h1 className="min-w-0 text-lg md:text-xl font-bold truncate text-white">{title}</h1>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <div className="app-header-actions sm:gap-4">
             <LanguageToggle />
 
             {tripChat?.visible ? (

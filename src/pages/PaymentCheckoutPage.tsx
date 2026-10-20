@@ -248,19 +248,21 @@ const PaymentCheckoutPage: React.FC = () => {
           <LanguageToggle />
         </div>
       <div className={`bg-white rounded-[32px] border border-gray-100 shadow-xl ${useTapCard ? 'overflow-visible' : 'overflow-hidden'}`}>
-        <div className="bg-slate-900 text-white px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="app-header-row bg-slate-900 text-white px-6 py-5">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
               <ShieldCheck size={20} className="text-emerald-300" />
             </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-white/60 font-bold">
+            <div className="min-w-0">
+              <p className="truncate text-[10px] uppercase tracking-wide text-white/60 font-bold">
                 {isRtl ? 'بوابة الدفع الآمنة' : 'Secure payment gateway'}
               </p>
-              <p className="text-sm font-bold">JZ Logistics Checkout</p>
+              <p className="truncate text-sm font-bold">JZ Logistics Checkout</p>
             </div>
           </div>
-          <BrandLogo size={28} />
+          <div className="app-header-brand">
+            <BrandLogo size={28} />
+          </div>
         </div>
 
         <div className="p-6 space-y-5">

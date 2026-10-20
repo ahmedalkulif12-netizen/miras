@@ -24,6 +24,31 @@
     padding-top: env(safe-area-inset-top, 0px);
   }
 
+  /* Brand row stays intact; language controls wrap beside it instead of covering it. */
+  .app-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .app-header-brand {
+    flex: 0 0 auto;
+    min-width: max-content;
+    position: relative;
+    z-index: 2;
+  }
+
+  .app-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex: 0 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+
   .app-bottom-safe {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -64,6 +89,23 @@
   html.capacitor-native select {
     font-size: 16px; /* prevents iOS zoom on focus */
   }
+}
+
+/* Chrome / Android WebView translate UI covers the header wordmark. */
+.skiptranslate,
+.goog-te-banner-frame,
+.goog-te-balloon-frame,
+#goog-gt-tt,
+iframe.goog-te-banner-frame,
+.VIpgJd-ZVi9od-ORHb-OEVmcd,
+.VIpgJd-ZVi9od-aZ2wEe-wOHMyf {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+html.notranslate,
+html.notranslate body {
+  top: 0 !important;
 }
 
 /* Google Maps Autocomplete Styling */

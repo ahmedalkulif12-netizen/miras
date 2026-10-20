@@ -630,9 +630,11 @@ const LoginPage: React.FC<{
       <div className={embedded ? 'flex items-center justify-center p-4 sm:p-6' : 'flex items-center justify-center p-8'}>
         <div className={`max-w-md w-full flex flex-col gap-8 bg-white p-8 sm:p-10 rounded-[40px] shadow-xl shadow-stone-200/50 border border-stone-100 ${embedded ? 'max-h-[85vh] overflow-y-auto' : ''}`}>
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <BrandLogo size={36} withChip withWordmark />
-              <div className="flex items-center gap-2">
+            <div className="app-header-row mb-4">
+              <div className="app-header-brand">
+                <BrandLogo size={36} withChip withWordmark />
+              </div>
+              <div className="app-header-actions">
                 <LanguageToggle />
                 {onClose ? (
                   <button
