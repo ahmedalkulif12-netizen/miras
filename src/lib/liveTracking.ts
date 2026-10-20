@@ -49,24 +49,34 @@ export function subscribeToDriverLocation(
   let unsub: (() => void) | undefined;
   let cancelled = false;
 
-  void ensureFirebaseReady().then(() => {
-    if (cancelled) return;
-    unsub = onSnapshot(
-      trackingRef,
-      (snap) => {
-        if (!snap.exists()) {
+  void ensureFirebaseReady()
+    .then(() => {
+      if (cancelled) return;
+      const stop = onSnapshot(
+        trackingRef,
+        (snap) => {
+          if (!snap.exists()) {
+            onUpdate(null);
+            return;
+          }
+          const parsed = parseLiveDriverPosition(snap.data() as Record<string, unknown>);
+          onUpdate(parsed);
+        },
+        (error) => {
+          console.warn('[liveTracking] subscribe failed:', error);
           onUpdate(null);
-          return;
         }
-        const parsed = parseLiveDriverPosition(snap.data() as Record<string, unknown>);
-        onUpdate(parsed);
-      },
-      (error) => {
-        console.warn('[liveTracking] subscribe failed:', error);
-        onUpdate(null);
+      );
+      if (cancelled) {
+        stop();
+        return;
       }
-    );
-  });
+      unsub = stop;
+    })
+    .catch((error) => {
+      console.warn('[liveTracking] subscribe setup failed:', error);
+      if (!cancelled) onUpdate(null);
+    });
 
   return () => {
     cancelled = true;

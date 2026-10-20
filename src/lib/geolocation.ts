@@ -14,7 +14,8 @@ export const DEFAULT_MAP_CENTER: GeoCoordinates = { lat: 24.7136, lng: 46.6753 }
 
 const HIGH_ACCURACY_MS = 12_000;
 const COARSE_MS = 10_000;
-const PERMISSION_MS = 8_000;
+/** Long enough for the iOS system prompt. A shorter cap treats "Allow" as a failure. */
+const PERMISSION_MS = 25_000;
 
 function coded(code: string): Error {
   return Object.assign(new Error(code), { code });
@@ -146,24 +147,53 @@ export async function getCurrentPosition(): Promise<GeoCoordinates> {
   );
 }
 
-function mapCapacitorPosition(position: Position): GeoCoordinates {
+function usableCoordinate(lat: number, lng: number): boolean {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180 &&
+    !(lat === 0 && lng === 0)
+  );
+}
+
+function toCoordinates(
+  lat: number,
+  lng: number,
+  heading: number | null | undefined,
+  speed: number | null | undefined,
+  accuracy: number | null | undefined
+): GeoCoordinates {
+  if (!usableCoordinate(lat, lng)) {
+    throw coded('LOCATION_UNAVAILABLE');
+  }
   return {
-    lat: position.coords.latitude,
-    lng: position.coords.longitude,
-    heading: position.coords.heading ?? undefined,
-    speed: position.coords.speed ?? undefined,
-    accuracy: position.coords.accuracy,
+    lat,
+    lng,
+    heading: heading != null && Number.isFinite(heading) ? heading : undefined,
+    speed: speed != null && Number.isFinite(speed) ? speed : undefined,
+    accuracy: accuracy != null && Number.isFinite(accuracy) ? accuracy : undefined,
   };
 }
 
+function mapCapacitorPosition(position: Position): GeoCoordinates {
+  return toCoordinates(
+    position.coords.latitude,
+    position.coords.longitude,
+    position.coords.heading,
+    position.coords.speed,
+    position.coords.accuracy
+  );
+}
+
 function mapWebPosition(position: GeolocationPosition): GeoCoordinates {
-  return {
-    lat: position.coords.latitude,
-    lng: position.coords.longitude,
-    heading: position.coords.heading ?? undefined,
-    speed: position.coords.speed ?? undefined,
-    accuracy: position.coords.accuracy,
-  };
+  return toCoordinates(
+    position.coords.latitude,
+    position.coords.longitude,
+    position.coords.heading,
+    position.coords.speed,
+    position.coords.accuracy
+  );
 }
 
 /** Start watching driver position — returns cleanup function. */
@@ -173,32 +203,58 @@ export function watchDriverPosition(
 ): () => void {
   if (Capacitor.isNativePlatform()) {
     let watchId: string | undefined;
+    let stopped = false;
 
+    // Do not pass a short timeout. The iOS plugin ends the watch when it fires,
+    // which drops live tracking if the first GPS fix is slow.
     Geolocation.watchPosition(
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
+      { enableHighAccuracy: true, maximumAge: 5000 },
       (position, err) => {
+        if (stopped) return;
         if (err) {
           onError?.(err);
           return;
         }
-        if (position) onPosition(mapCapacitorPosition(position));
+        if (!position) return;
+        try {
+          onPosition(mapCapacitorPosition(position));
+        } catch (error) {
+          onError?.(error);
+        }
       }
-    ).then((id) => {
-      watchId = id;
-    });
+    )
+      .then((id) => {
+        watchId = id;
+        if (stopped) {
+          Geolocation.clearWatch({ id }).catch(() => undefined);
+        }
+      })
+      .catch((error) => {
+        if (!stopped) onError?.(error);
+      });
 
     return () => {
-      if (watchId) Geolocation.clearWatch({ id: watchId }).catch(() => undefined);
+      stopped = true;
+      if (!watchId) return;
+      const id = watchId;
+      watchId = undefined;
+      Geolocation.clearWatch({ id }).catch(() => undefined);
     };
   }
 
-  if (!navigator.geolocation) {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
     onError?.(new Error('Geolocation not supported'));
     return () => undefined;
   }
 
   const id = navigator.geolocation.watchPosition(
-    (pos) => onPosition(mapWebPosition(pos)),
+    (pos) => {
+      try {
+        onPosition(mapWebPosition(pos));
+      } catch (error) {
+        onError?.(error);
+      }
+    },
     (err) => onError?.(err),
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
   );

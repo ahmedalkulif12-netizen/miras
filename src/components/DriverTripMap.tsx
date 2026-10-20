@@ -225,19 +225,24 @@ export const DriverTripMap: React.FC<DriverTripMapProps> = ({
 
     let cancelled = false;
     void (async () => {
-      const pickup =
-        tableResolved.pickup || (await geocodePlaceName(tableResolved.customerCity));
-      const dropoff =
-        tableResolved.dropoff ||
-        (await geocodePlaceName(tableResolved.dropoffCity)) ||
-        liveDriver ||
-        (await geocodePlaceName(driverCity));
-      if (cancelled) return;
-      setGeocoded({
-        pickup: pickup || null,
-        dropoff: dropoff || null,
-      });
-      setGeoTried(true);
+      try {
+        const pickup =
+          tableResolved.pickup || (await geocodePlaceName(tableResolved.customerCity));
+        const dropoff =
+          tableResolved.dropoff ||
+          (await geocodePlaceName(tableResolved.dropoffCity)) ||
+          liveDriver ||
+          (await geocodePlaceName(driverCity));
+        if (cancelled) return;
+        setGeocoded({
+          pickup: pickup || null,
+          dropoff: dropoff || null,
+        });
+        setGeoTried(true);
+      } catch (error) {
+        console.warn('[DriverTripMap] geocode failed:', error);
+        if (!cancelled) setGeoTried(true);
+      }
     })();
 
     return () => {
