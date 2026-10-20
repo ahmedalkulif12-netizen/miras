@@ -54,20 +54,39 @@ export function locationFailureCode(error: unknown): string {
       ? 'LOCATION_SERVICES_DISABLED'
       : 'LOCATION_PERMISSION_DENIED';
   }
+  if (code === 'GEOLOCATION_UNSUPPORTED') return 'GEOLOCATION_UNSUPPORTED';
   if (/denied|not enabled|restricted/i.test(message)) return 'LOCATION_PERMISSION_DENIED';
-  if (code === 'LOCATION_TIMEOUT' || code === 'OS-PLUG-GLOC-0010' || /timeout/i.test(message)) {
+  if (
+    code === 'LOCATION_TIMEOUT' ||
+    code === 'OS-PLUG-GLOC-0010' ||
+    code === '3' ||
+    /timeout/i.test(message)
+  ) {
     return 'LOCATION_TIMEOUT';
   }
   return 'LOCATION_UNAVAILABLE';
 }
 
+async function browserLocationAvailable(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return false;
+  const permissions = navigator.permissions;
+  if (!permissions?.query) return true;
+  try {
+    const status = await permissions.query({ name: 'geolocation' });
+    return status.state !== 'denied';
+  } catch {
+    return true;
+  }
+}
+
 /**
- * Request location permission (Capacitor native + browser).
- * Web browsers prompt on first watchPosition/getCurrentPosition call.
+ * Request location permission on Android, iOS, and the browser.
+ * Native shells use the Capacitor prompt (25s). Browsers prompt on the
+ * position read itself; a previous denial returns false immediately.
  */
 export async function requestLocationPermission(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) {
-    return typeof navigator !== 'undefined' && 'geolocation' in navigator;
+    return browserLocationAvailable();
   }
 
   try {
@@ -96,10 +115,70 @@ async function readNativePosition(
   return mapCapacitorPosition(position);
 }
 
+function readBrowserPosition(
+  enableHighAccuracy: boolean,
+  timeout: number,
+  maximumAge: number
+): Promise<GeoCoordinates> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.reject(coded('GEOLOCATION_UNSUPPORTED'));
+  }
+  return withTimeout(
+    new Promise<GeoCoordinates>((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(mapWebPosition(pos)),
+        (err) => {
+          const code =
+            err.code === 1
+              ? 'LOCATION_PERMISSION_DENIED'
+              : err.code === 3
+                ? 'LOCATION_TIMEOUT'
+                : 'LOCATION_UNAVAILABLE';
+          reject(coded(code));
+        },
+        { enableHighAccuracy, timeout, maximumAge }
+      );
+    }),
+    timeout + 1_500,
+    'LOCATION_TIMEOUT'
+  );
+}
+
 /**
- * One-shot live GPS fix for booking maps (customer current location).
- * Requests When In Use permission, tries a precise fix, then a coarser cached
- * fix. Always settles so the map can fall back to a manual pin.
+ * Precise fix, then a coarser cached fix. Same sequence on Android, iOS, and Web.
+ * Permission denial stops the retry. A timeout still falls through to the coarse read.
+ */
+async function readPositionWithFallback(
+  read: (enableHighAccuracy: boolean, timeout: number, maximumAge: number) => Promise<GeoCoordinates>
+): Promise<GeoCoordinates> {
+  try {
+    return await read(true, HIGH_ACCURACY_MS, 5_000);
+  } catch (error) {
+    const code = locationFailureCode(error);
+    if (code === 'LOCATION_PERMISSION_DENIED' || code === 'LOCATION_SERVICES_DISABLED') {
+      throw coded(code);
+    }
+    if (code === 'GEOLOCATION_UNSUPPORTED') throw coded(code);
+    try {
+      return await read(false, COARSE_MS, 120_000);
+    } catch (retryError) {
+      const retryCode = locationFailureCode(retryError);
+      if (
+        retryCode === 'LOCATION_PERMISSION_DENIED' ||
+        retryCode === 'LOCATION_SERVICES_DISABLED' ||
+        retryCode === 'GEOLOCATION_UNSUPPORTED'
+      ) {
+        throw coded(retryCode);
+      }
+      throw coded('LOCATION_UNAVAILABLE');
+    }
+  }
+}
+
+/**
+ * One-shot GPS fix for booking maps on Android, iOS, and the browser.
+ * Waits up to 25s for the permission prompt, tries a precise fix, then a
+ * coarser cached fix. Always settles so the map can fall back to Riyadh.
  */
 export async function getCurrentPosition(): Promise<GeoCoordinates> {
   const allowed = await withTimeout(requestLocationPermission(), PERMISSION_MS, 'LOCATION_TIMEOUT');
@@ -108,43 +187,9 @@ export async function getCurrentPosition(): Promise<GeoCoordinates> {
   }
 
   if (Capacitor.isNativePlatform()) {
-    try {
-      return await readNativePosition(true, HIGH_ACCURACY_MS, 5_000);
-    } catch (error) {
-      const code = locationFailureCode(error);
-      if (code === 'LOCATION_PERMISSION_DENIED' || code === 'LOCATION_SERVICES_DISABLED') {
-        throw coded(code);
-      }
-      try {
-        return await readNativePosition(false, COARSE_MS, 120_000);
-      } catch (retryError) {
-        const retryCode = locationFailureCode(retryError);
-        if (retryCode === 'LOCATION_PERMISSION_DENIED' || retryCode === 'LOCATION_SERVICES_DISABLED') {
-          throw coded(retryCode);
-        }
-        throw coded('LOCATION_UNAVAILABLE');
-      }
-    }
+    return readPositionWithFallback(readNativePosition);
   }
-
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    throw coded('GEOLOCATION_UNSUPPORTED');
-  }
-
-  return withTimeout(
-    new Promise<GeoCoordinates>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(mapWebPosition(pos)),
-        (err) =>
-          reject(
-            coded(err.code === 1 ? 'LOCATION_PERMISSION_DENIED' : 'LOCATION_UNAVAILABLE')
-          ),
-        { enableHighAccuracy: true, timeout: HIGH_ACCURACY_MS, maximumAge: 10_000 }
-      );
-    }),
-    HIGH_ACCURACY_MS + 1_500,
-    'LOCATION_TIMEOUT'
-  );
+  return readPositionWithFallback(readBrowserPosition);
 }
 
 function usableCoordinate(lat: number, lng: number): boolean {
@@ -256,7 +301,7 @@ export function watchDriverPosition(
       }
     },
     (err) => onError?.(err),
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 60_000 }
   );
 
   return () => navigator.geolocation.clearWatch(id);
