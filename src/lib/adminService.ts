@@ -110,6 +110,8 @@ export interface AdminDriverApiRow {
     id: AdminDriverDocumentMeta;
     registration: AdminDriverDocumentMeta;
     permit: AdminDriverDocumentMeta;
+    plate: AdminDriverDocumentMeta;
+    vehicle: AdminDriverDocumentMeta;
   };
 }
 
@@ -295,7 +297,7 @@ export async function fetchAdminDriverDocumentUrl(
     operatorId?: string;
     vehicleId?: string;
   },
-  docKey: 'license' | 'id' | 'registration' | 'permit'
+  docKey: 'license' | 'id' | 'registration' | 'permit' | 'plate' | 'vehicle'
 ): Promise<{ url: string; contentType: string; fileName: string }> {
   if (isDevBypassAuthSession()) {
     throw new Error('Document viewing unavailable in dev bypass mode');

@@ -57,6 +57,8 @@ export interface AdminDriverRow {
     id: DriverDocumentMeta;
     registration: DriverDocumentMeta;
     permit: DriverDocumentMeta;
+    plate: DriverDocumentMeta;
+    vehicle: DriverDocumentMeta;
   };
 }
 
@@ -304,6 +306,8 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
         id: readDocMeta(documents, 'id', expiries),
         registration: readDocMeta(documents, 'registration', expiries),
         permit: readDocMeta(documents, 'permit', expiries),
+        plate: readDocMeta(documents, 'plate', expiries),
+        vehicle: readDocMeta(documents, 'vehicle', expiries),
       },
     });
   }
@@ -361,6 +365,8 @@ export async function listAdminDrivers(db: admin.firestore.Firestore): Promise<A
               id: readDocMeta(documents, 'id', {}),
               registration: readDocMeta(documents, 'registration', {}),
               permit: readDocMeta(documents, 'permit', {}),
+              plate: readDocMeta(documents, 'plate', {}),
+              vehicle: readDocMeta(documents, 'vehicle', {}),
             },
           });
         }

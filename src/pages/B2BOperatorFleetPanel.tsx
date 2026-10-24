@@ -51,6 +51,8 @@ import {
 } from '@/lib/driverDocumentValidation';
 import { RequiredDriverDocumentsFields } from '@/components/RequiredDriverDocumentsFields';
 import { uploadFleetVehicleDocumentFiles } from '@/lib/driverDocumentUpload';
+import { assignCompanyDriver } from '@/lib/submitOperatorRegistration';
+import { isIsoDate } from '@/domain/accountProfiles';
 import type { DriverDocumentKey } from '@/lib/userProfile';
 
 function formatSar(amount: number, locale: string): string {
@@ -76,6 +78,9 @@ const emptyForm = () => ({
   plateNumber: '',
   model: '',
   year: '',
+  sequenceNumber: '',
+  operatingCardNumber: '',
+  operatingCardExpiry: '',
   driverName: '',
   status: 'available' as FleetVehicle['status'],
 });
@@ -97,6 +102,8 @@ const B2BOperatorFleetPanel: React.FC = () => {
     Partial<Record<DriverDocumentKey, File>>
   >({});
   const [savingVehicle, setSavingVehicle] = useState(false);
+  const [linkedDriverUid, setLinkedDriverUid] = useState('');
+  const [linkingDriver, setLinkingDriver] = useState(false);
 
   const subtypeOptions = useMemo(
     () => getFleetOptions(form.category),
@@ -174,6 +181,20 @@ const B2BOperatorFleetPanel: React.FC = () => {
       toast.error(isRtl ? 'يرجى إدخال اسم السائق' : 'Please enter the driver name');
       return;
     }
+    if (!/^[A-Za-z0-9]{4,20}$/.test(form.sequenceNumber.trim())) {
+      toast.error(
+        isRtl ? 'أدخل رقم تسلسل الاستمارة' : 'Enter the vehicle sequence number from the Istimara'
+      );
+      return;
+    }
+    if (!/^[A-Za-z0-9/-]{4,30}$/.test(form.operatingCardNumber.trim()) || !isIsoDate(form.operatingCardExpiry)) {
+      toast.error(
+        isRtl
+          ? 'أدخل رقم كرت التشغيل وتاريخ انتهائه'
+          : 'Enter the operating card number and expiry'
+      );
+      return;
+    }
 
     const locale = isRtl ? 'ar' : 'en';
     const docsCheck = await assertRequiredDriverDocumentFiles(documentFiles);
@@ -201,6 +222,9 @@ const B2BOperatorFleetPanel: React.FC = () => {
         model: form.model.trim() || undefined,
         year: form.year.trim() || undefined,
         driverName: form.driverName.trim(),
+        sequenceNumber: form.sequenceNumber.trim(),
+        operatingCardNumber: form.operatingCardNumber.trim(),
+        operatingCardExpiry: form.operatingCardExpiry,
         status: form.status,
         accountStatus: 'pending',
       });
@@ -245,6 +269,28 @@ const B2BOperatorFleetPanel: React.FC = () => {
       toast.error(isRtl ? 'فشل إضافة المركبة' : 'Failed to add vehicle');
     } finally {
       setSavingVehicle(false);
+    }
+  };
+
+  const handleLinkDriver = async () => {
+    const driverUid = linkedDriverUid.trim();
+    if (driverUid.length < 6) {
+      toast.error(isRtl ? 'أدخل معرف السائق' : 'Enter the driver account id');
+      return;
+    }
+    setLinkingDriver(true);
+    try {
+      await assignCompanyDriver({ driverUid });
+      setLinkedDriverUid('');
+      toast.success(
+        isRtl
+          ? 'تم ربط السائق. رحلاته تُحوَّل إلى آيبان الشركة.'
+          : 'Driver linked. Their trips pay the company IBAN.'
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : isRtl ? 'تعذر ربط السائق' : 'Could not link driver');
+    } finally {
+      setLinkingDriver(false);
     }
   };
 
@@ -433,6 +479,34 @@ const B2BOperatorFleetPanel: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
             >
+              <SectionCard
+                title={isRtl ? 'سائقو الشركة' : 'Company drivers'}
+                subtitle={
+                  isRtl
+                    ? 'رحلات السائقين المرتبطين تُدفع إلى الآيبان المؤسسي'
+                    : 'Linked drivers’ trips pay out to the corporate IBAN'
+                }
+                icon={<Users size={20} />}
+              >
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="text"
+                    value={linkedDriverUid}
+                    onChange={(e) => setLinkedDriverUid(e.target.value.trim())}
+                    placeholder={isRtl ? 'معرف حساب السائق' : 'Driver account id'}
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    disabled={linkingDriver}
+                    onClick={() => void handleLinkDriver()}
+                    className={btnPrimary}
+                  >
+                    {isRtl ? 'ربط السائق' : 'Link driver'}
+                  </button>
+                </div>
+              </SectionCard>
+              <div className="h-4" />
               <SectionCard
                 title={isRtl ? 'أسطولي المسجل' : 'My Fleet Management'}
                 subtitle={
@@ -659,6 +733,50 @@ const B2BOperatorFleetPanel: React.FC = () => {
                     placeholder="2024"
                   />
                 </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    {isRtl ? 'رقم التسلسل' : 'Sequence number'}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.sequenceNumber}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, sequenceNumber: e.target.value.slice(0, 20) }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                    {isRtl ? 'رقم كرت التشغيل' : 'Operating card'}
+                  </label>
+                  <input
+                    type="text"
+                    value={form.operatingCardNumber}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        operatingCardNumber: e.target.value.slice(0, 30),
+                      }))
+                    }
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                  {isRtl ? 'انتهاء كرت التشغيل' : 'Operating card expiry'}
+                </label>
+                <input
+                  type="date"
+                  value={form.operatingCardExpiry}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, operatingCardExpiry: e.target.value }))
+                  }
+                  className={inputClass}
+                />
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">

@@ -106,6 +106,19 @@ import {
   rejectWithdrawal,
   saveDriverBankDetails,
 } from './server/lib/withdrawals.ts';
+import { upsertOperatorRegistration } from './server/lib/operatorRegistration.ts';
+import { assignFleetDriver } from './server/lib/fleetRoster.ts';
+import {
+  syncWaslLocation,
+  syncWaslTripComplete,
+  syncWaslTripStart,
+} from './server/lib/waslSync.ts';
+import { applyTapSplitForOrder } from './server/lib/tapSplitPayout.ts';
+import {
+  onboardApprovedDriver,
+  onboardApprovedOperator,
+  registerApprovedFleetVehicle,
+} from './server/lib/payoutOnboarding.ts';
 import { securityHeaders } from './server/middleware/securityHeaders.ts';
 import {
   canUseAdminFirestore,
@@ -1102,6 +1115,24 @@ async function startServer() {
         nationalId: typeof body.nationalId === 'string' ? body.nationalId : undefined,
         registrationSerial:
           typeof body.registrationSerial === 'string' ? body.registrationSerial : undefined,
+        dateOfBirth: typeof body.dateOfBirth === 'string' ? body.dateOfBirth : undefined,
+        licenseNumber: typeof body.licenseNumber === 'string' ? body.licenseNumber : undefined,
+        plateLetterRight:
+          typeof body.plateLetterRight === 'string' ? body.plateLetterRight : undefined,
+        plateLetterMiddle:
+          typeof body.plateLetterMiddle === 'string' ? body.plateLetterMiddle : undefined,
+        plateLetterLeft: typeof body.plateLetterLeft === 'string' ? body.plateLetterLeft : undefined,
+        operatingCardNumber:
+          typeof body.operatingCardNumber === 'string' ? body.operatingCardNumber : undefined,
+        bankDetails:
+          body.bankDetails && typeof body.bankDetails === 'object'
+            ? (body.bankDetails as {
+                iban?: string;
+                bankName?: string;
+                accountHolderName?: string;
+                transferIdentification?: string;
+              })
+            : undefined,
         documentUploadStatuses:
           body.documentUploadStatuses && typeof body.documentUploadStatuses === 'object'
             ? (body.documentUploadStatuses as Record<string, string>)
@@ -1132,6 +1163,123 @@ async function startServer() {
       });
     }
   });
+
+  app.post('/api/operators/registration', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const uid = req.firebaseUid!;
+      const body = (req.body || {}) as Record<string, unknown>;
+      const bank =
+        body.bankDetails && typeof body.bankDetails === 'object'
+          ? (body.bankDetails as Record<string, unknown>)
+          : undefined;
+      const cr =
+        body.crDocument && typeof body.crDocument === 'object'
+          ? (body.crDocument as Record<string, unknown>)
+          : undefined;
+      const result = await upsertOperatorRegistration(db, uid, {
+        companyName: typeof body.companyName === 'string' ? body.companyName : undefined,
+        contactName: typeof body.contactName === 'string' ? body.contactName : undefined,
+        phone: typeof body.phone === 'string' ? body.phone : undefined,
+        commercialRegistration:
+          typeof body.commercialRegistration === 'string' ? body.commercialRegistration : undefined,
+        bankDetails: bank
+          ? {
+              iban: String(bank.iban || ''),
+              bankName: String(bank.bankName || ''),
+              accountHolderName: String(bank.accountHolderName || ''),
+              transferIdentification:
+                typeof bank.transferIdentification === 'string'
+                  ? bank.transferIdentification
+                  : undefined,
+            }
+          : undefined,
+        crDocument: cr
+          ? {
+              storagePath: typeof cr.storagePath === 'string' ? cr.storagePath : undefined,
+              url: typeof cr.url === 'string' ? cr.url : undefined,
+              contentType: typeof cr.contentType === 'string' ? cr.contentType : undefined,
+              fileName: typeof cr.fileName === 'string' ? cr.fileName : undefined,
+              uploadedAt: typeof cr.uploadedAt === 'string' ? cr.uploadedAt : undefined,
+            }
+          : undefined,
+      });
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Operator registration upsert error:', error?.code, error?.message);
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to submit company registration',
+        code: error?.code || 'OPERATOR_REGISTRATION_FAILED',
+      });
+    }
+  });
+
+  app.post('/api/operators/drivers', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const operatorId = req.firebaseUid!;
+      const userSnap = await db.collection('users').doc(operatorId).get();
+      const role = String(userSnap.data()?.role || '');
+      if (role !== 'b2b_operator') {
+        return res.status(403).json({ error: 'Only a fleet company account can assign drivers' });
+      }
+      const body = (req.body || {}) as Record<string, unknown>;
+      const result = await assignFleetDriver(db, {
+        operatorId,
+        driverUid: String(body.driverUid || ''),
+        driverName: typeof body.driverName === 'string' ? body.driverName : undefined,
+        nationalId: typeof body.nationalId === 'string' ? body.nationalId : undefined,
+        licenseNumber: typeof body.licenseNumber === 'string' ? body.licenseNumber : undefined,
+        mobileNumber: typeof body.mobileNumber === 'string' ? body.mobileNumber : undefined,
+      });
+      res.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Assign fleet driver error:', error?.code, error?.message);
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to assign driver',
+        code: error?.code || 'FLEET_DRIVER_ASSIGN_FAILED',
+      });
+    }
+  });
+
+  app.post(
+    '/api/operators/documents/cr',
+    ...secureApi,
+    async (req: AuthenticatedRequest, res: any) => {
+      try {
+        const uid = req.firebaseUid!;
+        const body = (req.body || {}) as Record<string, unknown>;
+        const contentBase64 = typeof body.contentBase64 === 'string' ? body.contentBase64 : '';
+        const decoded = decodeKycImage({
+          contentBase64,
+          contentType: typeof body.contentType === 'string' ? body.contentType : 'image/jpeg',
+        });
+        const fileNameRaw =
+          typeof body.fileName === 'string' && body.fileName.trim() ? body.fileName.trim() : 'cr.jpg';
+        const fileName = fileNameRaw.replace(/[^\w.\-()-]+/g, '_').slice(0, 80);
+        const storagePath = `operators/${uid}/documents/cr/${Date.now()}_${fileName}`;
+        const saved = await saveKycImageToStorage({
+          storagePath,
+          buffer: decoded.buffer,
+          contentType: decoded.contentType,
+          metadata: { operatorId: uid, documentKey: 'cr', uploadedBy: uid },
+        });
+        const uploadedAt = new Date().toISOString();
+        res.json({
+          status: 'uploaded',
+          storagePath: saved.storagePath,
+          url: saved.url,
+          contentType: decoded.contentType,
+          fileName,
+          uploadedAt,
+        });
+      } catch (error: any) {
+        console.error('[operator-cr] upload failed', error?.code, error?.message);
+        res.status(error?.statusCode ?? 500).json({
+          error: error?.message || 'Failed to upload commercial registration',
+          code: error?.code || 'CR_UPLOAD_FAILED',
+        });
+      }
+    }
+  );
 
   /** Upload / replace the authenticated user's profile photo (GCS via Admin SDK). */
   app.post(
@@ -1666,7 +1814,24 @@ async function startServer() {
           req.firebaseUid!,
           { reason: typeof reason === 'string' ? reason : undefined }
         );
-        res.json({ success: true, operatorId, vehicleId, status });
+        let onboarding = null;
+        if (status === 'approved') {
+          try {
+            const [company, waslVehicle] = await Promise.all([
+              onboardApprovedOperator(db, operatorId),
+              registerApprovedFleetVehicle(db, operatorId, vehicleId),
+            ]);
+            onboarding = { company, waslVehicle };
+          } catch (onboardingError: any) {
+            console.error('[onboarding] fleet approval side effect failed', {
+              operatorId,
+              vehicleId,
+              message: onboardingError?.message,
+            });
+            onboarding = { tapError: onboardingError?.message || 'ONBOARDING_FAILED' };
+          }
+        }
+        res.json({ success: true, operatorId, vehicleId, status, onboarding });
       } catch (error: any) {
         console.error('Admin fleet status update error:', error);
         res.status(error?.statusCode ?? 500).json({
@@ -1685,10 +1850,23 @@ async function startServer() {
         return res.status(400).json({ error: 'status is required' });
       }
 
-      await updateAdminDriverStatus(db, uid, status, req.firebaseUid!, {
+        await updateAdminDriverStatus(db, uid, status, req.firebaseUid!, {
         reason: typeof reason === 'string' ? reason : undefined,
       });
-      res.json({ success: true, uid, status });
+      let onboarding = null;
+      if (status === 'approved') {
+        try {
+          onboarding = await onboardApprovedDriver(db, uid);
+        } catch (onboardingError: any) {
+          console.error('[onboarding] driver approval side effect failed', {
+            uid,
+            code: onboardingError?.code,
+            message: onboardingError?.message,
+          });
+          onboarding = { tapStatus: 'failed', tapError: onboardingError?.message || 'ONBOARDING_FAILED' };
+        }
+      }
+      res.json({ success: true, uid, status, onboarding });
     } catch (error: any) {
       console.error('Admin driver status update error:', error);
       res.status(error?.statusCode ?? 500).json({
@@ -1863,6 +2041,7 @@ async function startServer() {
         bankName: req.body?.bankName,
         iban: req.body?.iban,
         accountHolderName: req.body?.accountHolderName,
+        transferIdentification: req.body?.transferIdentification,
       });
       res.json({ success: true, bankDetails: saved });
     } catch (error: any) {
@@ -2093,6 +2272,9 @@ async function startServer() {
           serviceType,
           platformFee: (financials?.platformFee ?? 0) + (financials?.serviceFee ?? 0),
           driverAmount: financials?.driverNet ?? 0,
+          splitPolicy: 'destination_on_capture',
+          platformShare: '0.15',
+          payeeShare: '0.85',
         },
       });
 
@@ -2197,7 +2379,17 @@ async function startServer() {
         orderId,
         driverId: req.firebaseUid!,
       });
-      res.json(result);
+      const [wasl, split] = await Promise.all([
+        syncWaslTripComplete(db, orderId).catch((error: any) => {
+          console.error('[wasl] trip complete failed', error?.message);
+          return { ok: false, error: error?.message || 'WASL_COMPLETE_FAILED' };
+        }),
+        applyTapSplitForOrder(db, orderId, req.firebaseUid!).catch((error: any) => {
+          console.error('[payments] split after complete failed', error?.message);
+          return { ok: false, error: error?.message || 'TAP_SPLIT_FAILED' };
+        }),
+      ]);
+      res.json({ ...result, wasl, split });
     } catch (error: any) {
       if (isFirebaseAdminCredentialError(error)) {
         return res.status(503).json({
@@ -2209,6 +2401,34 @@ async function startServer() {
       console.error('Complete order error:', error);
       res.status(error?.statusCode ?? 500).json({
         error: error?.message || 'Failed to complete order',
+      });
+    }
+  });
+
+  app.post('/api/orders/:orderId/wasl-location', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const orderId = String(req.params.orderId || '');
+      const latitude = Number(req.body?.latitude);
+      const longitude = Number(req.body?.longitude);
+      if (!orderId || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        return res.status(400).json({ error: 'latitude and longitude are required' });
+      }
+      const orderSnap = await db.collection('orders').doc(orderId).get();
+      if (!orderSnap.exists) return res.status(404).json({ error: 'Order not found' });
+      if (String(orderSnap.data()?.driverId || '') !== req.firebaseUid) {
+        return res.status(403).json({ error: 'Only the assigned driver can send trip locations' });
+      }
+      const result = await syncWaslLocation(db, orderId, {
+        latitude,
+        longitude,
+        speed: req.body?.speed != null ? Number(req.body.speed) : undefined,
+        heading: req.body?.heading != null ? Number(req.body.heading) : undefined,
+      });
+      res.json(result);
+    } catch (error: any) {
+      console.error('[wasl] location failed', error?.message);
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to log location',
       });
     }
   });
@@ -2234,7 +2454,15 @@ async function startServer() {
         toStatus: status,
       });
 
-      res.json(result);
+      let wasl = null;
+      if (String(result.status) === 'in_transit') {
+        wasl = await syncWaslTripStart(db, orderId).catch((error: any) => {
+          console.error('[wasl] trip start failed', error?.message);
+          return { ok: false, error: error?.message || 'WASL_START_FAILED' };
+        });
+      }
+
+      res.json({ ...result, wasl });
     } catch (error: any) {
       if (isFirebaseAdminCredentialError(error)) {
         return res.status(503).json(clientWriteRequired('Order status update'));
@@ -2282,11 +2510,18 @@ async function startServer() {
         orderId,
         driverId: authenticatedDriverId,
       });
+      const split = await applyTapSplitForOrder(db, orderId, authenticatedDriverId).catch(
+        (splitError: any) => {
+          console.error('[payments] split after capture failed', splitError?.message);
+          return { ok: false, error: splitError?.message || 'TAP_SPLIT_FAILED' };
+        }
+      );
 
       res.json({
         success: true,
         capturedAmount: result.capturedAmount,
         alreadyCaptured: result.alreadyCaptured ?? false,
+        split,
       });
     } catch (error: any) {
       console.error('Capture error:', error);

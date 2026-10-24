@@ -6,7 +6,7 @@
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { prepareImageUpload } from '@/lib/prepareImageUpload';
-import type { DriverDocumentKey } from '@/lib/userProfile';
+import { DRIVER_DOCUMENT_KEYS, type DriverDocumentKey } from '@/lib/userProfile';
 
 export interface DriverDocumentFileMeta {
   status: 'uploaded';
@@ -89,7 +89,7 @@ export function documentFilesToUploadStatuses(
   files: DriverDocumentFilesMap | undefined,
   fallback?: Partial<Record<DriverDocumentKey, 'uploaded' | 'not_uploaded'>>
 ): Record<DriverDocumentKey, 'uploaded' | 'not_uploaded'> {
-  const keys: DriverDocumentKey[] = ['license', 'id', 'registration', 'permit'];
+  const keys: DriverDocumentKey[] = DRIVER_DOCUMENT_KEYS;
   const result = {} as Record<DriverDocumentKey, 'uploaded' | 'not_uploaded'>;
   for (const key of keys) {
     if (files?.[key]?.storagePath) {
@@ -101,6 +101,28 @@ export function documentFilesToUploadStatuses(
     }
   }
   return result;
+}
+
+export async function uploadOperatorCrDocument(
+  file: File
+): Promise<DriverDocumentFileMeta> {
+  const res = await postDocument('/api/operators/documents/cr', file, 'cr');
+  if (!res.ok) {
+    const message = await readApiErrorMessage(res, 'UPLOAD_CR_FAILED');
+    throw new Error(message);
+  }
+  const data = await readApiJson<DriverDocumentFileMeta>(res);
+  if (!data.storagePath || !data.url) {
+    throw new Error('UPLOAD_URL_MISSING');
+  }
+  return {
+    status: 'uploaded',
+    storagePath: data.storagePath,
+    url: data.url,
+    contentType: data.contentType || file.type || 'image/jpeg',
+    fileName: data.fileName || file.name,
+    uploadedAt: data.uploadedAt || new Date().toISOString(),
+  };
 }
 
 export async function uploadFleetVehicleDocumentFiles(

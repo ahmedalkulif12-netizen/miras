@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import admin from 'firebase-admin';
 import { MIRAS_PRODUCTION_STORAGE_BUCKET } from '../../src/lib/mirasProductionFirebase.ts';
+import {
+  DRIVER_DOCUMENT_KEYS,
+  type DriverDocumentKey,
+} from '../../src/lib/userProfile.ts';
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png']);
 const MAX_BYTES = 5 * 1024 * 1024;
 
-export const KYC_DOC_KEYS = ['license', 'id', 'registration', 'permit'] as const;
-export type KycDocKey = (typeof KYC_DOC_KEYS)[number];
+export const KYC_DOC_KEYS = DRIVER_DOCUMENT_KEYS;
+export type KycDocKey = DriverDocumentKey;
 
 export function isKycDocKey(value: string): value is KycDocKey {
   return (KYC_DOC_KEYS as readonly string[]).includes(value);

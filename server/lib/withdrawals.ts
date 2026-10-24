@@ -12,6 +12,7 @@ export interface DriverBankDetails {
   bankName: string;
   iban: string;
   accountHolderName?: string;
+  transferIdentification?: string;
 }
 
 export interface WithdrawalDocument {
@@ -129,6 +130,11 @@ export async function saveDriverBankDetails(
   const bankName = String(details.bankName || '').trim();
   const iban = normalizeIban(details.iban);
   const accountHolderName = String(details.accountHolderName || '').trim();
+  const existingSnap = await db.collection('drivers').doc(driverId).get();
+  const existingBank = (existingSnap.data()?.bankDetails || {}) as Record<string, unknown>;
+  const transferIdentification = String(
+    details.transferIdentification || existingBank.transferIdentification || ''
+  ).trim();
 
   if (bankName.length < 2) {
     throw httpError('Bank name is required', 400);
@@ -142,6 +148,7 @@ export async function saveDriverBankDetails(
     bankName,
     iban,
     ...(accountHolderName ? { accountHolderName } : {}),
+    ...(transferIdentification ? { transferIdentification } : {}),
     updatedAt: now,
   };
 
@@ -157,6 +164,7 @@ export async function saveDriverBankDetails(
     bankName,
     iban,
     ...(accountHolderName ? { accountHolderName } : {}),
+    ...(transferIdentification ? { transferIdentification } : {}),
   };
 }
 

@@ -433,6 +433,8 @@ async function run(): Promise<void> {
           id: { status: 'uploaded' },
           registration: { status: 'uploaded' },
           permit: { status: 'uploaded' },
+          plate: { status: 'uploaded' },
+          vehicle: { status: 'uploaded' },
         },
       }),
     ]

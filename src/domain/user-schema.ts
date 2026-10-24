@@ -125,9 +125,20 @@ export interface FirestoreUserDocument {
   vehicleType?: string;
   vehicleOption?: string;
   plateNumber?: string;
+  nationalId?: string;
+  dateOfBirth?: string;
+  licenseNumber?: string;
+  registrationSerial?: string;
+  operatingCardNumber?: string;
   /** Optional B2B organization fields (also mirrored on corporates|operators). */
   companyName?: string;
   commercialRegistration?: string;
+  bankDetails?: {
+    iban: string;
+    bankName: string;
+    accountHolderName: string;
+    transferIdentification?: string;
+  };
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -152,7 +163,17 @@ export interface FirestoreDriverDocument {
   vehicleSize: string;
   plateNumber: string;
   nationalId?: string;
+  dateOfBirth?: string;
+  licenseNumber?: string;
   registrationSerial?: string;
+  vehicleSequenceNumber?: string;
+  plateLetterRight?: string;
+  plateLetterMiddle?: string;
+  plateLetterLeft?: string;
+  operatingCardNumber?: string;
+  /** `company` when this driver is paid on an operator IBAN. */
+  payoutAccountKind?: 'individual' | 'company';
+  operatorId?: string;
   documents?: Record<string, 'not_uploaded' | 'uploaded'>;
   accountStatus?: UserAccountStatus | 'approved' | 'rejected';
   createdAt?: unknown;
@@ -179,6 +200,13 @@ export interface FirestoreOperatorDocument {
   contactName: string;
   phone: string;
   commercialRegistration?: string;
+  /** Corporate IBAN used for every trip this fleet's drivers complete. */
+  bankDetails?: {
+    iban: string;
+    bankName: string;
+    accountHolderName: string;
+  };
+  tapDestinationId?: string;
   fleetSize?: number;
   role: typeof APP_ROLES.B2B_OPERATOR;
   accountStatus?: UserAccountStatus | 'pending' | 'approved' | 'rejected';

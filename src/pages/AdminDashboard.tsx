@@ -74,6 +74,8 @@ interface Driver {
     license: AdminDriverDocumentMeta;
     registration: AdminDriverDocumentMeta;
     permit: AdminDriverDocumentMeta;
+    plate: AdminDriverDocumentMeta;
+    vehicle: AdminDriverDocumentMeta;
   };
 }
 
@@ -192,6 +194,8 @@ const AdminDashboard: React.FC = () => {
             license: row.documents?.license || EMPTY_DOC,
             registration: row.documents?.registration || EMPTY_DOC,
             permit: row.documents?.permit || EMPTY_DOC,
+            plate: row.documents?.plate || EMPTY_DOC,
+            vehicle: row.documents?.vehicle || EMPTY_DOC,
           },
         }));
       });
@@ -743,6 +747,20 @@ const AdminDashboard: React.FC = () => {
                         driver={selectedDriver}
                         docKey="permit"
                         meta={selectedDriver.documents.permit}
+                        isRtl={isRtl}
+                      />
+                      <DocumentPreview
+                        label={isRtl ? 'صورة اللوحة' : 'Plate photo'}
+                        driver={selectedDriver}
+                        docKey="plate"
+                        meta={selectedDriver.documents.plate}
+                        isRtl={isRtl}
+                      />
+                      <DocumentPreview
+                        label={isRtl ? 'صورة المركبة' : 'Vehicle photo'}
+                        driver={selectedDriver}
+                        docKey="vehicle"
+                        meta={selectedDriver.documents.vehicle}
                         isRtl={isRtl}
                       />
                     </div>
@@ -1701,7 +1719,7 @@ function platesLookEqual(declared: string, observed: string): boolean {
 const DocumentPreview: React.FC<{
   label: string;
   driver: Driver;
-  docKey: 'license' | 'id' | 'registration' | 'permit';
+  docKey: 'license' | 'id' | 'registration' | 'permit' | 'plate' | 'vehicle';
   meta: AdminDriverDocumentMeta;
   isRtl: boolean;
 }> = ({ label, driver, docKey, meta, isRtl }) => {

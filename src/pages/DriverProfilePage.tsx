@@ -111,8 +111,8 @@ const DriverProfilePage: React.FC = () => {
     if (missingDocs.length) {
       toast.error(
         isRtl
-          ? 'يرجى رفع الهوية، الاستمارة، الرخصة، وكارت التشغيل'
-          : 'Upload National ID, registration, license, and operating card'
+          ? 'يرجى رفع الهوية، الرخصة، الاستمارة، كرت التشغيل، صورة اللوحة، وصورة المركبة'
+          : 'Upload National ID, license, registration, operating card, plate photo, and vehicle photo'
       );
       return;
     }

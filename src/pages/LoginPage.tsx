@@ -43,8 +43,15 @@ import {
 } from '@/lib/driverDocumentValidation';
 import {
   uploadDriverDocumentFiles,
+  uploadOperatorCrDocument,
   documentFilesToUploadStatuses,
 } from '@/lib/driverDocumentUpload';
+import {
+  profileFieldMessage,
+  resolvePlateParts,
+  validateCompanyCompliance,
+  validateIndividualCompliance,
+} from '@/domain/accountProfiles';
 import { RequiredDriverDocumentsFields } from '@/components/RequiredDriverDocumentsFields';
 import { TermsConsent } from '@/components/TermsConsent';
 import { DevBypassPanel } from '@/components/DevBypassPanel';
@@ -128,6 +135,14 @@ const LoginPage: React.FC<{
   );
   const [companyName, setCompanyName] = useState('');
   const [commercialRegistration, setCommercialRegistration] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [licenseNumber, setLicenseNumber] = useState('');
+  const [operatingCardNumber, setOperatingCardNumber] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [iban, setIban] = useState('');
+  const [accountHolderName, setAccountHolderName] = useState('');
+  const [transferIdentification, setTransferIdentification] = useState('');
+  const [crFile, setCrFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -156,6 +171,7 @@ const LoginPage: React.FC<{
   const navigate = useNavigate();
 
   const isDriverRole = role === APP_ROLES.B2C_DRIVER;
+  const isOperatorRole = role === APP_ROLES.B2B_OPERATOR;
   const isB2BRole =
     role === APP_ROLES.B2B_CORPORATE || role === APP_ROLES.B2B_OPERATOR;
 
@@ -436,12 +452,32 @@ const LoginPage: React.FC<{
         documentFiles,
       });
       const normalized = driverCheck.normalized!;
+      const plate = resolvePlateParts({ plateNumber: normalized.plateNumber });
       return {
         vehicleType,
         vehicleOption,
         plateNumber: normalized.plateNumber,
         nationalId: normalized.nationalId,
         registrationSerial: normalized.registrationSerial,
+        vehicleSequenceNumber: normalized.registrationSerial,
+        dateOfBirth,
+        licenseNumber: licenseNumber.trim(),
+        operatingCardNumber: operatingCardNumber.trim(),
+        ...(plate
+          ? {
+              plateDigits: plate.plateDigits,
+              plateLetterRight: plate.plateLetterRight,
+              plateLetterMiddle: plate.plateLetterMiddle,
+              plateLetterLeft: plate.plateLetterLeft,
+            }
+          : {}),
+        bankDetails: {
+          iban,
+          bankName: bankName.trim(),
+          accountHolderName: accountHolderName.trim(),
+          transferIdentification: transferIdentification.trim(),
+        },
+        payoutAccountKind: 'individual' as const,
         documentExpiries: {
           id: documentExpiries.id,
           registration: documentExpiries.registration,
@@ -455,7 +491,17 @@ const LoginPage: React.FC<{
       return {
         companyName: companyName.trim(),
         ...(commercialRegistration.trim()
-          ? { commercialRegistration: commercialRegistration.trim() }
+          ? { commercialRegistration: commercialRegistration.replace(/\D/g, '') }
+          : {}),
+        ...(isOperatorRole
+          ? {
+              bankDetails: {
+                iban,
+                bankName: bankName.trim(),
+                accountHolderName: accountHolderName.trim(),
+              },
+              payoutAccountKind: 'company' as const,
+            }
           : {}),
       };
     }
@@ -494,11 +540,46 @@ const LoginPage: React.FC<{
         );
         return false;
       }
+      const complianceCode = validateIndividualCompliance({
+        dateOfBirth,
+        licenseNumber,
+        plateNumber,
+        operatingCardNumber,
+        operatingCardExpiry: documentExpiries.permit,
+        bank: {
+          iban,
+          bankName,
+          accountHolderName,
+          transferIdentification,
+        },
+      });
+      if (complianceCode) {
+        toast.error(profileFieldMessage(complianceCode, isRtl));
+        return false;
+      }
     }
 
     if (isB2BRole && companyName.trim().length < 2) {
       toast.error(isRtl ? 'يرجى إدخال اسم الشركة' : 'Please enter company name');
       return false;
+    }
+
+    if (isOperatorRole) {
+      const companyCode = validateCompanyCompliance({
+        companyName,
+        commercialRegistration,
+        bank: { iban, bankName, accountHolderName },
+      });
+      if (companyCode) {
+        toast.error(profileFieldMessage(companyCode, isRtl));
+        return false;
+      }
+      if (!crFile) {
+        toast.error(
+          isRtl ? 'يرجى رفع صورة السجل التجاري' : 'Upload the commercial registration document'
+        );
+        return false;
+      }
     }
 
     if (!acceptedTerms) {
@@ -567,6 +648,33 @@ const LoginPage: React.FC<{
             isRtl
               ? 'فشل رفع المستندات. تأكد أن الصور JPEG أو PNG ثم أعد المحاولة.'
               : 'Document upload failed. Use JPEG or PNG images and try again.'
+          );
+          return false;
+        }
+      }
+
+      if (isOperatorRole) {
+        if (!uid || !crFile) {
+          toast.error(
+            isRtl
+              ? 'انتهت جلسة التسجيل. يرجى التحقق من رقم الجوال مرة أخرى.'
+              : 'Registration session expired. Please verify your phone number again.'
+          );
+          return false;
+        }
+        const crCheck = await inspectDriverDocumentFile(crFile);
+        if (!crCheck.ok) {
+          toast.error(getDriverValidationMessage(crCheck, locale));
+          return false;
+        }
+        try {
+          extraData.crDocument = await uploadOperatorCrDocument(crFile);
+        } catch (uploadError) {
+          console.error('[login] commercial registration upload failed:', uploadError);
+          toast.error(
+            isRtl
+              ? 'فشل رفع السجل التجاري. استخدم صورة JPEG أو PNG.'
+              : 'Commercial registration upload failed. Use a JPEG or PNG image.'
           );
           return false;
         }
@@ -1075,16 +1183,74 @@ const LoginPage: React.FC<{
                       </div>
                       <div className="space-y-2">
                         <label className="text-sm font-bold text-neutral-700">
-                          {isRtl ? 'السجل التجاري (اختياري)' : 'Commercial Registration (optional)'}
+                          {isOperatorRole
+                            ? isRtl
+                              ? 'السجل التجاري'
+                              : 'Commercial Registration'
+                            : isRtl
+                              ? 'السجل التجاري (اختياري)'
+                              : 'Commercial Registration (optional)'}
                         </label>
                         <input
                           type="text"
+                          inputMode="numeric"
                           value={commercialRegistration}
-                          onChange={(e) => setCommercialRegistration(e.target.value)}
+                          onChange={(e) =>
+                            setCommercialRegistration(e.target.value.replace(/\D/g, '').slice(0, 10))
+                          }
                           placeholder="1010xxxxxx"
                           className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800"
                         />
                       </div>
+                      {isOperatorRole && (
+                        <>
+                          <label className="rounded-2xl border-2 border-dashed border-stone-200 p-4 flex flex-col gap-1 cursor-pointer">
+                            <span className="text-sm font-bold text-neutral-700">
+                              {isRtl ? 'صورة السجل التجاري' : 'Commercial registration photo'}
+                            </span>
+                            <span className="text-[11px] text-stone-400 font-bold">
+                              {crFile
+                                ? crFile.name
+                                : isRtl
+                                  ? 'JPEG أو PNG — بحد أقصى 5 م.ب'
+                                  : 'JPEG or PNG, max 5 MB'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png"
+                              className="hidden"
+                              onChange={(e) => setCrFile(e.target.files?.[0] || null)}
+                            />
+                          </label>
+                          <p className="text-[11px] font-bold text-stone-500 leading-relaxed">
+                            {isRtl
+                              ? 'أرباح رحلات سائقي الشركة تُحوَّل إلى الآيبان المؤسسي.'
+                              : 'Trips run by company drivers pay out to this corporate IBAN.'}
+                          </p>
+                          <input
+                            type="text"
+                            value={bankName}
+                            onChange={(e) => setBankName(e.target.value)}
+                            placeholder={isRtl ? 'اسم البنك' : 'Bank name'}
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
+                          />
+                          <input
+                            type="text"
+                            value={accountHolderName}
+                            onChange={(e) => setAccountHolderName(e.target.value)}
+                            placeholder={isRtl ? 'اسم صاحب الحساب' : 'Account holder name'}
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
+                          />
+                          <input
+                            type="text"
+                            value={iban}
+                            onChange={(e) => setIban(e.target.value.toUpperCase())}
+                            placeholder="SA00..."
+                            dir="ltr"
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium tracking-wider"
+                          />
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -1181,6 +1347,75 @@ const LoginPage: React.FC<{
                           autoComplete="off"
                           maxLength={15}
                           className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-neutral-700">
+                            {isRtl ? 'تاريخ الميلاد' : 'Date of birth'}
+                          </label>
+                          <input
+                            type="date"
+                            value={dateOfBirth}
+                            onChange={(e) => setDateOfBirth(e.target.value)}
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-bold text-neutral-700">
+                            {isRtl ? 'رقم رخصة القيادة' : 'License number'}
+                          </label>
+                          <input
+                            type="text"
+                            value={licenseNumber}
+                            onChange={(e) => setLicenseNumber(e.target.value.slice(0, 20))}
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-bold text-neutral-700">
+                          {isRtl ? 'رقم كرت التشغيل' : 'Operating card number'}
+                        </label>
+                        <input
+                          type="text"
+                          value={operatingCardNumber}
+                          onChange={(e) => setOperatingCardNumber(e.target.value.slice(0, 30))}
+                          className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
+                        />
+                      </div>
+                      <div className="space-y-3 rounded-2xl border border-stone-100 p-4">
+                        <p className="text-sm font-bold text-neutral-700">
+                          {isRtl ? 'الحساب البنكي للتحويل' : 'Payout bank account'}
+                        </p>
+                        <input
+                          type="text"
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder={isRtl ? 'اسم البنك' : 'Bank name'}
+                          className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium"
+                        />
+                        <input
+                          type="text"
+                          value={accountHolderName}
+                          onChange={(e) => setAccountHolderName(e.target.value)}
+                          placeholder={isRtl ? 'اسم صاحب الحساب' : 'Account holder name'}
+                          className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium"
+                        />
+                        <input
+                          type="text"
+                          value={iban}
+                          onChange={(e) => setIban(e.target.value.toUpperCase())}
+                          placeholder="SA00..."
+                          dir="ltr"
+                          className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium tracking-wider"
+                        />
+                        <input
+                          type="text"
+                          value={transferIdentification}
+                          onChange={(e) => setTransferIdentification(e.target.value.slice(0, 40))}
+                          placeholder={isRtl ? 'معرّف التحويل' : 'Transfer identification'}
+                          className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium"
                         />
                       </div>
                       <div className="space-y-3">

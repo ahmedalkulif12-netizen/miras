@@ -1,6 +1,8 @@
 /**
- * Driver KYC completeness — same four documents the registration form requires.
- * Returning drivers skip the form only when all four Storage-backed files exist.
+ * Login gate for drivers who already finished onboarding.
+ * Returning drivers skip registration when the original four Storage files exist.
+ * New applications also require a plate photo and a vehicle photo
+ * (`REQUIRED_DRIVER_DOCS` / `DRIVER_DOCUMENT_KEYS`).
  */
 
 import {

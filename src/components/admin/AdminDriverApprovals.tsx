@@ -12,7 +12,7 @@ interface Props {
   isRtl: boolean;
 }
 
-const DOC_KEYS = ['id', 'license', 'registration', 'permit'] as const;
+const DOC_KEYS = ['id', 'license', 'registration', 'permit', 'plate', 'vehicle'] as const;
 
 export const AdminDriverApprovals: React.FC<Props> = ({ isRtl }) => {
   const [rows, setRows] = useState<AdminDriverApiRow[]>([]);

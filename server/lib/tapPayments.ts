@@ -174,6 +174,8 @@ export interface TapChargeRequest {
     phone: { country_code: string; number: string };
   };
   metadata?: Record<string, unknown>;
+  /** Marketplace destinations. Omit at checkout — the driver is not known yet. */
+  destinations?: Array<{ id: string; amount: number; currency?: string }>;
 }
 
 export interface TapChargeResult {
@@ -195,7 +197,7 @@ function tapClient(secretKey: string) {
   });
 }
 
-function tapErrorMessage(error: unknown, fallback: string): string {
+export function tapErrorMessage(error: unknown, fallback: string): string {
   const err = error as {
     response?: { data?: { errors?: Array<{ description?: string }>; message?: string } };
     message?: string;
@@ -251,6 +253,17 @@ export async function createTapCharge(
     source: { id: input.sourceId || tapSourceId(input.paymentMethod) },
     post: { url: input.webhookUrl },
     redirect: { url: input.redirectUrl },
+    ...(input.destinations && input.destinations.length > 0
+      ? {
+          destinations: {
+            destination: input.destinations.map((row) => ({
+              id: row.id,
+              amount: Number(formatTapAmount(row.amount, currency)),
+              currency: row.currency || currency,
+            })),
+          },
+        }
+      : {}),
   };
 
   try {

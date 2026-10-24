@@ -6,8 +6,15 @@ export const MIRAS_PRODUCTION_FIREBASE_PROJECT_ID = 'hamula-cfc6c';
 export const MIRAS_PRODUCTION_STORAGE_BUCKET = 'hamula-cfc6c.firebasestorage.app';
 export const MIRAS_PRODUCTION_MESSAGING_SENDER_ID = '191963635866';
 export const MIRAS_PRODUCTION_AUTH_DOMAIN = 'hamula-cfc6c.firebaseapp.com';
+/**
+ * Public production website. HTTPS, no trailing slash.
+ * Copy this value for Saudi Business Center registration.
+ */
+export const PRODUCTION_WEB_URL = 'https://hamula-cfc6c.web.app';
+export const PRODUCTION_PRIVACY_URL = `${PRODUCTION_WEB_URL}/privacy`;
+export const PRODUCTION_TERMS_URL = `${PRODUCTION_WEB_URL}/terms`;
 /** Public HTTPS origin used by the web SPA and Hosting → Cloud Run API rewrites. */
-export const MIRAS_PRODUCTION_API_ORIGIN = 'https://hamula-cfc6c.web.app';
+export const MIRAS_PRODUCTION_API_ORIGIN = PRODUCTION_WEB_URL;
 export const MIRAS_IOS_BUNDLE_ID = 'com.ahmed.miras';
 export const MIRAS_IOS_GOOGLE_APP_ID = '1:191963635866:ios:73a41da4e6ffe55734bf23';
 export const MIRAS_ANDROID_PACKAGE = 'com.miras.app';

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { Upload, CheckCircle2, ImagePlus } from 'lucide-react';
-import type { DriverDocumentKey } from '@/lib/userProfile';
+import { DRIVER_DOCUMENT_KEYS, type DriverDocumentKey } from '@/lib/userProfile';
 import {
   DRIVER_DOC_ACCEPT,
   getDriverDocumentLabel,
@@ -16,7 +16,7 @@ interface RequiredDriverDocumentsFieldsProps {
   alreadyUploaded?: Partial<Record<DriverDocumentKey, boolean>>;
 }
 
-const DEFAULT_KEYS: DriverDocumentKey[] = ['id', 'registration', 'permit', 'license'];
+const DEFAULT_KEYS: DriverDocumentKey[] = DRIVER_DOCUMENT_KEYS;
 
 export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFieldsProps> = ({
   isRtl,
@@ -52,8 +52,8 @@ export const RequiredDriverDocumentsFields: React.FC<RequiredDriverDocumentsFiel
         </p>
         <p className="text-[11px] text-stone-400 font-bold leading-relaxed mt-1">
           {isRtl
-            ? 'ارفع من الكاميرا أو المعرض صور JPEG أو PNG للهوية/الإقامة، الاستمارة، كارت التشغيل، ورخصة القيادة. الحد الأقصى 5 م.ب لكل صورة.'
-            : 'Use the camera or photo gallery to upload JPEG or PNG photos of National ID/Iqama, Istimara, operating card, and driving license. Max 5 MB each.'}
+            ? 'ارفع صور JPEG أو PNG للهوية/الإقامة، رخصة القيادة، الاستمارة، كرت التشغيل، لوحة المركبة، والمركبة. الحد الأقصى 5 م.ب لكل صورة.'
+            : 'Upload JPEG or PNG photos of National ID/Iqama, driver license, Istimara, operating card, the plate, and the vehicle. Max 5 MB each.'}
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

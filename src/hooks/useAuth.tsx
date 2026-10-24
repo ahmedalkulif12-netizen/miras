@@ -25,6 +25,7 @@ import {
 import type { UserProfile, LoginRole } from '@/lib/userProfile';
 import { syncUserProfileToFirestore } from '@/lib/syncUserProfile';
 import { submitDriverRegistrationToApi } from '@/lib/submitDriverRegistration';
+import { submitOperatorRegistrationToApi } from '@/lib/submitOperatorRegistration';
 import { deleteAccountSecure } from '@/lib/accountService';
 import { restorePersistedUserProfile } from '@/lib/restorePersistedSession';
 import { resolveUserProfile } from '@/lib/resolveUserProfile';
@@ -735,6 +736,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw retryError;
         }
       }
+    }
+
+    if (normalizeAppRole(newProfile.role) === APP_ROLES.B2B_OPERATOR) {
+      await submitOperatorRegistrationToApi(newProfile);
     }
 
     setProfile(newProfile);

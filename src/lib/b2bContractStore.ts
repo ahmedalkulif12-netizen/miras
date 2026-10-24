@@ -47,6 +47,10 @@ export interface FleetVehicle {
   /** Model year */
   year?: string;
   driverName: string;
+  /** Istimara sequence number sent to WASL. */
+  sequenceNumber?: string;
+  operatingCardNumber?: string;
+  operatingCardExpiry?: string;
   status: 'available' | 'on_contract' | 'maintenance';
   accountStatus?: 'pending' | 'pending_review' | 'ready_for_review' | 'approved' | 'rejected';
   documents?: Partial<
@@ -286,6 +290,9 @@ export type AddFleetVehicleInput = {
   model?: string;
   year?: string;
   driverName?: string;
+  sequenceNumber?: string;
+  operatingCardNumber?: string;
+  operatingCardExpiry?: string;
   status?: FleetVehicle['status'];
   accountStatus?: FleetVehicle['accountStatus'];
   documents?: FleetVehicle['documents'];
@@ -311,6 +318,9 @@ export function addFleetVehicle(input: AddFleetVehicleInput & { id?: string }): 
     model: input.model?.trim() || undefined,
     year: input.year?.trim() || undefined,
     driverName: (input.driverName || '').trim() || '—',
+    sequenceNumber: input.sequenceNumber?.trim() || undefined,
+    operatingCardNumber: input.operatingCardNumber?.trim() || undefined,
+    operatingCardExpiry: input.operatingCardExpiry?.trim() || undefined,
     status: input.status || 'available',
     accountStatus: input.accountStatus || 'pending',
     documents: input.documents,

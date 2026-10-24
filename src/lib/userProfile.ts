@@ -1,6 +1,22 @@
 import type { AppRole, RegistrableRole } from '@/domain/user-schema';
 
-export type DriverDocumentKey = 'license' | 'id' | 'registration' | 'permit';
+export type DriverDocumentKey =
+  | 'license'
+  | 'id'
+  | 'registration'
+  | 'permit'
+  | 'plate'
+  | 'vehicle';
+
+/** Upload + admin review order. Plate photo and vehicle photo are required on new applications. */
+export const DRIVER_DOCUMENT_KEYS: DriverDocumentKey[] = [
+  'id',
+  'license',
+  'registration',
+  'permit',
+  'plate',
+  'vehicle',
+];
 
 export type DocumentUploadStatus = 'not_uploaded' | 'uploaded';
 
@@ -9,6 +25,8 @@ export interface DriverDocumentUploadStatuses {
   id: DocumentUploadStatus;
   registration: DocumentUploadStatus;
   permit: DocumentUploadStatus;
+  plate: DocumentUploadStatus;
+  vehicle: DocumentUploadStatus;
 }
 
 /** Rich Storage-backed document metadata (preferred over status-only flags). */
@@ -28,7 +46,25 @@ export const EMPTY_DRIVER_DOCUMENTS: DriverDocumentUploadStatuses = {
   id: 'not_uploaded',
   registration: 'not_uploaded',
   permit: 'not_uploaded',
+  plate: 'not_uploaded',
+  vehicle: 'not_uploaded',
 };
+
+export interface ProfileBankDetails {
+  iban: string;
+  bankName: string;
+  accountHolderName: string;
+  transferIdentification?: string;
+}
+
+export interface StoredDocumentFile {
+  status: 'uploaded';
+  storagePath: string;
+  url?: string;
+  contentType?: string;
+  fileName?: string;
+  uploadedAt?: string;
+}
 
 /**
  * In-memory / cached auth profile.
@@ -49,8 +85,24 @@ export interface UserProfile {
   plateNumber?: string;
   /** Saudi National ID (1…) or Iqama (2…) — 10 digits */
   nationalId?: string;
-  /** Vehicle registration / Istimara (Emarah) serial */
+  /** Gregorian YYYY-MM-DD. Required for WASL driver registration. */
+  dateOfBirth?: string;
+  /** Driving license number sent to WASL. */
+  licenseNumber?: string;
+  /** Vehicle registration / Istimara (Emarah) serial — WASL sequence number. */
   registrationSerial?: string;
+  vehicleSequenceNumber?: string;
+  plateLetterRight?: string;
+  plateLetterMiddle?: string;
+  plateLetterLeft?: string;
+  plateDigits?: string;
+  operatingCardNumber?: string;
+  /** individual drivers pay their own IBAN; company drivers pay the operator IBAN. */
+  payoutAccountKind?: 'individual' | 'company';
+  operatorId?: string;
+  bankDetails?: ProfileBankDetails;
+  /** Commercial-registration scan for a fleet operator. */
+  crDocument?: StoredDocumentFile;
   /** Document expiry dates (YYYY-MM-DD) for admin review */
   documentExpiries?: Partial<Record<DriverDocumentKey, string>>;
   documentUploadStatuses?: DriverDocumentUploadStatuses;

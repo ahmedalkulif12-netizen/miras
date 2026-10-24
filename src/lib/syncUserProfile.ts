@@ -1,6 +1,6 @@
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, ensureFirebaseReady } from '@/lib/firebase';
-import type { UserProfile, DriverDocumentKey } from '@/lib/userProfile';
+import { DRIVER_DOCUMENT_KEYS, type UserProfile, type DriverDocumentKey } from '@/lib/userProfile';
 import { DRIVER_REVIEW_SLA_HOURS } from '@/lib/driverKyc';
 import {
   APP_ROLES,
@@ -10,7 +10,7 @@ import {
   type FirestoreUserDocument,
 } from '@/domain/user-schema';
 
-const DRIVER_DOC_KEYS: DriverDocumentKey[] = ['license', 'id', 'registration', 'permit'];
+const DRIVER_DOC_KEYS: DriverDocumentKey[] = DRIVER_DOCUMENT_KEYS;
 
 function cleanStringMap(
   value: Record<string, string | undefined> | undefined
@@ -94,10 +94,16 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
     ...(profile.vehicleOption ? { vehicleOption: profile.vehicleOption } : {}),
     ...(profile.plateNumber ? { plateNumber: profile.plateNumber } : {}),
     ...(profile.nationalId ? { nationalId: profile.nationalId } : {}),
+    ...(profile.dateOfBirth ? { dateOfBirth: profile.dateOfBirth } : {}),
+    ...(profile.licenseNumber ? { licenseNumber: profile.licenseNumber } : {}),
     ...(profile.registrationSerial
       ? { registrationSerial: profile.registrationSerial }
       : {}),
+    ...(profile.operatingCardNumber
+      ? { operatingCardNumber: profile.operatingCardNumber }
+      : {}),
     ...(profile.companyName ? { companyName: profile.companyName } : {}),
+    ...(profile.bankDetails ? { bankDetails: profile.bankDetails } : {}),
     ...(profile.commercialRegistration
       ? { commercialRegistration: profile.commercialRegistration }
       : {}),
@@ -154,8 +160,27 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
         ...(profile.photoURL ? { photoURL: profile.photoURL } : {}),
         ...(profile.vehiclePhotoURL ? { vehiclePhotoURL: profile.vehiclePhotoURL } : {}),
         ...(profile.nationalId ? { nationalId: profile.nationalId } : {}),
+        ...(profile.dateOfBirth ? { dateOfBirth: profile.dateOfBirth } : {}),
+        ...(profile.licenseNumber ? { licenseNumber: profile.licenseNumber } : {}),
         ...(profile.registrationSerial
           ? { registrationSerial: profile.registrationSerial }
+          : {}),
+        ...(profile.vehicleSequenceNumber || profile.registrationSerial
+          ? {
+              vehicleSequenceNumber:
+                profile.vehicleSequenceNumber || profile.registrationSerial,
+            }
+          : {}),
+        ...(profile.plateLetterRight ? { plateLetterRight: profile.plateLetterRight } : {}),
+        ...(profile.plateLetterMiddle ? { plateLetterMiddle: profile.plateLetterMiddle } : {}),
+        ...(profile.plateLetterLeft ? { plateLetterLeft: profile.plateLetterLeft } : {}),
+        ...(profile.plateDigits ? { plateDigits: profile.plateDigits } : {}),
+        ...(profile.operatingCardNumber
+          ? { operatingCardNumber: profile.operatingCardNumber }
+          : {}),
+        ...(profile.bankDetails ? { bankDetails: profile.bankDetails } : {}),
+        ...(profile.operatorId
+          ? { operatorId: profile.operatorId, payoutAccountKind: 'company' as const }
           : {}),
         ...(documentExpiries ? { documentExpiries } : {}),
         ...(Object.keys(documents).length ? { documents } : {}),
@@ -217,6 +242,8 @@ export async function syncUserProfileToFirestore(profile: UserProfile): Promise<
         ...(profile.commercialRegistration
           ? { commercialRegistration: profile.commercialRegistration }
           : {}),
+        ...(profile.bankDetails ? { bankDetails: profile.bankDetails } : {}),
+        ...(profile.crDocument?.storagePath ? { documents: { cr: profile.crDocument } } : {}),
         ...(existingOperator.exists()
           ? {}
           : { accountStatus: 'pending', createdAt: now }),

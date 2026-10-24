@@ -13,6 +13,9 @@ import {
   MIRAS_IOS_GOOGLE_APP_ID,
   MIRAS_PRODUCTION_API_ORIGIN,
   MIRAS_PRODUCTION_AUTH_DOMAIN,
+  PRODUCTION_PRIVACY_URL,
+  PRODUCTION_TERMS_URL,
+  PRODUCTION_WEB_URL,
   MIRAS_PRODUCTION_FIREBASE_PROJECT_ID,
   MIRAS_PRODUCTION_MESSAGING_SENDER_ID,
   MIRAS_PRODUCTION_STORAGE_BUCKET,
@@ -35,6 +38,26 @@ function run(): void {
   assertEqual(canon.messagingSenderId, MIRAS_PRODUCTION_MESSAGING_SENDER_ID, 'TS sender matches JSON');
   assertEqual(canon.authDomain, MIRAS_PRODUCTION_AUTH_DOMAIN, 'TS auth domain matches JSON');
   assertEqual(canon.publicAppOrigin, MIRAS_PRODUCTION_API_ORIGIN, 'TS API origin matches JSON');
+  assertEqual(canon.publicWebUrl, PRODUCTION_WEB_URL, 'public website matches the registration URL');
+  assertEqual(canon.privacyPolicyUrl, PRODUCTION_PRIVACY_URL, 'privacy URL is under the production site');
+  assertEqual(canon.termsUrl, PRODUCTION_TERMS_URL, 'terms URL is under the production site');
+  assert(PRODUCTION_WEB_URL === 'https://hamula-cfc6c.web.app', 'production website has no trailing slash');
+
+  const registration = JSON.parse(
+    fs.readFileSync(path.join(root, 'config', 'production-web-url.json'), 'utf8')
+  ) as Record<string, string>;
+  const firebaseJson = JSON.parse(
+    fs.readFileSync(path.join(root, 'firebase.json'), 'utf8')
+  ) as { hosting?: { site?: string } };
+  const hostingSite = firebaseJson.hosting?.site || '';
+  assertEqual(
+    `https://${hostingSite}.web.app`,
+    PRODUCTION_WEB_URL,
+    'firebase.json hosting site is the production website'
+  );
+  assertEqual(registration.productionWebUrl, PRODUCTION_WEB_URL, 'registration export matches the production website');
+  assertEqual(registration.privacyPolicyUrl, PRODUCTION_PRIVACY_URL, 'registration privacy URL');
+  assertEqual(registration.termsUrl, PRODUCTION_TERMS_URL, 'registration terms URL');
   assertEqual(canon.iosBundleId, MIRAS_IOS_BUNDLE_ID, 'TS iOS bundle matches JSON');
   assertEqual(canon.iosGoogleAppId, MIRAS_IOS_GOOGLE_APP_ID, 'TS iOS app id matches JSON');
 

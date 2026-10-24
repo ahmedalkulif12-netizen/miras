@@ -3,9 +3,10 @@
  * Used before driver registration / OTP so incomplete or malformed data never submits.
  */
 
-import type {
-  DriverDocumentKey,
-  DriverDocumentUploadStatuses,
+import {
+  DRIVER_DOCUMENT_KEYS,
+  type DriverDocumentKey,
+  type DriverDocumentUploadStatuses,
 } from '@/lib/userProfile';
 
 export const DRIVER_DOC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
@@ -48,12 +49,7 @@ export interface DriverValidationResult {
   };
 }
 
-export const REQUIRED_DRIVER_DOCS: DriverDocumentKey[] = [
-  'id',
-  'registration',
-  'permit',
-  'license',
-];
+export const REQUIRED_DRIVER_DOCS: DriverDocumentKey[] = DRIVER_DOCUMENT_KEYS;
 
 export function normalizePlateNumber(input: string): string {
   return input
@@ -360,7 +356,7 @@ export function getDriverValidationMessage(
     REGISTRATION_INVALID:
       'Invalid registration serial. Use 6–15 letters or digits from the Istimara card.',
     DOCUMENTS_INCOMPLETE:
-      'Upload all required documents: driving license, National ID/Iqama, vehicle registration (Istimara), and operating permit.',
+      'Upload National ID/Iqama, driver license, Istimara, operating card, plate photo, and vehicle photo.',
     DOCUMENT_TYPE_INVALID: 'Documents must be JPEG or PNG images.',
     DOCUMENT_TOO_LARGE: 'Each document must be 5 MB or smaller.',
     DOCUMENT_EMPTY: 'Selected file is empty. Choose a valid document.',
@@ -379,7 +375,7 @@ export function getDriverValidationMessage(
     REGISTRATION_INVALID:
       'رقم الاستمارة غير صحيح. استخدم 6–15 حرفاً أو رقماً كما في بطاقة الاستمارة.',
     DOCUMENTS_INCOMPLETE:
-      'يرجى رفع جميع المستندات المطلوبة: رخصة القيادة، الهوية/الإقامة، استمارة المركبة، وكرت التشغيل.',
+      'يرجى رفع جميع المستندات: الهوية/الإقامة، رخصة القيادة، الاستمارة، كرت التشغيل، صورة اللوحة، وصورة المركبة.',
     DOCUMENT_TYPE_INVALID: 'يجب أن تكون الملفات بصيغة JPEG أو PNG.',
     DOCUMENT_TOO_LARGE: 'حجم كل مستند يجب ألا يتجاوز 5 ميغابايت.',
     DOCUMENT_EMPTY: 'الملف فارغ. اختر مستنداً صالحاً.',
@@ -410,6 +406,8 @@ export function getDriverDocumentLabel(
     registration: { ar: 'صورة الاستمارة', en: 'Vehicle Registration / Istimara' },
     permit: { ar: 'كارت التشغيل', en: 'Operating Card' },
     license: { ar: 'صورة رخصة القيادة', en: "Driver's License" },
+    plate: { ar: 'صورة لوحة المركبة', en: 'Vehicle Plate Photo' },
+    vehicle: { ar: 'صورة المركبة', en: 'Vehicle Photo' },
   };
   return labels[key][locale];
 }
@@ -423,6 +421,8 @@ export function getDriverDocumentHint(
     registration: { ar: 'JPEG / PNG', en: 'JPEG / PNG photo of Istimara' },
     permit: { ar: 'JPEG / PNG', en: 'JPEG / PNG photo of operating card' },
     license: { ar: 'JPEG / PNG', en: 'JPEG / PNG photo of driving license' },
+    plate: { ar: 'JPEG / PNG', en: 'JPEG / PNG photo of the plate' },
+    vehicle: { ar: 'JPEG / PNG', en: 'JPEG / PNG photo of the vehicle' },
   };
   return hints[key][locale];
 }

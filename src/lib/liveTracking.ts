@@ -1,5 +1,6 @@
 import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, ensureFirebaseReady } from '@/lib/firebase';
+import { authFetch } from '@/lib/authApi';
 import { requestLocationPermission, watchDriverPosition, type GeoCoordinates } from '@/lib/geolocation';
 
 /** Single canonical doc for latest driver GPS (orders/{orderId}/tracking/live). */
@@ -127,6 +128,18 @@ async function publishPosition(
     console.warn('[liveTracking] tracking/live write failed:', error);
   }
   await orderWrite;
+
+  authFetch(`/api/orders/${encodeURIComponent(orderId)}/wasl-location`, {
+    method: 'POST',
+    body: JSON.stringify({
+      latitude: coords.lat,
+      longitude: coords.lng,
+      speed: coords.speed,
+      heading: coords.heading,
+    }),
+  }).catch((error) => {
+    console.warn('[liveTracking] WASL location skipped:', error);
+  });
 }
 
 /**

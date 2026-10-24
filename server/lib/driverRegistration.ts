@@ -1,5 +1,11 @@
 import admin from 'firebase-admin';
-import { missingKycDocumentKeys } from './kycDocumentStorage.ts';
+import { KYC_DOC_KEYS, missingKycDocumentKeys } from './kycDocumentStorage.ts';
+import {
+  normalizePayoutBank,
+  resolvePlateParts,
+  validateIndividualCompliance,
+  type PayoutBankAccount,
+} from '../../src/domain/accountProfiles.ts';
 
 export const DRIVER_REVIEW_SLA_HOURS = 24;
 
@@ -11,6 +17,13 @@ export interface DriverRegistrationPayload {
   plateNumber?: string;
   nationalId?: string;
   registrationSerial?: string;
+  dateOfBirth?: string;
+  licenseNumber?: string;
+  plateLetterRight?: string;
+  plateLetterMiddle?: string;
+  plateLetterLeft?: string;
+  operatingCardNumber?: string;
+  bankDetails?: Partial<PayoutBankAccount>;
   documentUploadStatuses?: Record<string, string>;
   documentExpiries?: Record<string, string>;
   documentFiles?: Record<
@@ -62,8 +75,7 @@ export async function upsertPendingDriverRegistration(
         : null;
 
   const documents: Record<string, unknown> = {};
-  const keys = ['license', 'id', 'registration', 'permit'] as const;
-  for (const key of keys) {
+  for (const key of KYC_DOC_KEYS) {
     const file = payload.documentFiles?.[key];
     if (file?.storagePath) {
       documents[key] = {
@@ -92,8 +104,41 @@ export async function upsertPendingDriverRegistration(
     );
   }
 
-  const accountStatus = preserveStatus || 'pending_approval';
   const created = !driverSnap.exists;
+  const plate = resolvePlateParts({
+    plateNumber: payload.plateNumber || String(driverSnap.data()?.plateNumber || ''),
+    plateLetterRight: payload.plateLetterRight,
+    plateLetterMiddle: payload.plateLetterMiddle,
+    plateLetterLeft: payload.plateLetterLeft,
+  });
+  const operatingCardExpiry = String(
+    payload.documentExpiries?.permit || driverSnap.data()?.documentExpiries?.permit || ''
+  );
+  if (created || payload.bankDetails || payload.dateOfBirth || payload.licenseNumber) {
+    const complianceError = validateIndividualCompliance({
+      dateOfBirth: payload.dateOfBirth || String(driverSnap.data()?.dateOfBirth || ''),
+      licenseNumber: payload.licenseNumber || String(driverSnap.data()?.licenseNumber || ''),
+      plateNumber: payload.plateNumber || String(driverSnap.data()?.plateNumber || ''),
+      plateLetterRight: payload.plateLetterRight || plate?.plateLetterRight,
+      plateLetterMiddle: payload.plateLetterMiddle || plate?.plateLetterMiddle,
+      plateLetterLeft: payload.plateLetterLeft || plate?.plateLetterLeft,
+      operatingCardNumber:
+        payload.operatingCardNumber || String(driverSnap.data()?.operatingCardNumber || ''),
+      operatingCardExpiry,
+      bank: payload.bankDetails || (driverSnap.data()?.bankDetails as Partial<PayoutBankAccount>) || {},
+    });
+    if (created && complianceError) {
+      throw Object.assign(new Error(complianceError), {
+        statusCode: 400,
+        code: complianceError,
+      });
+    }
+  }
+  const bankDetails = payload.bankDetails
+    ? normalizePayoutBank(payload.bankDetails, { requireTransferId: true })
+    : null;
+
+  const accountStatus = preserveStatus || 'pending_approval';
   const documentExpiries: Record<string, string> = {};
   for (const [key, value] of Object.entries(payload.documentExpiries || {})) {
     if (typeof value === 'string' && value.trim()) documentExpiries[key] = value.trim();
@@ -118,6 +163,12 @@ export async function upsertPendingDriverRegistration(
       ...(payload.registrationSerial
         ? { registrationSerial: payload.registrationSerial }
         : {}),
+      ...(payload.dateOfBirth ? { dateOfBirth: payload.dateOfBirth } : {}),
+      ...(payload.licenseNumber ? { licenseNumber: payload.licenseNumber } : {}),
+      ...(payload.operatingCardNumber
+        ? { operatingCardNumber: payload.operatingCardNumber }
+        : {}),
+      ...(bankDetails ? { bankDetails } : {}),
       accountStatus,
       reviewSlaHours: DRIVER_REVIEW_SLA_HOURS,
       ...(Object.keys(documents).length ? { documents } : {}),
@@ -139,8 +190,26 @@ export async function upsertPendingDriverRegistration(
       plateNumber: payload.plateNumber || driverSnap.data()?.plateNumber || '',
       ...(payload.nationalId ? { nationalId: payload.nationalId } : {}),
       ...(payload.registrationSerial
-        ? { registrationSerial: payload.registrationSerial }
+        ? {
+            registrationSerial: payload.registrationSerial,
+            vehicleSequenceNumber: payload.registrationSerial,
+          }
         : {}),
+      ...(payload.dateOfBirth ? { dateOfBirth: payload.dateOfBirth } : {}),
+      ...(payload.licenseNumber ? { licenseNumber: payload.licenseNumber } : {}),
+      ...(plate
+        ? {
+            plateDigits: plate.plateDigits,
+            plateLetterRight: plate.plateLetterRight,
+            plateLetterMiddle: plate.plateLetterMiddle,
+            plateLetterLeft: plate.plateLetterLeft,
+          }
+        : {}),
+      ...(payload.operatingCardNumber
+        ? { operatingCardNumber: payload.operatingCardNumber }
+        : {}),
+      ...(bankDetails ? { bankDetails } : {}),
+      ...(created ? { payoutAccountKind: 'individual' as const } : {}),
       ...(Object.keys(documents).length ? { documents } : {}),
       ...(Object.keys(documentExpiries).length ? { documentExpiries } : {}),
       accountStatus,
