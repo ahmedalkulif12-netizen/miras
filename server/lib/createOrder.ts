@@ -11,6 +11,10 @@ import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields } from '../../src/domain/financials.ts';
 import { sanitizeForFirestore } from './firestoreSanitize.ts';
+import {
+  gasQuantityRequested,
+  normalizeGasQuantity,
+} from '../../src/domain/gasCylinders.ts';
 
 /** Max trip / driver-to-client distance accepted (km). */
 const MAX_DISTANCE_KM = 3000;
@@ -142,6 +146,19 @@ export function validateCreateOrderPayload(body: CreateOrderPayload): void {
     );
   } else if (typeof body.distanceKm === 'number' && Number.isFinite(body.distanceKm)) {
     body.distanceKm = Math.round(body.distanceKm * 10) / 10;
+  }
+
+  if (canonical === 'gas_delivery' && gasQuantityRequested(body.serviceDetails)) {
+    const exchangeQuantity = normalizeGasQuantity(body.serviceDetails?.exchangeQuantity);
+    const newCylinderQuantity = normalizeGasQuantity(body.serviceDetails?.newCylinderQuantity);
+    if (exchangeQuantity + newCylinderQuantity < 1) {
+      throw Object.assign(new Error('Select at least one gas cylinder'), { statusCode: 400 });
+    }
+    body.serviceDetails = {
+      ...(body.serviceDetails || {}),
+      exchangeQuantity,
+      newCylinderQuantity,
+    };
   }
 
   if (

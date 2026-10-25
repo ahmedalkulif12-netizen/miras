@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '@/components/DashboardLayout';
-import { MapPin, Navigation, Clock, CreditCard, ChevronLeft, Truck, Package, Droplets, Container, ShieldCheck, CheckCircle2, Navigation2, Search, ArrowRight, Share2, Info, AlertCircle, History, Wallet, Flame } from 'lucide-react';
+import { MapPin, Navigation, Clock, CreditCard, ChevronLeft, Truck, Package, Droplets, Container, ShieldCheck, CheckCircle2, Navigation2, Search, ArrowRight, Share2, Info, AlertCircle, History, Wallet, Flame, Minus, Plus } from 'lucide-react';
 import { Order, LogisticsServiceType } from '@/types';
 import { fetchPricing, PricingConfig, db, ensureFirebaseReady, auth, waitForFirebaseAuthUid } from '@/lib/firebase';
 import { calculateOrderPrice } from '@/lib/pricing';
@@ -93,6 +93,8 @@ import {
 } from '@/domain/dispatchMatching';
 import { isWaterTankerService } from '@/domain/waterTanker';
 import { getFleetOptions } from '@/lib/fleetServiceCatalog';
+import { GasCylinderInvoice } from '@/components/GasCylinderInvoice';
+import type { GasCylinderLines } from '@/domain/gasCylinders';
 import { buildClientOrdersPath } from '@/lib/authRouting';
 
 /** Water tanker is delivery-only (GPS = dropoff). All other services use GPS as pickup. */
@@ -171,6 +173,8 @@ const CustomerDashboard: React.FC = () => {
   const [feedback, setFeedback] = useState('');
   const [serviceType, setServiceType] = useState<LogisticsServiceType>('furniture_moving');
   const [serviceOption, setServiceOption] = useState<string>('');
+  const [exchangeQuantity, setExchangeQuantity] = useState(1);
+  const [newCylinderQuantity, setNewCylinderQuantity] = useState(0);
   const [waterType, setWaterType] = useState<WaterServiceType | ''>('fresh');
   const [goodsType, setGoodsType] = useState('');
   const [truckCount, setTruckCount] = useState(1);
@@ -256,6 +260,7 @@ const CustomerDashboard: React.FC = () => {
       max_price_outside: number;
     },
     financials: null as null | Record<string, unknown>,
+    gasLines: null as GasCylinderLines | null,
   });
 
   /** Final checkout total — always base + extra distance + platform fee (no legacy totals). */
@@ -746,7 +751,15 @@ const CustomerDashboard: React.FC = () => {
       );
       return;
     }
-    if (!serviceOption) {
+    if (serviceType === 'gas_delivery' && exchangeQuantity + newCylinderQuantity < 1) {
+      toast.error(
+        isRtl
+          ? 'حدد عدد أسطوانات الاستبدال أو الأسطوانات الجديدة'
+          : 'Choose how many exchange or new cylinders you need'
+      );
+      return;
+    }
+    if (serviceType !== 'gas_delivery' && !serviceOption) {
       toast.error(
         deliveryOnly
           ? isRtl
@@ -795,16 +808,24 @@ const CustomerDashboard: React.FC = () => {
       }
 
       if (deliveryOnly) {
-        // Water tanker: billable distance = nearest matching tanker → drop-off.
+        const matchService = serviceType === 'gas_delivery' ? 'gas_delivery' : 'water_tanker';
+        const matchOption =
+          serviceType === 'gas_delivery'
+            ? exchangeQuantity > 0 && newCylinderQuantity === 0
+              ? 'cylinder_swap'
+              : newCylinderQuantity > 0 && exchangeQuantity === 0
+                ? 'new_cylinder'
+                : undefined
+            : serviceOption || undefined;
         matched = await findNearestOnlineDriver(
           quoteDestinationCoords!,
-          'water_tanker',
-          serviceOption
+          matchService,
+          matchOption
         );
-        distKm = sanitizeWaterTankerDistanceKm(
-          matched.distanceKm,
-          WATER_TANKER_MOCK_DISTANCE_KM
-        );
+        distKm =
+          serviceType === 'gas_delivery'
+            ? Math.max(0, Number(matched.distanceKm) || 0)
+            : sanitizeWaterTankerDistanceKm(matched.distanceKm, WATER_TANKER_MOCK_DISTANCE_KM);
         setNearestDriver({ ...matched, distanceKm: distKm });
         setRouteData(null);
 
@@ -812,21 +833,26 @@ const CustomerDashboard: React.FC = () => {
         if (matched.driver && Number.isFinite(matched.driver.lat) && Number.isFinite(matched.driver.lng)) {
           const origin = { lat: matched.driver.lat, lng: matched.driver.lng };
           setPickupCoords(origin);
+          const gasJob = serviceType === 'gas_delivery';
           setPickup(
             matched.driver.name
               ? isRtl
-                ? `أقرب صهريج — ${matched.driver.name}`
-                : `Nearest tanker — ${matched.driver.name}`
+                ? `${gasJob ? 'أقرب مندوب' : 'أقرب صهريج'} — ${matched.driver.name}`
+                : `${gasJob ? 'Nearest driver' : 'Nearest tanker'} — ${matched.driver.name}`
               : isRtl
-                ? 'موقع أقرب صهريج متاح'
-                : 'Nearest available tanker'
+                ? gasJob
+                  ? 'موقع أقرب مندوب غاز'
+                  : 'موقع أقرب صهريج متاح'
+                : gasJob
+                  ? 'Nearest gas driver'
+                  : 'Nearest available tanker'
           );
         } else {
           setPickupCoords(null);
           setPickup('');
         }
 
-        if (matched.estimated) {
+        if (matched.estimated && serviceType !== 'gas_delivery') {
           toast.info(
             isRtl
               ? `تم استخدام مسافة تقديرية ${distKm} كم لأقرب صهريج (السعة ${capacityLabel} ليست مسافة)`
@@ -880,7 +906,10 @@ const CustomerDashboard: React.FC = () => {
         previousOrdersCount,
         capacityLabel || undefined,
         serviceOption,
-        serviceType === 'water_tanker' ? waterType || undefined : undefined
+        serviceType === 'water_tanker' ? waterType || undefined : undefined,
+        serviceType === 'gas_delivery'
+          ? { exchangeQuantity, newCylinderQuantity }
+          : undefined
       );
 
       const calc = calcResult as any;
@@ -935,6 +964,7 @@ const CustomerDashboard: React.FC = () => {
         surgeApplied: calc.surgeApplied,
         pricingSnapshot: calc.pricingSnapshot || null,
         financials: aligned,
+        gasLines: calc.gasLines ?? null,
       });
 
       setTripTypeState(calc.tripType);
@@ -1001,26 +1031,46 @@ const CustomerDashboard: React.FC = () => {
 
       const canonicalService =
         canonicalizeServiceType(serviceType) || serviceType;
-      const deliveryOnlyOrder = isWaterTankerService(canonicalService);
+      const deliveryOnlyOrder = isDeliveryOnlyService(canonicalService as LogisticsServiceType);
+      const bookedServiceDetails = {
+        ...(canonicalService === 'gas_delivery'
+          ? {
+              exchangeQuantity,
+              newCylinderQuantity,
+              ...(pricing.gasLines
+                ? {
+                    exchangeUnitPrice: pricing.gasLines.exchangeUnitPrice,
+                    newCylinderUnitPrice: pricing.gasLines.newCylinderUnitPrice,
+                    exchangeLineTotal: pricing.gasLines.exchangeLineTotal,
+                    newCylinderLineTotal: pricing.gasLines.newCylinderLineTotal,
+                    deliveryFee: pricing.gasLines.deliveryFee,
+                  }
+                : {}),
+              ...(exchangeQuantity > 0 && newCylinderQuantity === 0
+                ? { type: 'cylinder_swap' }
+                : newCylinderQuantity > 0 && exchangeQuantity === 0
+                  ? { type: 'new_cylinder' }
+                  : {}),
+            }
+          : { type: serviceOption }),
+        ...(canonicalService === 'water_tanker'
+          ? {
+              capacity: tankCapacityLabel || resolveTankCapacityLabel(serviceOption),
+              waterType: normalizeWaterServiceType(waterType || 'fresh'),
+            }
+          : {}),
+        goodsType,
+        truckCount,
+        furnitureDescription,
+        vehicleFieldNotes,
+      };
 
       // Draft only — NO Firestore `orders` write and NO driver broadcast.
       const draft = await prepareCheckoutDraft({
         serviceType: canonicalService,
         truckType,
         tripType: tripTypeState,
-        serviceDetails: {
-          type: serviceOption,
-          ...(canonicalService === 'water_tanker'
-            ? {
-                capacity: tankCapacityLabel || resolveTankCapacityLabel(serviceOption),
-                waterType: normalizeWaterServiceType(waterType || 'fresh'),
-              }
-            : {}),
-          goodsType,
-          truckCount,
-          furnitureDescription,
-          vehicleFieldNotes,
-        },
+        serviceDetails: bookedServiceDetails,
         vehicleFieldNotes,
         pickupAddress: effectivePickup,
         dropoffAddress: destination,
@@ -1065,19 +1115,7 @@ const CustomerDashboard: React.FC = () => {
         deliveryOnly: deliveryOnlyOrder,
         locationMode: deliveryOnlyOrder ? 'delivery_only' : 'pickup_destination',
         ...(nearestDriver?.driverId ? { matchedDriverId: nearestDriver.driverId } : {}),
-        serviceDetails: {
-          type: serviceOption,
-          ...(canonicalService === 'water_tanker'
-            ? {
-                capacity: tankCapacityLabel || resolveTankCapacityLabel(serviceOption),
-                waterType: normalizeWaterServiceType(waterType || 'fresh'),
-              }
-            : {}),
-          goodsType,
-          truckCount,
-          furnitureDescription,
-          vehicleFieldNotes,
-        },
+        serviceDetails: bookedServiceDetails,
       } as Order);
 
       setPricing((prev) => {
@@ -1337,7 +1375,11 @@ const CustomerDashboard: React.FC = () => {
                             key={s.id}
                             onClick={() => {
                               setServiceType(s.id);
-                              setServiceOption('');
+                              setServiceOption(s.id === 'gas_delivery' ? 'cylinder_swap' : '');
+                              if (s.id === 'gas_delivery') {
+                                setExchangeQuantity(1);
+                                setNewCylinderQuantity(0);
+                              }
                               setWaterType('');
                               setTankCapacityLabel('');
                               setRouteDistanceKm(0);
@@ -1419,6 +1461,66 @@ const CustomerDashboard: React.FC = () => {
                             ))}
                           </div>
                         </div>
+                      </motion.div>
+                    ) : serviceType === 'gas_delivery' ? (
+                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-4">
+                        <p className="text-sm font-bold text-gray-500">
+                          {isRtl ? 'عدد الأسطوانات' : 'Cylinder quantity'}
+                        </p>
+                        {([
+                          {
+                            key: 'exchange' as const,
+                            label: isRtl ? 'استبدال أسطوانات' : 'Cylinder exchange',
+                            hint: isRtl
+                              ? 'أسطوانة فارغة مقابل أسطوانة ممتلئة'
+                              : 'Empty cylinder swapped for a full one',
+                            value: exchangeQuantity,
+                          },
+                          {
+                            key: 'new' as const,
+                            label: isRtl ? 'أسطوانات جديدة' : 'New cylinders',
+                            hint: isRtl
+                              ? 'المنظم والقاعدة حسب المتوفر مع المندوب'
+                              : 'Regulator and base depend on what the driver has',
+                            value: newCylinderQuantity,
+                          },
+                        ]).map((row) => (
+                          <div key={row.key} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-100 px-4 py-3">
+                            <div>
+                              <p className="text-sm font-bold">{row.label}</p>
+                              <p className="text-[11px] text-gray-500 font-medium">{row.hint}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                aria-label={isRtl ? 'إنقاص' : 'Decrease'}
+                                onClick={() => {
+                                  const next = Math.max(0, row.value - 1);
+                                  if (row.key === 'exchange') setExchangeQuantity(next);
+                                  else setNewCylinderQuantity(next);
+                                  setIsCalculated(false);
+                                }}
+                                className="w-10 h-10 rounded-xl border border-gray-200 flex items-center justify-center"
+                              >
+                                <Minus size={16} />
+                              </button>
+                              <span className="w-8 text-center font-black tabular-nums">{row.value}</span>
+                              <button
+                                type="button"
+                                aria-label={isRtl ? 'زيادة' : 'Increase'}
+                                onClick={() => {
+                                  const next = Math.min(20, row.value + 1);
+                                  if (row.key === 'exchange') setExchangeQuantity(next);
+                                  else setNewCylinderQuantity(next);
+                                  setIsCalculated(false);
+                                }}
+                                className="w-10 h-10 rounded-xl border border-black bg-black text-white flex items-center justify-center"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </motion.div>
                     ) : (
                       (serviceList.find(s => s.id === serviceType && 'details' in s) || (SERVICE_OPTIONS as any)[SERVICE_KEY_MAP[serviceType] || serviceType]) && (
@@ -1818,7 +1920,11 @@ const CustomerDashboard: React.FC = () => {
                                    </p>
                                    {isCalculated && (
                                      <p className="text-[10px] text-gray-500 font-bold mt-1">
-                                       {serviceType === 'water_tanker'
+                                       {serviceType === 'gas_delivery'
+                                         ? (isRtl
+                                             ? `استبدال ×${exchangeQuantity} · جديدة ×${newCylinderQuantity}`
+                                             : `Exchange ×${exchangeQuantity} · New ×${newCylinderQuantity}`)
+                                         : serviceType === 'water_tanker'
                                          ? (isRtl
                                              ? `السعة: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · مشمول ${includedKm} كم`
                                              : `Capacity: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · ${includedKm} km included`)
@@ -1912,6 +2018,11 @@ const CustomerDashboard: React.FC = () => {
                         </div>
                         <h3 className={`font-bold flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}><CreditCard size={20} /> {t('price_details')}</h3>
                         <div className="space-y-3 text-sm">
+                          <GasCylinderInvoice
+                            lines={pricing.gasLines}
+                            isRtl={isRtl}
+                            currency={t('sar')}
+                          />
                           <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                             <span className="text-gray-500">{t('distance')}</span>
                             <span className="font-bold">
@@ -2042,6 +2153,11 @@ const CustomerDashboard: React.FC = () => {
                       <h3 className="font-bold text-xl border-b pb-4">{t('order_summary')}</h3>
                       
                       <div className="space-y-4">
+                        <GasCylinderInvoice
+                          lines={pricing.gasLines}
+                          isRtl={isRtl}
+                          currency={t('sar')}
+                        />
                         <div className="flex justify-between text-sm text-gray-500">
                           <span>{t('distance')}</span>
                           <span className="font-bold text-neutral-800">

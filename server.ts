@@ -20,7 +20,9 @@ import { executeCapturePayment } from './server/lib/capturePayment.ts';
 import { executeCompleteOrder } from './server/lib/completeOrder.ts';
 import { createPricingService } from './server/lib/pricingService.ts';
 import {
+  defaultPricingForService,
   firestorePricingDoc,
+  gasDocStillUsesGlobalCommission,
   PRICING_SEED_SERVICES,
 } from './src/lib/pricingDefaults.ts';
 import {
@@ -412,6 +414,21 @@ async function startServer() {
           const payload = firestorePricingDoc(service === 'default' ? 'flatbed' : service);
           await docRef.set(payload);
           console.info(`[pricing] Seeded pricing/${service}`);
+        } else if (
+          service === 'gas_delivery' &&
+          gasDocStillUsesGlobalCommission(docSnap.data() as Record<string, unknown>)
+        ) {
+          const gasDefaults = defaultPricingForService('gas_delivery');
+          await docRef.set(
+            {
+              customer_service_fee_percentage: gasDefaults.customer_service_fee_percentage,
+              platform_commission_percentage: gasDefaults.platform_commission_percentage,
+              driver_commission_tiers: gasDefaults.driver_commission_tiers,
+              updatedAt: new Date().toISOString(),
+            },
+            { merge: true }
+          );
+          console.info('[pricing] Gas commission set to 1% customer fee + 2% driver commission');
         }
       }
     } catch (error) {
@@ -2106,7 +2123,11 @@ async function startServer() {
       res.json(result);
     } catch (error) {
       console.error('Calculation error:', error);
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Calculation failed' });
+      const statusCode =
+        typeof (error as { statusCode?: number })?.statusCode === 'number'
+          ? (error as { statusCode: number }).statusCode
+          : 500;
+      res.status(statusCode).json({ error: error instanceof Error ? error.message : 'Calculation failed' });
     }
   });
 

@@ -18,6 +18,8 @@ import { rememberCustomerOrderId } from '@/lib/customerOrderMemory';
 import { verifyPaymentReturn } from '@/lib/paymentReturnService';
 import { createPaymentIntent, type CheckoutPaymentMethod } from '@/lib/paymentService';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
+import { readGasCylinderLines } from '@/domain/gasCylinders';
+import { GasCylinderInvoice } from '@/components/GasCylinderInvoice';
 import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { buildClientOrdersPath, CUSTOMER_SERVICES_PATH } from '@/lib/authRouting';
 import { auth } from '@/lib/firebase';
@@ -287,6 +289,11 @@ const PaymentCheckoutPage: React.FC = () => {
                 </span>
               </div>
             ) : null}
+            <GasCylinderInvoice
+              lines={readGasCylinderLines(draft.serviceDetails)}
+              isRtl={isRtl}
+              currency={isRtl ? 'ر.س' : 'SAR'}
+            />
             {Number.isFinite(distanceKm) && distanceKm > 0 ? (
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500 font-medium">

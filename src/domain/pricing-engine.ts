@@ -25,6 +25,7 @@ import {
   normalizeWaterServiceType,
   waterTypeMultiplier,
 } from '../lib/waterTankerCatalog';
+import { quoteGasCylinders, type GasCylinderLines } from './gasCylinders';
 
 export interface PricingConfigInput {
   base_price?: number;
@@ -60,6 +61,12 @@ export interface ComputeTripFareParams {
   capacity?: string;
   /** Water quality / job type: fresh | normal | sewage. */
   waterType?: string;
+  /**
+   * Gas only. When either count is set, trip fare is
+   * exchangeQty × swap price + newQty × new-cylinder price + one delivery fee.
+   */
+  exchangeQuantity?: number;
+  newCylinderQuantity?: number;
 }
 
 export interface ComputeTripFareResult {
@@ -80,6 +87,8 @@ export interface ComputeTripFareResult {
   capacity?: string;
   /** Water tanker: normalized water service type. */
   waterType?: string;
+  /** Gas: itemized exchange and new-cylinder lines when quantities were sent. */
+  gasLines?: GasCylinderLines;
 }
 
 export function computeTripFare(
@@ -94,6 +103,8 @@ export function computeTripFare(
     truckCount = 1,
     capacity,
     waterType,
+    exchangeQuantity,
+    newCylinderQuantity,
   } = params;
 
   const service = normalizeServiceType(serviceType);
@@ -133,8 +144,24 @@ export function computeTripFare(
   let extraKm = Math.max(0, Math.round((safeDistance - includedKm) * 10) / 10);
   let extraKmCost = Math.round(extraKm * rate * 100) / 100;
   let tripFare = Math.round((base + extraKmCost) * 100) / 100;
+  let gasLines: GasCylinderLines | undefined;
 
-  if (service === 'gas_delivery') {
+  if (service === 'gas_delivery' && (exchangeQuantity != null || newCylinderQuantity != null)) {
+    const swapRate = resolveTierRate(service, 'cylinder_swap', pricing);
+    const newRate = resolveTierRate(service, 'new_cylinder', pricing);
+    gasLines = quoteGasCylinders({
+      exchangeUnitPrice: swapRate.base_price,
+      newCylinderUnitPrice: newRate.base_price,
+      deliveryFee: Math.max(0, Number(pricing.delivery_fee) || 0),
+      exchangeQuantity,
+      newCylinderQuantity,
+    });
+    extraKm = 0;
+    rate = 0;
+    base = gasLines.cylinderSubtotal;
+    extraKmCost = gasLines.deliveryFee;
+    tripFare = gasLines.tripFare;
+  } else if (service === 'gas_delivery') {
     const deliveryFee = Math.max(0, Number(pricing.delivery_fee) || 0);
     extraKm = 0;
     rate = 0;
@@ -170,9 +197,14 @@ export function computeTripFare(
     tripType,
     includedKm,
     extraKm,
-    tier: tierRate.tier,
+    tier: gasLines
+      ? gasLines.newCylinderQuantity > gasLines.exchangeQuantity
+        ? 'new_cylinder'
+        : 'cylinder_swap'
+      : tierRate.tier,
     capacity: capacityKey,
     ...(resolvedWaterType ? { waterType: resolvedWaterType } : {}),
+    ...(gasLines ? { gasLines } : {}),
   };
 }
 

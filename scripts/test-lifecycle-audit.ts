@@ -681,6 +681,9 @@ async function run(): Promise<void> {
     option: 'cylinder_swap',
   });
   assert(gasFare.tripFare === 35, 'gas swap fare is the cylinder price plus the delivery fee');
+  const gasPricing = defaultPricingForService('gas_delivery');
+  assert(gasPricing.customer_service_fee_percentage === 1, 'gas customer fee defaults to 1%');
+  assert(gasPricing.platform_commission_percentage === 2, 'gas driver commission defaults to 2%');
   const cooldown = payoutBlockedUntil('2026-10-01T00:00:00.000Z', 14, new Date('2026-10-10T00:00:00.000Z'));
   assert(cooldown?.toISOString().startsWith('2026-10-15'), '14-day payout cooldown lands on the 15th');
   assert(

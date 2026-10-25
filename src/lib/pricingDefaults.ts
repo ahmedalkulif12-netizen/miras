@@ -9,6 +9,7 @@ import {
  * Shared default pricing when Firestore `pricing/{serviceType}` docs are missing.
  * Universal rule: first 25 km included in base; extra km billed at tier rate.
  * Customer service fee and driver commission default to 5% and 15%.
+ * Gas cylinder delivery defaults to 1% customer fee and 2% driver commission.
  * Checkout reads those percentages from Firestore `pricing/{service}`; driver
  * loyalty bands live on `driver_commission_tiers` (see domain/financials.ts).
  */
@@ -124,6 +125,66 @@ export const SERVICE_TIER_PRICES: Record<string, Record<string, TierRate>> = {
 
 /** Flat home-delivery fee for gas cylinders. Admin can change it on /admin/pricing. */
 export const GAS_DELIVERY_FEE = 15;
+
+/**
+ * Gas cylinder delivery commission. 1% is the customer service fee and 2% is
+ * the driver/fleet commission (3% combined). Other services stay at 5% + 15%.
+ * Admin saves overrides on Firestore `pricing/gas_delivery`.
+ */
+export const GAS_CUSTOMER_SERVICE_FEE_PERCENTAGE = 1;
+export const GAS_DRIVER_COMMISSION_PERCENTAGE = 2;
+
+export function gasDriverCommissionTiers(): DriverCommissionTier[] {
+  return [
+    {
+      min_completed_orders: 0,
+      commission_percentage: GAS_DRIVER_COMMISSION_PERCENTAGE,
+    },
+  ];
+}
+
+function commissionDefaults(service: string): {
+  platform_commission_percentage: number;
+  customer_service_fee_percentage: number;
+  driver_commission_tiers: DriverCommissionTier[];
+} {
+  if (service === 'gas_delivery') {
+    return {
+      platform_commission_percentage: GAS_DRIVER_COMMISSION_PERCENTAGE,
+      customer_service_fee_percentage: GAS_CUSTOMER_SERVICE_FEE_PERCENTAGE,
+      driver_commission_tiers: gasDriverCommissionTiers(),
+    };
+  }
+  return {
+    platform_commission_percentage: 15,
+    customer_service_fee_percentage: 5,
+    driver_commission_tiers: DEFAULT_DRIVER_COMMISSION_TIERS.map((tier) => ({ ...tier })),
+  };
+}
+
+/**
+ * True when a stored gas pricing doc still has the old global 5% / 15% schedule.
+ * A custom admin value (any other percent or band) is left untouched.
+ */
+export function gasDocStillUsesGlobalCommission(
+  data: Record<string, unknown> | null | undefined
+): boolean {
+  if (!data) return false;
+  if (Number(data.customer_service_fee_percentage) !== 5) return false;
+  if (Number(data.platform_commission_percentage) !== 15) return false;
+  const tiers = Array.isArray(data.driver_commission_tiers)
+    ? data.driver_commission_tiers
+    : [];
+  if (tiers.length === 0) return true;
+  if (tiers.length !== DEFAULT_DRIVER_COMMISSION_TIERS.length) return false;
+  return DEFAULT_DRIVER_COMMISSION_TIERS.every((tier, index) => {
+    const row = tiers[index] as Record<string, unknown>;
+    return (
+      Number(row?.min_completed_orders) === tier.min_completed_orders &&
+      Number(row?.commission_percentage) === tier.commission_percentage
+    );
+  });
+}
 
 /** Default tier key when the customer has not picked an option yet. */
 export const DEFAULT_TIER_BY_SERVICE: Record<string, string> = {
@@ -333,9 +394,7 @@ function configFromTiers(serviceType: string): PricingConfig {
     max_price_outside: 0,
     minimum_price: defaultTier.base_price,
     surge_multiplier: 1.0,
-    platform_commission_percentage: 15,
-    customer_service_fee_percentage: 5,
-    driver_commission_tiers: DEFAULT_DRIVER_COMMISSION_TIERS.map((tier) => ({ ...tier })),
+    ...commissionDefaults(service),
     tier_prices: { ...tiers },
     capacity_prices: capacityPrices,
     delivery_fee: service === 'gas_delivery' ? GAS_DELIVERY_FEE : 0,

@@ -8,6 +8,10 @@ import { allowsSandboxCheckout } from '@/lib/checkoutGating';
 import { loadDevBypassProfile } from '@/lib/devAuthBypass';
 import { computeTripFare } from '@/domain/pricing-engine';
 import {
+  applyGasLinesToServiceDetails,
+  gasQuantityRequested,
+} from '@/domain/gasCylinders';
+import {
   buildTripFinancials,
   shouldWaiveServiceFee,
   normalizeTripFinancials,
@@ -273,6 +277,13 @@ export async function prepareCheckoutDraft(
 
   const profile = loadDevBypassProfile();
   const pricing = defaultPricingForService(serviceType);
+  const gasQuantities =
+    serviceType === 'gas_delivery' && gasQuantityRequested(payload.serviceDetails)
+      ? {
+          exchangeQuantity: Number(payload.serviceDetails?.exchangeQuantity) || 0,
+          newCylinderQuantity: Number(payload.serviceDetails?.newCylinderQuantity) || 0,
+        }
+      : undefined;
   const fare = computeTripFare(pricing, {
     distance: distanceKm,
     serviceType,
@@ -281,7 +292,11 @@ export async function prepareCheckoutDraft(
     truckCount: payload.truckCount ?? 1,
     capacity,
     waterType,
+    ...(gasQuantities || {}),
   });
+  const serviceDetails = fare.gasLines
+    ? applyGasLinesToServiceDetails(payload.serviceDetails, fare.gasLines)
+    : payload.serviceDetails;
   const tripSubtotal = Math.round((fare.base + fare.extraKmCost) * 100) / 100;
   const truckCount = payload.truckCount ?? 1;
   const tripFare =
@@ -316,6 +331,7 @@ export async function prepareCheckoutDraft(
 
   const draft: CheckoutDraft = {
     ...payload,
+    ...(serviceDetails ? { serviceDetails } : {}),
     serviceType,
     distanceKm,
     draftId,

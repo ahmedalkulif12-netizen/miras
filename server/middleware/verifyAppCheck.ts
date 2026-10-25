@@ -32,7 +32,14 @@ export function isNativeShellRequest(req: Request): boolean {
  * Routes still require a Firebase ID token via verifyFirebaseToken.
  */
 export function verifyAppCheck() {
-  const enforce = getServerConfig().appCheckEnforce;
+  // Local `npm run dev` keeps APP_CHECK_ENFORCE=true in .env so production
+  // deploys stay strict, but a browser on 127.0.0.1 cannot mint a token.
+  // NODE_ENV=production (Cloud Run) still enforces. Firebase ID tokens stay required.
+  const production = process.env.NODE_ENV === 'production';
+  const enforce = production && getServerConfig().appCheckEnforce;
+  if (!production) {
+    console.info('[App Check] Development bypass — Firebase auth is still required.');
+  }
 
   return async (req: AppCheckRequest, res: Response, next: NextFunction) => {
     const token = req.header('X-Firebase-AppCheck');

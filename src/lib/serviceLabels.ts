@@ -52,12 +52,24 @@ export function formatOrderServiceLabel(
     capacity?: string | null;
     type?: string | null;
     option?: string | null;
+    exchangeQuantity?: number | null;
+    newCylinderQuantity?: number | null;
   } | null | undefined,
   t: TFunction
 ): { title: string; subtitle?: string } {
   const canonical = canonicalizeServiceType(serviceType) || serviceType || '';
   const title = translateServiceType(canonical, t);
   if (!canonical) return { title };
+
+  const exchangeQty = Number(details?.exchangeQuantity);
+  const newQty = Number(details?.newCylinderQuantity);
+  if (canonical === 'gas_delivery' && (exchangeQty > 0 || newQty > 0)) {
+    const parts = [
+      exchangeQty > 0 ? `${t('cylinder_swap')} ×${exchangeQty}` : '',
+      newQty > 0 ? `${t('new_cylinder')} ×${newQty}` : '',
+    ].filter(Boolean);
+    return { title, subtitle: parts.join(' · ') };
+  }
 
   if (isWaterTankerService(canonical)) {
     const capacity =

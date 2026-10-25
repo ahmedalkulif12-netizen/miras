@@ -8,6 +8,7 @@ import {
   resolveDriverCommissionPercentage,
 } from '@/domain/financials';
 import { computeTripFare } from '@/domain/pricing-engine';
+import type { GasCylinderLines } from '@/domain/gasCylinders';
 import { authFetch } from '@/lib/authApi';
 import { readApiErrorMessage, readApiJson } from '@/lib/apiResponse';
 import { calculateTotal } from '@/lib/checkoutTotal';
@@ -57,6 +58,8 @@ export interface CalculatedPrice {
   option?: string;
   /** Distance used for the quote (driver→client for tanker, route for transport). */
   driverDistanceKm?: number;
+  /** Gas exchange and new-cylinder lines when quantities were priced. */
+  gasLines?: GasCylinderLines;
   pricingSnapshot?: Record<string, unknown> & {
     base_price?: number;
     price_per_km?: number;
@@ -80,6 +83,8 @@ export interface CalculateOrderPriceOptions {
   option?: string;
   /** Water quality type: fresh | normal | sewage. */
   waterType?: string;
+  exchangeQuantity?: number;
+  newCylinderQuantity?: number;
   previousOrdersCount?: number;
   truckType?: 'normal' | 'hydraulic' | 'box' | string;
   truckCount?: number;
@@ -109,6 +114,12 @@ function buildLocalDevPrice(
     truckCount: options.truckCount ?? 1,
     capacity: options.capacity,
     waterType: options.waterType,
+    ...(options.exchangeQuantity != null || options.newCylinderQuantity != null
+      ? {
+          exchangeQuantity: options.exchangeQuantity,
+          newCylinderQuantity: options.newCylinderQuantity,
+        }
+      : {}),
   });
   const lineSubtotal = Math.round((fare.base + fare.extraKmCost) * 100) / 100;
   const truckCount = options.truckCount ?? 1;
@@ -167,6 +178,7 @@ function buildLocalDevPrice(
     tier: fare.tier,
     option: fare.tier,
     driverDistanceKm: distance,
+    ...(fare.gasLines ? { gasLines: fare.gasLines } : {}),
   };
 }
 
@@ -184,7 +196,8 @@ export const calculateOrderPrice = async (
   previousOrdersCount: number = 0,
   capacity?: string,
   option?: string,
-  waterType?: string
+  waterType?: string,
+  gasQuantities?: { exchangeQuantity: number; newCylinderQuantity: number }
 ): Promise<CalculatedPrice> => {
   const service = normalizeServiceType(serviceType) as LogisticsServiceType;
   const normalizedCapacity =
@@ -223,6 +236,12 @@ export const calculateOrderPrice = async (
         option: resolvedOption,
         ...(normalizedCapacity ? { capacity: normalizedCapacity } : {}),
         ...(service === 'water_tanker' && waterType ? { waterType } : {}),
+        ...(gasQuantities
+          ? {
+              exchangeQuantity: gasQuantities.exchangeQuantity,
+              newCylinderQuantity: gasQuantities.newCylinderQuantity,
+            }
+          : {}),
       }),
     });
     if (response.ok) {
@@ -238,6 +257,8 @@ export const calculateOrderPrice = async (
       capacity: normalizedCapacity,
       option: resolvedOption,
       waterType,
+      exchangeQuantity: gasQuantities?.exchangeQuantity,
+      newCylinderQuantity: gasQuantities?.newCylinderQuantity,
       previousOrdersCount: paidCount,
       truckType,
       truckCount,

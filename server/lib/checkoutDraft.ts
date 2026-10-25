@@ -20,6 +20,11 @@ import { sanitizeForFirestore } from './firestoreSanitize.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { debitCustomerWalletOnOrder } from './customerWallet.ts';
 import { toPersistedOrderMoneyFields, normalizeTripFinancials, shouldWaiveServiceFee } from '../../src/domain/financials.ts';
+import {
+  applyGasLinesToServiceDetails,
+  gasQuantityRequested,
+  type GasCylinderLines,
+} from '../../src/domain/gasCylinders.ts';
 
 export interface CheckoutDraftRecord {
   draftId: string;
@@ -49,6 +54,7 @@ export async function createCheckoutDraft(
   paymentPending: true;
   previousPaidOrderCount?: number;
   serviceFeeWaived?: boolean;
+  serviceDetails?: Record<string, unknown>;
 }> {
   validateCreateOrderPayload(body);
   if (canUseAdminFirestore()) {
@@ -90,6 +96,14 @@ export async function createCheckoutDraft(
         )
       : undefined;
 
+  const gasQuantities =
+    serviceType === 'gas_delivery' && gasQuantityRequested(body.serviceDetails)
+      ? {
+          exchangeQuantity: Number(body.serviceDetails?.exchangeQuantity) || 0,
+          newCylinderQuantity: Number(body.serviceDetails?.newCylinderQuantity) || 0,
+        }
+      : undefined;
+
   const quote = await pricingService.calculatePrice({
     distance: body.distanceKm,
     serviceType,
@@ -100,7 +114,17 @@ export async function createCheckoutDraft(
     capacity,
     option: capacity || rawOption,
     waterType,
+    ...(gasQuantities || {}),
   });
+
+  const gasLines = (quote as { gasLines?: GasCylinderLines }).gasLines;
+  const pricedServiceDetails = gasLines
+    ? applyGasLinesToServiceDetails(body.serviceDetails, gasLines)
+    : {
+        ...(body.serviceDetails || {}),
+        ...(capacity ? { capacity, type: capacity } : {}),
+        ...(waterType ? { waterType } : {}),
+      };
 
   const financialsRaw = (quote as unknown as { financials?: Record<string, unknown> }).financials;
   if (!financialsRaw) {
@@ -133,6 +157,7 @@ export async function createCheckoutDraft(
       paymentPending: true,
       previousPaidOrderCount: previousOrdersCount,
       serviceFeeWaived,
+      serviceDetails: pricedServiceDetails,
     };
   }
 
@@ -147,11 +172,7 @@ export async function createCheckoutDraft(
       payload: {
         ...body,
         serviceType,
-        serviceDetails: {
-          ...(body.serviceDetails || {}),
-          ...(capacity ? { capacity, type: capacity } : {}),
-          ...(waterType ? { waterType } : {}),
-        },
+        serviceDetails: pricedServiceDetails,
       },
       financials,
       quote,
@@ -173,6 +194,7 @@ export async function createCheckoutDraft(
     paymentPending: true,
     previousPaidOrderCount: previousOrdersCount,
     serviceFeeWaived,
+    serviceDetails: pricedServiceDetails,
   };
 }
 

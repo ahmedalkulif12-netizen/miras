@@ -20,6 +20,7 @@ import {
   WATER_TANKER_MOCK_DISTANCE_KM,
   sanitizeWaterTankerDistanceKm,
 } from '../../src/lib/waterTankerDistance.ts';
+import { normalizeGasQuantity } from '../../src/domain/gasCylinders.ts';
 
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -84,6 +85,10 @@ export function createPricingService(db: admin.firestore.Firestore) {
     capacity?: string;
     /** Water quality / job type: fresh | normal | sewage. */
     waterType?: string;
+    /** Gas cylinder exchange count. Presence of either count switches to line pricing. */
+    exchangeQuantity?: number;
+    /** Gas new-cylinder purchase count. */
+    newCylinderQuantity?: number;
   }) {
     const {
       distance,
@@ -95,6 +100,22 @@ export function createPricingService(db: admin.firestore.Firestore) {
       waterType,
       userId,
     } = params;
+
+    const gasQuantityMode =
+      normalizeServiceType(serviceType) === 'gas_delivery' &&
+      (params.exchangeQuantity !== undefined || params.newCylinderQuantity !== undefined);
+    const exchangeQuantity = gasQuantityMode
+      ? normalizeGasQuantity(params.exchangeQuantity)
+      : undefined;
+    const newCylinderQuantity = gasQuantityMode
+      ? normalizeGasQuantity(params.newCylinderQuantity)
+      : undefined;
+    if (
+      gasQuantityMode &&
+      (exchangeQuantity || 0) + (newCylinderQuantity || 0) < 1
+    ) {
+      throw Object.assign(new Error('Select at least one gas cylinder'), { statusCode: 400 });
+    }
 
     let previousOrdersCount = Number(params.previousOrdersCount);
     if (!Number.isFinite(previousOrdersCount) || previousOrdersCount < 0) {
@@ -130,6 +151,9 @@ export function createPricingService(db: admin.firestore.Firestore) {
       truckCount,
       capacity,
       waterType,
+      ...(gasQuantityMode
+        ? { exchangeQuantity, newCylinderQuantity }
+        : {}),
     });
 
     // Canonical subtotal from visible line items.
@@ -164,6 +188,7 @@ export function createPricingService(db: admin.firestore.Firestore) {
       tier: fare.tier,
       ...(fare.capacity ? { capacity: fare.capacity } : {}),
       ...(fare.waterType ? { waterType: fare.waterType } : {}),
+      ...(fare.gasLines ? { gasLines: fare.gasLines } : {}),
       driver_distance_km: safeDistance,
       extra_km: fare.extraKm ?? 0,
       line_base: fare.base,
@@ -190,6 +215,7 @@ export function createPricingService(db: admin.firestore.Firestore) {
       extraDistanceKm: fare.extraKm,
       capacity: fare.capacity,
       waterType: fare.waterType,
+      ...(fare.gasLines ? { gasLines: fare.gasLines } : {}),
       tier: fare.tier,
       option: fare.tier,
       driverDistanceKm: safeDistance,

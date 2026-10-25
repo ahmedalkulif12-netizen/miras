@@ -18,6 +18,12 @@ interface Props {
   isRtl: boolean;
 }
 
+function feeOrDefault(value: unknown, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return fallback;
+  return Math.round(n * 1000) / 1000;
+}
+
 function copyTiers(config: PricingConfig): DriverCommissionTier[] {
   const source = config.driver_commission_tiers?.length
     ? config.driver_commission_tiers
@@ -91,8 +97,14 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
           ...defaultPricingForService(serviceId),
           tier_prices: tierPrices,
           delivery_fee: Number(config.delivery_fee) || 0,
-          customer_service_fee_percentage: Number(config.customer_service_fee_percentage) || 5,
-          platform_commission_percentage: Number(config.platform_commission_percentage) || 15,
+          customer_service_fee_percentage: feeOrDefault(
+            config.customer_service_fee_percentage,
+            defaultPricingForService(serviceId).customer_service_fee_percentage ?? 5
+          ),
+          platform_commission_percentage: feeOrDefault(
+            config.platform_commission_percentage,
+            defaultPricingForService(serviceId).platform_commission_percentage
+          ),
           driver_commission_tiers: copyTiers(config),
           updatedAt: new Date().toISOString(),
         },
@@ -192,6 +204,13 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
               </table>
             </div>
             {service.id === 'gas_delivery' && (
+              <p className="text-xs font-bold text-amber-700">
+                {isRtl
+                  ? 'افتراضي الغاز: رسوم العميل 1% وعمولة السائق أو الأسطول 2%. الحفظ يكتب pricing/gas_delivery فوراً.'
+                  : 'Gas default: 1% customer fee and 2% driver or fleet commission. Save writes pricing/gas_delivery immediately.'}
+              </p>
+            )}
+            {service.id === 'gas_delivery' && (
               <label className="text-xs font-bold text-gray-400 space-y-1 block max-w-xs">
                 {isRtl ? 'رسوم التوصيل' : 'Delivery fee'}
                 <input
@@ -239,15 +258,24 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                   min={0}
                   max={100}
                   value={config.platform_commission_percentage}
-                  onChange={(event) =>
-                    setConfigs((prev) => ({
-                      ...prev,
-                      [service.id]: {
-                        ...config,
-                        platform_commission_percentage: Number(event.target.value),
-                      },
-                    }))
-                  }
+                  onChange={(event) => {
+                    const nextRate = Number(event.target.value);
+                    setConfigs((prev) => {
+                      const tiers = copyTiers(config).map((tier, index) =>
+                        index === 0 && tier.min_completed_orders === 0
+                          ? { ...tier, commission_percentage: Number.isFinite(nextRate) ? nextRate : 0 }
+                          : tier
+                      );
+                      return {
+                        ...prev,
+                        [service.id]: {
+                          ...config,
+                          platform_commission_percentage: nextRate,
+                          driver_commission_tiers: tiers,
+                        },
+                      };
+                    });
+                  }}
                   className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black"
                 />
               </label>
