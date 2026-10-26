@@ -59,7 +59,7 @@ workflows:
         FIREBASE_IOS_API_KEY: "AIzaSyChrhscAIITLzKiDAqWP2GXQbvhGjpY9q8"
         FIREBASE_IOS_CLIENT_ID: "DISABLED_USE_BUNDLED_PLIST"
         FIREBASE_IOS_REVERSED_CLIENT_ID: "DISABLED_USE_BUNDLED_PLIST"
-      node: 22
+      node: 22.23.4
       xcode: latest
     scripts:
       - name: Force production client env
@@ -252,7 +252,7 @@ workflows:
         VITE_APP_CHECK_DISABLED: "false"
         VITE_APP_URL: "https://hamula-cfc6c.web.app"
         VITE_API_ORIGIN: "https://hamula-cfc6c.web.app"
-      node: 22
+      node: 22.23.4
       java: 21
     scripts:
       - name: Install npm dependencies
