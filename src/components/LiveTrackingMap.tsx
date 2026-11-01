@@ -4,6 +4,7 @@ import type { LiveDriverPosition } from '@/lib/liveTracking';
 import type { DriverNavPhase } from '@/domain/order-status';
 import type { LatLng } from '@/lib/orderGeo';
 import { isValidRoutePoint } from '@/lib/computeDrivingRoute';
+import { setMapCamera } from '@/lib/mapCamera';
 
 interface LiveTrackingMapProps {
   pickup?: { lat: number; lng: number } | null;
@@ -158,11 +159,9 @@ const TrackingCamera: React.FC<{
       const key = `${driverPt.lat.toFixed(5)},${driverPt.lng.toFixed(5)}`;
       if (key !== lastFollowKey.current) {
         lastFollowKey.current = key;
-        map.panTo(driverPt);
         const zoom = map.getZoom();
-        if (zoom == null || zoom < 12 || zoom > 16) {
-          map.setZoom(FOLLOW_ZOOM);
-        }
+        const nextZoom = zoom == null || zoom < 12 || zoom > 16 ? FOLLOW_ZOOM : zoom;
+        setMapCamera(map, driverPt, nextZoom);
       }
       return;
     }
@@ -173,14 +172,12 @@ const TrackingCamera: React.FC<{
     if (driverPt && points.length === 0) points.push(driverPt);
 
     if (points.length === 0) {
-      map.panTo(SAUDI_CENTER);
-      map.setZoom(SAUDI_OVERVIEW_ZOOM);
+      setMapCamera(map, SAUDI_CENTER, SAUDI_OVERVIEW_ZOOM);
       return;
     }
 
     if (points.length === 1) {
-      map.panTo(points[0]);
-      map.setZoom(CITY_ZOOM);
+      setMapCamera(map, points[0], CITY_ZOOM);
       return;
     }
 

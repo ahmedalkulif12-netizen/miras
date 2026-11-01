@@ -10,6 +10,7 @@ import {
   type LatLng,
 } from '@/lib/orderGeo';
 import { DEFAULT_MAP_CITY, geocodePlaceName } from '@/lib/cityCoordinates';
+import { setMapCamera } from '@/lib/mapCamera';
 
 export {
   getOrderDropoffLatLng,
@@ -63,11 +64,9 @@ const PickupFocusOnAccept: React.FC<{ pickup: LatLng }> = ({ pickup }) => {
 
   useEffect(() => {
     if (!map) return;
-    map.panTo(pickup);
     const zoom = map.getZoom();
-    if (zoom == null || zoom < 12 || zoom > 15) {
-      map.setZoom(13);
-    }
+    const nextZoom = zoom == null || zoom < 12 || zoom > 15 ? 13 : zoom;
+    setMapCamera(map, pickup, nextZoom);
   }, [map, pickup.lat, pickup.lng]);
 
   return null;

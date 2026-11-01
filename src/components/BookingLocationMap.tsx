@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import {
   Map,
   Marker,
@@ -8,6 +8,7 @@ import {
 import { Crosshair, MapPin } from 'lucide-react';
 import { RouteDisplay } from '@/components/RouteDisplay';
 import { DEFAULT_MAP_CENTER } from '@/lib/geolocation';
+import { focusMapCamera, mapCenterIsNear } from '@/lib/mapCamera';
 import { cityFromAddressComponents } from '@/lib/saudiGeo';
 
 export type BookingPinTarget = 'pickup' | 'destination';
@@ -35,8 +36,10 @@ interface BookingLocationMapProps {
   locating?: boolean;
   /** Fixed center pin: dragging the map moves the active point. */
   centerPin?: boolean;
-  /** Bump to pan the camera to the current GPS / active pin once. */
+  /** Bump to pan the camera to focusPoint, or the active pin. */
   focusNonce?: number;
+  /** Exact coordinates to pan to when focusNonce changes. */
+  focusPoint?: google.maps.LatLngLiteral | null;
   /** GPS failed. The map stays on the default city so the pin can be placed by hand. */
   manualSelection?: boolean;
 }
@@ -59,19 +62,6 @@ async function reverseGeocode(
   }
 }
 
-function moveMapCamera(
-  map: google.maps.Map,
-  center: google.maps.LatLngLiteral,
-  zoom: number
-) {
-  if (typeof map.moveCamera === 'function') {
-    map.moveCamera({ center, zoom });
-    return;
-  }
-  map.panTo(center);
-  map.setZoom(zoom);
-}
-
 /** Keeps the map camera on GPS / pins when they change. */
 const MapCameraController: React.FC<{
   pickup: google.maps.LatLngLiteral | null;
@@ -80,8 +70,10 @@ const MapCameraController: React.FC<{
   mode: BookingMapMode;
   centerPin: boolean;
   focusNonce: number;
+  focusPoint: google.maps.LatLngLiteral | null;
   activePin: BookingPinTarget;
   suppressCenterPickRef: React.MutableRefObject<boolean>;
+  pendingFocusRef: React.MutableRefObject<google.maps.LatLngLiteral | null>;
 }> = ({
   pickup,
   destination,
@@ -89,42 +81,71 @@ const MapCameraController: React.FC<{
   mode,
   centerPin,
   focusNonce,
+  focusPoint,
   activePin,
   suppressCenterPickRef,
+  pendingFocusRef,
 }) => {
   const map = useMap();
-  const pickupRef = React.useRef(pickup);
-  const destinationRef = React.useRef(destination);
-  const userLocationRef = React.useRef(userLocation);
-  pickupRef.current = pickup;
-  destinationRef.current = destination;
-  userLocationRef.current = userLocation;
+  const focusTokenRef = React.useRef(0);
 
   useEffect(() => {
-    if (!map || !centerPin || focusNonce < 1) return;
-    // Search / GPS focus must land on the pin being edited. Preferring GPS
-    // left the drop-off camera on the phone after a place was selected.
-    const pickupPoint = pickupRef.current;
-    const destinationPoint = destinationRef.current;
-    const userPoint = userLocationRef.current;
+    if (!map || focusNonce < 1) return;
+    // The point captured with this focus request. Pin fallbacks cover search
+    // and step changes that pan without a fresh GPS fix.
     const focus =
-      activePin === 'destination'
-        ? destinationPoint || pickupPoint || userPoint
-        : pickupPoint || userPoint || destinationPoint;
-    if (!focus) return;
+      focusPoint ||
+      (activePin === 'destination'
+        ? destination || pickup || userLocation
+        : pickup || userLocation || destination);
+    if (!focus || !Number.isFinite(focus.lat) || !Number.isFinite(focus.lng)) return;
+    if (focus.lat === 0 && focus.lng === 0) return;
+
+    const token = ++focusTokenRef.current;
+    const target = { lat: focus.lat, lng: focus.lng };
+    pendingFocusRef.current = target;
     suppressCenterPickRef.current = true;
-    moveMapCamera(map, focus, 16);
-    const release = window.setTimeout(() => {
-      suppressCenterPickRef.current = false;
-    }, 500);
-    return () => {
-      window.clearTimeout(release);
-      suppressCenterPickRef.current = false;
+
+    let attempts = 0;
+    const apply = () => {
+      if (focusTokenRef.current !== token) return;
+      focusMapCamera(map, target, 16);
     };
-    // Coords are read on focusNonce / pin changes. Dragging the map must not
-    // re-run this and snap the zoom back to 16.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, centerPin, focusNonce, activePin, suppressCenterPickRef]);
+    apply();
+    const frame = window.requestAnimationFrame(apply);
+    const retry = window.setTimeout(() => {
+      if (!mapCenterIsNear(map, target)) apply();
+    }, 400);
+    const idle = map.addListener('idle', () => {
+      if (focusTokenRef.current !== token) return;
+      if (mapCenterIsNear(map, target)) {
+        pendingFocusRef.current = null;
+        return;
+      }
+      if (attempts >= 3) return;
+      attempts += 1;
+      apply();
+    });
+    const release = window.setTimeout(() => {
+      if (focusTokenRef.current === token) suppressCenterPickRef.current = false;
+    }, 2000);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(retry);
+      window.clearTimeout(release);
+      idle.remove();
+    };
+    // Dragging the map must not re-run this. Only a new focus request pans.
+  }, [
+    map,
+    focusNonce,
+    focusPoint?.lat,
+    focusPoint?.lng,
+    activePin,
+    suppressCenterPickRef,
+    pendingFocusRef,
+  ]);
 
   useEffect(() => {
     if (!map || centerPin) return;
@@ -149,7 +170,7 @@ const MapCameraController: React.FC<{
       pickup ||
       destination;
     if (focus) {
-      moveMapCamera(map, focus, 15);
+      focusMapCamera(map, focus, 15);
     }
   }, [map, pickup, destination, userLocation, mode, centerPin, activePin]);
 
@@ -161,7 +182,8 @@ const CenterPinPicker: React.FC<{
   activePin: BookingPinTarget;
   onPick: (target: BookingPinTarget, coords: google.maps.LatLngLiteral) => void;
   suppressCenterPickRef: React.MutableRefObject<boolean>;
-}> = ({ activePin, onPick, suppressCenterPickRef }) => {
+  pendingFocusRef: React.MutableRefObject<google.maps.LatLngLiteral | null>;
+}> = ({ activePin, onPick, suppressCenterPickRef, pendingFocusRef }) => {
   const map = useMap();
   const pinRef = React.useRef(activePin);
   const pickRef = React.useRef(onPick);
@@ -173,11 +195,23 @@ const CenterPinPicker: React.FC<{
     let moved = false;
     let timer = 0;
     const markMoved = () => {
+      if (suppressCenterPickRef.current) return;
+      pendingFocusRef.current = null;
       moved = true;
     };
     const drag = map.addListener('dragstart', markMoved);
     const zoom = map.addListener('zoom_changed', markMoved);
     const idle = map.addListener('idle', () => {
+      const pending = pendingFocusRef.current;
+      if (pending && !mapCenterIsNear(map, pending)) {
+        // The camera has not reached the GPS point yet. Writing getCenter()
+        // here would save the default city over the coordinates just fetched.
+        moved = false;
+        return;
+      }
+      if (pending && mapCenterIsNear(map, pending)) {
+        pendingFocusRef.current = null;
+      }
       if (!moved || suppressCenterPickRef.current) {
         moved = false;
         return;
@@ -186,6 +220,8 @@ const CenterPinPicker: React.FC<{
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (suppressCenterPickRef.current) return;
+        const stillPending = pendingFocusRef.current;
+        if (stillPending && !mapCenterIsNear(map, stillPending)) return;
         const center = map.getCenter();
         if (!center) return;
         pickRef.current(pinRef.current, { lat: center.lat(), lng: center.lng() });
@@ -197,7 +233,7 @@ const CenterPinPicker: React.FC<{
       zoom.remove();
       idle.remove();
     };
-  }, [map, activePin, suppressCenterPickRef]);
+  }, [map, activePin, suppressCenterPickRef, pendingFocusRef]);
 
   return null;
 };
@@ -219,6 +255,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
   locating = false,
   centerPin = false,
   focusNonce = 0,
+  focusPoint = null,
   manualSelection = false,
 }) => {
   const geocodingLib = useMapsLibrary('geocoding');
@@ -226,8 +263,8 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
     () => (geocodingLib ? new geocodingLib.Geocoder() : null),
     [geocodingLib]
   );
-  const [mapReady, setMapReady] = useState(false);
   const suppressCenterPickRef = React.useRef(false);
+  const pendingFocusRef = React.useRef<google.maps.LatLngLiteral | null>(null);
 
   const defaultCenter = userLocation || pickupCoords || destinationCoords || RIYADH_CENTER;
   const deliveryOnly = mode === 'delivery_only';
@@ -271,41 +308,49 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
           disableDefaultUI={false}
           style={{ width: '100%', height: '100%' }}
           onClick={centerPin ? undefined : handleMapClick}
-          onTilesLoaded={() => setMapReady(true)}
           reuseMaps
         >
-          {mapReady && (
-            <>
-            <MapCameraController
-              pickup={pickupCoords}
-              destination={destinationCoords}
-              userLocation={userLocation}
-              mode={mode}
-              centerPin={centerPin}
-              focusNonce={focusNonce}
+          <MapCameraController
+            pickup={pickupCoords}
+            destination={destinationCoords}
+            userLocation={userLocation}
+            mode={mode}
+            centerPin={centerPin}
+            focusNonce={focusNonce}
+            focusPoint={focusPoint}
+            activePin={effectiveActivePin}
+            suppressCenterPickRef={suppressCenterPickRef}
+            pendingFocusRef={pendingFocusRef}
+          />
+          {centerPin && (
+            <CenterPinPicker
               activePin={effectiveActivePin}
               suppressCenterPickRef={suppressCenterPickRef}
+              pendingFocusRef={pendingFocusRef}
+              onPick={(target, coords) => void applyCoords(target, coords)}
             />
-            {centerPin && (
-              <CenterPinPicker
-                activePin={effectiveActivePin}
-                suppressCenterPickRef={suppressCenterPickRef}
-                onPick={(target, coords) => void applyCoords(target, coords)}
-              />
-            )}
-            </>
           )}
 
           {userLocation && (
             <Marker
+              key={`user-${userLocation.lat.toFixed(6)}-${userLocation.lng.toFixed(6)}`}
               position={userLocation}
               clickable={false}
               title={isRtl ? 'موقعك الحالي' : 'Your location'}
+              icon={{
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 9,
+                fillColor: '#2563eb',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+              }}
             />
           )}
 
           {!deliveryOnly && pickupCoords && (
             <Marker
+              key={`pickup-${pickupCoords.lat.toFixed(6)}-${pickupCoords.lng.toFixed(6)}`}
               position={pickupCoords}
               draggable={!centerPin}
               title={isRtl ? 'نقطة التحميل' : 'Pickup'}
@@ -315,6 +360,7 @@ export const BookingLocationMap: React.FC<BookingLocationMapProps> = ({
 
           {destinationCoords && (
             <Marker
+              key={`drop-${destinationCoords.lat.toFixed(6)}-${destinationCoords.lng.toFixed(6)}`}
               position={destinationCoords}
               draggable={!centerPin}
               title={

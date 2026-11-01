@@ -60,7 +60,7 @@ import { SERVICE_OPTIONS, OPTION_LABELS, SERVICE_KEY_MAP } from '@/constants';
 import { LocationAutocomplete } from '@/components/LocationAutocomplete';
 import { BookingLocationMap, type BookingPinTarget } from '@/components/BookingLocationMap';
 import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
-import { getCurrentPosition, locationFailureCode } from '@/lib/geolocation';
+import { getCurrentPosition, locationFailureCode, PRECISE_POSITION_OPTIONS } from '@/lib/geolocation';
 import {
   findNearestOnlineDriver,
   type NearestDriverMatch,
@@ -196,6 +196,7 @@ const CustomerDashboard: React.FC = () => {
   const [activeMapPin, setActiveMapPin] = useState<BookingPinTarget>('pickup');
   const [locationPhase, setLocationPhase] = useState<'pickup' | 'dropoff' | 'summary'>('pickup');
   const [mapFocusNonce, setMapFocusNonce] = useState(0);
+  const [mapFocusPoint, setMapFocusPoint] = useState<google.maps.LatLngLiteral | null>(null);
   const locationPhaseRef = useRef<'pickup' | 'dropoff' | 'summary'>('pickup');
   locationPhaseRef.current = locationPhase;
   const [userLocation, setUserLocation] = useState<google.maps.LatLngLiteral | null>(null);
@@ -314,21 +315,27 @@ const CustomerDashboard: React.FC = () => {
     }
   };
 
+  const focusMapOn = (point: google.maps.LatLngLiteral | null | undefined) => {
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+    if (point.lat === 0 && point.lng === 0) return;
+    setMapFocusPoint({ lat: point.lat, lng: point.lng });
+    setMapFocusNonce((n) => n + 1);
+  };
+
   /** Apply live GPS: water tanker → delivery; transport → pickup start. */
   const applyUserGpsLocation = async (
     coords: google.maps.LatLngLiteral,
     options?: { force?: boolean }
   ) => {
-    const { address, city } = await reverseGeocodeCoords(coords);
-    setUserLocation(coords);
+    const point = { lat: coords.lat, lng: coords.lng };
+    setUserLocation(point);
     setGpsError(null);
 
     const phase = locationPhaseRef.current;
-    if (isDeliveryOnlyService(serviceType) || phase === 'dropoff') {
+    const editingDropoff = isDeliveryOnlyService(serviceType) || phase === 'dropoff';
+    if (editingDropoff) {
       if (options?.force || phase === 'dropoff' || !destinationCoords) {
-        setDestinationCoords(coords);
-        setDestination(address);
-        if (city) setDropoffCity(city);
+        setDestinationCoords(point);
       }
       if (isDeliveryOnlyService(serviceType)) {
         setPickupCoords(null);
@@ -337,34 +344,56 @@ const CustomerDashboard: React.FC = () => {
       setActiveMapPin('destination');
     } else {
       if (options?.force || phase === 'pickup' || !pickupCoords) {
-        setPickupCoords(coords);
-        setPickup(address);
-        if (city) setPickupCity(city);
+        setPickupCoords(point);
       }
       setActiveMapPin('pickup');
     }
-    setMapFocusNonce((n) => n + 1);
+    focusMapOn(point);
     setIsCalculated(false);
+
+    const { address, city } = await reverseGeocodeCoords(point);
+    if (editingDropoff) {
+      if (options?.force || phase === 'dropoff' || !destinationCoords) {
+        setDestination(address);
+        if (city) setDropoffCity(city);
+      }
+    } else if (options?.force || phase === 'pickup' || !pickupCoords) {
+      setPickup(address);
+      if (city) setPickupCity(city);
+    }
   };
 
   const gpsFailureMessage = (error: unknown) => {
     const code = locationFailureCode(error);
-    if (code === 'LOCATION_PERMISSION_DENIED' || code === 'LOCATION_SERVICES_DISABLED') {
+    if (code === 'LOCATION_PERMISSION_DENIED') {
       return isRtl
-        ? 'يرجى السماح بالموقع أثناء استخدام التطبيق، أو حدّد الموقع على الخريطة.'
-        : 'Allow location while using the app, or choose the point on the map.';
+        ? 'تم رفض إذن الموقع. اسمح بالوصول للموقع من إعدادات الجهاز ثم أعد المحاولة.'
+        : 'Location permission was denied. Allow location access in system settings and try again.';
+    }
+    if (code === 'LOCATION_SERVICES_DISABLED') {
+      return isRtl
+        ? 'خدمة الموقع متوقفة. شغّل GPS من إعدادات الجهاز ثم أعد المحاولة.'
+        : 'Location services are turned off. Enable GPS in system settings and try again.';
+    }
+    if (code === 'LOCATION_TIMEOUT') {
+      return isRtl
+        ? 'انتهت مهلة تحديد الموقع. تأكد من تشغيل GPS ثم أعد المحاولة.'
+        : 'Location request timed out. Turn on GPS and try again.';
     }
     return isRtl
-      ? 'تعذر تحديد موقعك الحالي. الخريطة على الرياض — حرّك الدبوس أو ابحث عن العنوان.'
-      : 'Current location is unavailable. The map is on Riyadh — drag the pin or search.';
+      ? 'تعذر تحديد موقعك الحالي. حرّك الدبوس أو ابحث عن العنوان.'
+      : 'Current location is unavailable. Drag the pin or search for the address.';
   };
 
   const locateUser = async (force = false) => {
     setLocatingGps(true);
     setGpsError(null);
     try {
-      const pos = await getCurrentPosition();
+      const pos = await getCurrentPosition(PRECISE_POSITION_OPTIONS);
       const coords = { lat: pos.lat, lng: pos.lng };
+      if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+        throw Object.assign(new Error('LOCATION_UNAVAILABLE'), { code: 'LOCATION_UNAVAILABLE' });
+      }
       await applyUserGpsLocation(coords, { force });
       toast.success(
         isRtl ? 'تم تحديد موقعك الحالي على الخريطة' : 'Map centered on your current location'
@@ -391,7 +420,7 @@ const CustomerDashboard: React.FC = () => {
       try {
         let coords = userLocation;
         if (!coords) {
-          const pos = await getCurrentPosition();
+          const pos = await getCurrentPosition(PRECISE_POSITION_OPTIONS);
           coords = { lat: pos.lat, lng: pos.lng };
         }
         if (cancelled || !coords) return;
@@ -399,7 +428,9 @@ const CustomerDashboard: React.FC = () => {
       } catch (err) {
         if (cancelled) return;
         console.warn('[booking] geolocation failed:', err);
-        setGpsError(gpsFailureMessage(err));
+        const msg = gpsFailureMessage(err);
+        setGpsError(msg);
+        toast.error(msg);
       } finally {
         if (!cancelled) setLocatingGps(false);
       }
@@ -1708,7 +1739,7 @@ const CustomerDashboard: React.FC = () => {
                                setLocationPhase('dropoff');
                                setActiveMapPin('destination');
                                setIsCalculated(false);
-                               setMapFocusNonce((n) => n + 1);
+                               focusMapOn(destinationCoords || pickupCoords);
                              }}
                              className={`min-h-14 rounded-2xl px-3 text-sm font-black border-2 disabled:opacity-40 ${
                                locationPhase === 'dropoff' || locationPhase === 'summary'
@@ -1770,7 +1801,7 @@ const CustomerDashboard: React.FC = () => {
                                     setPickupCity(city);
                                     setActiveMapPin('pickup');
                                   }
-                                  setMapFocusNonce((n) => n + 1);
+                                  focusMapOn(coords);
                                   setIsCalculated(false);
 
                                   const quoteReady =
@@ -1809,6 +1840,7 @@ const CustomerDashboard: React.FC = () => {
                             manualSelection={Boolean(gpsError)}
                             centerPin={locationPhase !== 'summary'}
                             focusNonce={mapFocusNonce}
+                            focusPoint={mapFocusPoint}
                             showRoute={
                               locationPhase === 'summary' &&
                               !deliveryOnly &&
@@ -1854,7 +1886,7 @@ const CustomerDashboard: React.FC = () => {
                                 }
                                 setLocationPhase('dropoff');
                                 setActiveMapPin('destination');
-                                setMapFocusNonce((n) => n + 1);
+                                focusMapOn(destinationCoords || pickupCoords);
                               }}
                               className="w-full min-h-16 py-5 bg-[#FFCC00] text-black rounded-3xl font-black text-lg border-2 border-black shadow-lg"
                             >

@@ -762,9 +762,19 @@ const DriverDashboard: React.FC = () => {
 
     startDriverLocationBroadcast(latestOrder.id, profile.uid).catch((error) => {
       console.warn('[DriverDashboard] live tracking failed:', error);
-      if (error instanceof Error && error.message === 'LOCATION_PERMISSION_DENIED') {
+      if (
+        error instanceof Error &&
+        (error.message === 'LOCATION_PERMISSION_DENIED' ||
+          error.message === 'LOCATION_SERVICES_DISABLED')
+      ) {
         toast.warning(
-          isRtl ? 'فعّل خدمة الموقع لمشاركة موقعك مع العميل' : 'Enable location to share live tracking with customer'
+          error.message === 'LOCATION_SERVICES_DISABLED'
+            ? isRtl
+              ? 'خدمة الموقع متوقفة. شغّل GPS لمشاركة موقعك مع العميل.'
+              : 'Location services are off. Turn on GPS to share your position with the customer.'
+            : isRtl
+              ? 'تم رفض إذن الموقع. اسمح بالوصول للموقع لمشاركة موقعك مع العميل.'
+              : 'Location permission was denied. Allow location access to share your position with the customer.'
         );
       }
     });

@@ -12,6 +12,19 @@ export interface GeoCoordinates {
 /** Riyadh center. Used when GPS times out so the map stays usable. */
 export const DEFAULT_MAP_CENTER: GeoCoordinates = { lat: 24.7136, lng: 46.6753 };
 
+/** Fresh GPS for the "my location" button. No cached city fix. */
+export const PRECISE_POSITION_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 10_000,
+  maximumAge: 0,
+} as const;
+
+export interface PositionRequestOptions {
+  enableHighAccuracy?: boolean;
+  timeout?: number;
+  maximumAge?: number;
+}
+
 const HIGH_ACCURACY_MS = 12_000;
 const COARSE_MS = 10_000;
 /** Long enough for the iOS system prompt. A shorter cap treats "Allow" as a failure. */
@@ -42,20 +55,31 @@ export function locationFailureCode(error: unknown): string {
   const err = error as { code?: string | number; message?: string };
   const code = String(err?.code ?? '');
   const message = String(err?.message || '');
+
+  // GPS / system location off. Check before "denied" — Android's message contains "not enabled".
+  if (
+    code === 'LOCATION_SERVICES_DISABLED' ||
+    code === 'OS-PLUG-GLOC-0007' ||
+    code === 'OS-PLUG-GLOC-0009' ||
+    code === 'OS-PLUG-GLOC-0016' ||
+    code === 'OS-PLUG-GLOC-0017' ||
+    /location services are not enabled|location settings|turned off/i.test(message)
+  ) {
+    return 'LOCATION_SERVICES_DISABLED';
+  }
+
   if (
     code === 'LOCATION_PERMISSION_DENIED' ||
-    code === 'LOCATION_SERVICES_DISABLED' ||
     code === 'OS-PLUG-GLOC-0003' ||
-    code === 'OS-PLUG-GLOC-0007' ||
     code === 'OS-PLUG-GLOC-0008' ||
-    code === '1'
+    code === '1' ||
+    /denied|restricted/i.test(message)
   ) {
-    return code === 'OS-PLUG-GLOC-0007' || code === 'LOCATION_SERVICES_DISABLED'
-      ? 'LOCATION_SERVICES_DISABLED'
-      : 'LOCATION_PERMISSION_DENIED';
+    return 'LOCATION_PERMISSION_DENIED';
   }
+
   if (code === 'GEOLOCATION_UNSUPPORTED') return 'GEOLOCATION_UNSUPPORTED';
-  if (/denied|not enabled|restricted/i.test(message)) return 'LOCATION_PERMISSION_DENIED';
+
   if (
     code === 'LOCATION_TIMEOUT' ||
     code === 'OS-PLUG-GLOC-0010' ||
@@ -64,6 +88,7 @@ export function locationFailureCode(error: unknown): string {
   ) {
     return 'LOCATION_TIMEOUT';
   }
+
   return 'LOCATION_UNAVAILABLE';
 }
 
@@ -81,23 +106,38 @@ async function browserLocationAvailable(): Promise<boolean> {
 
 /**
  * Request location permission on Android, iOS, and the browser.
- * Native shells use the Capacitor prompt (25s). Browsers prompt on the
- * position read itself; a previous denial returns false immediately.
+ * Native shells use the Capacitor prompt. Browsers prompt on the position
+ * read itself; a previous denial fails immediately.
+ * Throws LOCATION_SERVICES_DISABLED when system GPS is off (that used to be
+ * swallowed and shown as a permission denial).
  */
-export async function requestLocationPermission(): Promise<boolean> {
+async function assertLocationAccess(): Promise<void> {
   if (!Capacitor.isNativePlatform()) {
-    return browserLocationAvailable();
+    if (!(await browserLocationAvailable())) {
+      throw coded('LOCATION_PERMISSION_DENIED');
+    }
+    return;
   }
 
   try {
     const status = await Geolocation.checkPermissions();
-    if (status.location === 'granted' || status.coarseLocation === 'granted') {
-      return true;
-    }
+    if (status.location === 'granted' || status.coarseLocation === 'granted') return;
     const requested = await Geolocation.requestPermissions();
-    return requested.location === 'granted' || requested.coarseLocation === 'granted';
+    if (requested.location === 'granted' || requested.coarseLocation === 'granted') return;
+    throw coded('LOCATION_PERMISSION_DENIED');
   } catch (error) {
-    console.warn('[geolocation] permission request failed:', error);
+    throw coded(locationFailureCode(error));
+  }
+}
+
+export async function requestLocationPermission(): Promise<boolean> {
+  try {
+    await assertLocationAccess();
+    return true;
+  } catch (error) {
+    const code = locationFailureCode(error);
+    console.warn('[geolocation] permission request failed:', code);
+    if (code === 'LOCATION_SERVICES_DISABLED') throw coded(code);
     return false;
   }
 }
@@ -132,8 +172,8 @@ function readBrowserPosition(
             err.code === 1
               ? 'LOCATION_PERMISSION_DENIED'
               : err.code === 3
-                ? 'LOCATION_TIMEOUT'
-                : 'LOCATION_UNAVAILABLE';
+                  ? 'LOCATION_TIMEOUT'
+                  : 'LOCATION_UNAVAILABLE';
           reject(coded(code));
         },
         { enableHighAccuracy, timeout, maximumAge }
@@ -176,20 +216,67 @@ async function readPositionWithFallback(
 }
 
 /**
- * One-shot GPS fix for booking maps on Android, iOS, and the browser.
- * Waits up to 25s for the permission prompt, tries a precise fix, then a
- * coarser cached fix. Always settles so the map can fall back to Riyadh.
+ * High-accuracy read using the caller's timeout and maximumAge.
+ * Permission denial and GPS-off stop here. A timeout may try one fresh
+ * coarse fix (maximumAge 0) so an indoor or approximate-only device still
+ * returns a point the map can pan to.
  */
-export async function getCurrentPosition(): Promise<GeoCoordinates> {
-  const allowed = await withTimeout(requestLocationPermission(), PERMISSION_MS, 'LOCATION_TIMEOUT');
-  if (!allowed) {
-    throw coded('LOCATION_PERMISSION_DENIED');
+async function readPrecisePosition(
+  read: (enableHighAccuracy: boolean, timeout: number, maximumAge: number) => Promise<GeoCoordinates>,
+  options: PositionRequestOptions
+): Promise<GeoCoordinates> {
+  const timeout = options.timeout ?? PRECISE_POSITION_OPTIONS.timeout;
+  const maximumAge = options.maximumAge ?? PRECISE_POSITION_OPTIONS.maximumAge;
+  const highAccuracy = options.enableHighAccuracy ?? true;
+  try {
+    return await read(highAccuracy, timeout, maximumAge);
+  } catch (error) {
+    const code = locationFailureCode(error);
+    if (
+      code === 'LOCATION_PERMISSION_DENIED' ||
+      code === 'LOCATION_SERVICES_DISABLED' ||
+      code === 'GEOLOCATION_UNSUPPORTED' ||
+      !highAccuracy
+    ) {
+      throw coded(code);
+    }
+    // Indoor / approximate-only Android: one fresh coarse fix. maximumAge stays 0
+    // so a cached city position cannot be returned as the current location.
+    try {
+      return await read(false, timeout, 0);
+    } catch (retryError) {
+      const retryCode = locationFailureCode(retryError);
+      if (
+        retryCode === 'LOCATION_PERMISSION_DENIED' ||
+        retryCode === 'LOCATION_SERVICES_DISABLED' ||
+        retryCode === 'GEOLOCATION_UNSUPPORTED'
+      ) {
+        throw coded(retryCode);
+      }
+      throw coded(code === 'LOCATION_TIMEOUT' ? 'LOCATION_TIMEOUT' : retryCode);
+    }
+  }
+}
+
+/**
+ * One-shot GPS fix for booking maps on Android, iOS, and the browser.
+ * Waits up to 25s for the system permission prompt.
+ * With options, the location button's fresh high-accuracy read is used.
+ * Without options, a precise read is followed by a cached fix so driver
+ * presence still settles when the first GPS lock is slow.
+ */
+export async function getCurrentPosition(
+  options?: PositionRequestOptions
+): Promise<GeoCoordinates> {
+  try {
+    await withTimeout(assertLocationAccess(), PERMISSION_MS, 'LOCATION_TIMEOUT');
+  } catch (error) {
+    throw coded(locationFailureCode(error));
   }
 
-  if (Capacitor.isNativePlatform()) {
-    return readPositionWithFallback(readNativePosition);
-  }
-  return readPositionWithFallback(readBrowserPosition);
+  const read = Capacitor.isNativePlatform() ? readNativePosition : readBrowserPosition;
+  if (options) return readPrecisePosition(read, options);
+  return readPositionWithFallback(read);
 }
 
 function usableCoordinate(lat: number, lng: number): boolean {
