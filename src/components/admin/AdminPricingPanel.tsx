@@ -13,6 +13,7 @@ import {
   DEFAULT_DRIVER_COMMISSION_TIERS,
   type DriverCommissionTier,
 } from '@/domain/financials';
+import { EnglishNumberInput } from '@/components/admin/EnglishNumberInput';
 
 interface Props {
   isRtl: boolean;
@@ -62,8 +63,7 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
     };
   }, [isRtl]);
 
-  const patchTier = (serviceId: string, tierId: string, field: keyof TierRate, raw: string) => {
-    const value = Number(raw);
+  const patchTier = (serviceId: string, tierId: string, field: keyof TierRate, value: number) => {
     setConfigs((prev) => {
       const current = prev[serviceId];
       if (!current) return prev;
@@ -178,24 +178,20 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                           )}
                         </td>
                         <td className="py-3">
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
+                          <EnglishNumberInput
                             value={rate.base_price}
-                            onChange={(event) => patchTier(service.id, option.id, 'base_price', event.target.value)}
-                            className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
+                            onChange={(next) => patchTier(service.id, option.id, 'base_price', next)}
+                            className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                            ariaLabel={isRtl ? 'السعر الأساسي' : 'Base price'}
                           />
                         </td>
                         {service.id !== 'gas_delivery' && (
                           <td className="py-3">
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
+                            <EnglishNumberInput
                               value={rate.price_per_km}
-                              onChange={(event) => patchTier(service.id, option.id, 'price_per_km', event.target.value)}
-                              className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
+                              onChange={(next) => patchTier(service.id, option.id, 'price_per_km', next)}
+                              className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                              ariaLabel={isRtl ? 'لكل كم' : 'Per km'}
                             />
                           </td>
                         )}
@@ -215,53 +211,47 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
             {service.id === 'gas_delivery' && (
               <label className="text-xs font-bold text-gray-400 space-y-1 block max-w-xs">
                 {isRtl ? 'رسوم التوصيل' : 'Delivery fee'}
-                <input
-                  type="number"
-                  min={0}
-                  step="0.01"
+                <EnglishNumberInput
                   value={config.delivery_fee ?? 0}
-                  onChange={(event) =>
+                  onChange={(deliveryFee) =>
                     setConfigs((prev) => ({
                       ...prev,
                       [service.id]: {
                         ...config,
-                        delivery_fee: Number(event.target.value) || 0,
+                        delivery_fee: deliveryFee,
                       },
                     }))
                   }
-                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black"
+                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black tabular-nums"
+                  ariaLabel={isRtl ? 'رسوم التوصيل' : 'Delivery fee'}
                 />
               </label>
             )}
             <div className="grid sm:grid-cols-2 gap-4">
               <label className="text-xs font-bold text-gray-400 space-y-1">
                 {isRtl ? 'رسوم العميل %' : 'Customer fee %'}
-                <input
-                  type="number"
-                  min={0}
+                <EnglishNumberInput
                   max={100}
                   value={config.customer_service_fee_percentage ?? 5}
-                  onChange={(event) =>
+                  onChange={(next) =>
                     setConfigs((prev) => ({
                       ...prev,
                       [service.id]: {
                         ...config,
-                        customer_service_fee_percentage: Number(event.target.value),
+                        customer_service_fee_percentage: next,
                       },
                     }))
                   }
-                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black"
+                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black tabular-nums"
+                  ariaLabel={isRtl ? 'رسوم العميل' : 'Customer fee'}
                 />
               </label>
               <label className="text-xs font-bold text-gray-400 space-y-1">
                 {isRtl ? 'عمولة البداية %' : 'Starting commission %'}
-                <input
-                  type="number"
-                  min={0}
+                <EnglishNumberInput
                   max={100}
                   value={config.platform_commission_percentage}
-                  onChange={(event) => {
-                    const nextRate = Number(event.target.value);
+                  onChange={(nextRate) => {
                     setConfigs((prev) => {
                       const tiers = copyTiers(config).map((tier, index) =>
                         index === 0 && tier.min_completed_orders === 0
@@ -278,7 +268,8 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                       };
                     });
                   }}
-                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black"
+                  className="block w-full p-3 rounded-2xl bg-gray-50 font-mono text-black tabular-nums"
+                  ariaLabel={isRtl ? 'عمولة البداية' : 'Starting commission'}
                 />
               </label>
             </div>
@@ -288,14 +279,12 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
               </p>
               {tiers.map((tier, index) => (
                 <div key={`${tier.min_completed_orders}-${index}`} className="flex gap-2">
-                  <input
-                    type="number"
-                    min={0}
+                  <EnglishNumberInput
                     value={tier.min_completed_orders}
-                    onChange={(event) => {
+                    onChange={(nextValue) => {
                       const next = tiers.map((row, rowIndex) =>
                         rowIndex === index
-                          ? { ...row, min_completed_orders: Number(event.target.value) || 0 }
+                          ? { ...row, min_completed_orders: Math.floor(nextValue) }
                           : row
                       );
                       setConfigs((prev) => ({
@@ -303,18 +292,16 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                         [service.id]: { ...config, driver_commission_tiers: next },
                       }));
                     }}
-                    className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
-                    aria-label={isRtl ? 'عدد الرحلات' : 'Completed trips'}
+                    className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                    ariaLabel={isRtl ? 'عدد الرحلات' : 'Completed trips'}
                   />
-                  <input
-                    type="number"
-                    min={0}
+                  <EnglishNumberInput
                     max={100}
                     value={tier.commission_percentage}
-                    onChange={(event) => {
+                    onChange={(nextValue) => {
                       const next = tiers.map((row, rowIndex) =>
                         rowIndex === index
-                          ? { ...row, commission_percentage: Number(event.target.value) || 0 }
+                          ? { ...row, commission_percentage: nextValue }
                           : row
                       );
                       setConfigs((prev) => ({
@@ -322,8 +309,8 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
                         [service.id]: { ...config, driver_commission_tiers: next },
                       }));
                     }}
-                    className="w-28 p-2 rounded-xl bg-gray-50 font-mono"
-                    aria-label={isRtl ? 'نسبة العمولة' : 'Commission percent'}
+                    className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                    ariaLabel={isRtl ? 'نسبة العمولة' : 'Commission percent'}
                   />
                 </div>
               ))}

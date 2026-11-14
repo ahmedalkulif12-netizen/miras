@@ -132,12 +132,17 @@ function buildLocalDevPrice(
   const tripFare =
     fare.surgeApplied || truckCount > 1 ? fare.tripFare : lineSubtotal;
   const isServiceFeeFree = shouldWaiveServiceFee(previousOrdersCount);
-  const customerFeePercentage = resolveCustomerServiceFeePercentage(pricing);
-  const driverCommissionPercentage = resolveDriverCommissionPercentage({
-    completedOrdersCount: 0,
-    tiers: pricing.driver_commission_tiers,
-    basePercentage: pricing.platform_commission_percentage,
-  });
+  const usesFlatbedScope = service === 'flatbed' && fare.pricingScope != null;
+  const customerFeePercentage = usesFlatbedScope
+    ? Number(fare.customerServiceFeePercentage)
+    : resolveCustomerServiceFeePercentage(pricing);
+  const driverCommissionPercentage = usesFlatbedScope
+    ? Number(fare.driverCommissionPercentage)
+    : resolveDriverCommissionPercentage({
+        completedOrdersCount: 0,
+        tiers: pricing.driver_commission_tiers,
+        basePercentage: pricing.platform_commission_percentage,
+      });
   const financials = buildTripFinancials(tripFare, {
     waiveServiceFee: isServiceFeeFree,
     customerServiceFeePercentage: customerFeePercentage,
@@ -169,6 +174,7 @@ function buildLocalDevPrice(
         minimum_price: pricing.minimum_price,
         platform_commission_percentage: driverCommissionPercentage,
         customer_service_fee_percentage: customerFeePercentage,
+        ...(fare.pricingScope ? { pricingScope: fare.pricingScope } : {}),
         included_km: fare.includedKm,
         capacity: fare.capacity,
         tier: fare.tier,

@@ -8,6 +8,11 @@ import {
   type TripFinancials,
 } from '../../src/domain/financials.ts';
 import {
+  flatbedFeesForScope,
+  flatbedPricingScopeFromOrder,
+  readFlatbedTariff,
+} from '../../src/domain/flatbedTariff.ts';
+import {
   mergePricingConfig,
   normalizeServiceType,
   pricingDocCandidates,
@@ -64,10 +69,20 @@ export async function resolveOrderDriverCommission(
         : null;
 
   const completedOrdersCount = readCompletedOrdersCount(driver, wallet);
+  const flatbedScope =
+    serviceType === 'flatbed' ? flatbedPricingScopeFromOrder(order) : null;
+  const flatbedCommission =
+    flatbedScope == null
+      ? null
+      : flatbedFeesForScope(readFlatbedTariff(pricing.flatbed_tariff), flatbedScope)
+          .driverCommissionPercentage;
   const commissionPercentage = resolveDriverCommissionPercentage({
     completedOrdersCount,
-    tiers: pricing.driver_commission_tiers,
-    basePercentage: pricing.platform_commission_percentage,
+    tiers:
+      flatbedCommission == null
+        ? pricing.driver_commission_tiers
+        : [{ min_completed_orders: 0, commission_percentage: flatbedCommission }],
+    basePercentage: flatbedCommission ?? pricing.platform_commission_percentage,
     profilePercentage: readDriverProfileCommissionPercentage(driver),
   });
   const financials = financialsWithDriverCommission(

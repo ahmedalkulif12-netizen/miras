@@ -100,6 +100,12 @@ export interface ComputeTripFareResult {
   waterType?: string;
   /** Gas: itemized exchange and new-cylinder lines when quantities were sent. */
   gasLines?: GasCylinderLines;
+  /** Flatbed: which tariff node priced the trip. */
+  pricingScope?: 'intra_city' | 'inter_city';
+  /** Flatbed: customer service fee percent from that node. */
+  customerServiceFeePercentage?: number;
+  /** Flatbed: driver commission percent from that node. */
+  driverCommissionPercentage?: number;
 }
 
 export function computeTripFare(
@@ -161,6 +167,9 @@ export function computeTripFare(
   let extraKmCost = Math.round(extraKm * rate * 100) / 100;
   let tripFare = Math.round((base + extraKmCost) * 100) / 100;
   let gasLines: GasCylinderLines | undefined;
+  let pricingScope: 'intra_city' | 'inter_city' | undefined;
+  let customerServiceFeePercentage: number | undefined;
+  let driverCommissionPercentage: number | undefined;
 
   if (service === 'gas_delivery' && (exchangeQuantity != null || newCylinderQuantity != null)) {
     const swapRate = resolveTierRate(service, 'cylinder_swap', pricing);
@@ -200,6 +209,9 @@ export function computeTripFare(
     extraKm = quoted.billableKm;
     extraKmCost = quoted.tireSurcharge;
     tripFare = quoted.tripFare;
+    pricingScope = quoted.pricingScope;
+    customerServiceFeePercentage = quoted.customerServiceFeePercentage;
+    driverCommissionPercentage = quoted.driverCommissionPercentage;
   }
 
   // Optional multi-truck for cargo only (operational), applied after base formula.
@@ -238,6 +250,9 @@ export function computeTripFare(
     capacity: capacityKey,
     ...(resolvedWaterType ? { waterType: resolvedWaterType } : {}),
     ...(gasLines ? { gasLines } : {}),
+    ...(pricingScope
+      ? { pricingScope, customerServiceFeePercentage, driverCommissionPercentage }
+      : {}),
   };
 }
 

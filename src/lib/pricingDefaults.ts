@@ -460,7 +460,12 @@ export function mergePricingConfig(
         : defaults.delivery_fee ?? 0,
     flatbed_tariff:
       normalizeServiceType(serviceType) === 'flatbed'
-        ? readFlatbedTariff(row.flatbed_tariff || defaults.flatbed_tariff)
+        ? readFlatbedTariff({
+            flatbed_tariff: row.flatbed_tariff || defaults.flatbed_tariff,
+            intra_city: (row as { intra_city?: unknown }).intra_city,
+            inter_city: (row as { inter_city?: unknown }).inter_city,
+            flatbed_modifiers: (row as { flatbed_modifiers?: unknown }).flatbed_modifiers,
+          })
         : undefined,
   };
 }

@@ -172,16 +172,22 @@ export function createPricingService(db: admin.firestore.Firestore) {
       fare.surgeApplied || truckCount > 1 ? fare.tripFare : lineSubtotal;
 
     const isServiceFeeFree = shouldWaiveServiceFee(previousOrdersCount);
-    const customerFeePercentage = resolveCustomerServiceFeePercentage(
-      pricing as { customer_service_fee_percentage?: unknown }
-    );
+    const usesFlatbedScope = service === 'flatbed' && fare.pricingScope != null;
+    const customerFeePercentage = usesFlatbedScope
+      ? Number(fare.customerServiceFeePercentage)
+      : resolveCustomerServiceFeePercentage(
+          pricing as { customer_service_fee_percentage?: unknown }
+        );
     // No driver is assigned at quote time, so the published 0-order band is the estimate.
+    // Flatbed uses the intra-city or inter-city percent from pricing/flatbed instead.
     // Accept and completion reprice from the driver's completed_orders_count.
-    const driverCommissionPercentage = resolveDriverCommissionPercentage({
-      completedOrdersCount: 0,
-      tiers: pricing.driver_commission_tiers,
-      basePercentage: Number(pricing.platform_commission_percentage),
-    });
+    const driverCommissionPercentage = usesFlatbedScope
+      ? Number(fare.driverCommissionPercentage)
+      : resolveDriverCommissionPercentage({
+          completedOrdersCount: 0,
+          tiers: pricing.driver_commission_tiers,
+          basePercentage: Number(pricing.platform_commission_percentage),
+        });
     const financials = buildTripFinancials(tripFareForTotals, {
       waiveServiceFee: isServiceFeeFree,
       customerServiceFeePercentage: customerFeePercentage,
@@ -198,6 +204,7 @@ export function createPricingService(db: admin.firestore.Firestore) {
       ...(fare.capacity ? { capacity: fare.capacity } : {}),
       ...(fare.waterType ? { waterType: fare.waterType } : {}),
       ...(fare.gasLines ? { gasLines: fare.gasLines } : {}),
+      ...(fare.pricingScope ? { pricingScope: fare.pricingScope } : {}),
       driver_distance_km: safeDistance,
       extra_km: fare.extraKm ?? 0,
       line_base: fare.base,

@@ -292,6 +292,16 @@ export async function prepareCheckoutDraft(
     truckCount: payload.truckCount ?? 1,
     capacity,
     waterType,
+    pickupCity: payload.pickupCity,
+    dropoffCity: payload.dropoffCity,
+    intraCityService:
+      typeof payload.serviceDetails?.intraCityService === 'string'
+        ? payload.serviceDetails.intraCityService
+        : undefined,
+    tiresIntact:
+      typeof payload.serviceDetails?.tiresIntact === 'boolean'
+        ? payload.serviceDetails.tiresIntact
+        : undefined,
     ...(gasQuantities || {}),
   });
   const serviceDetails = fare.gasLines
@@ -304,15 +314,20 @@ export async function prepareCheckoutDraft(
   const paidCount = auth.currentUser?.uid
     ? await countCustomerPaidOrders(auth.currentUser.uid)
     : 0;
+  const usesFlatbedScope = serviceType === 'flatbed' && fare.pricingScope != null;
   const financials = normalizeTripFinancials(
     buildTripFinancials(tripFare, {
       waiveServiceFee: shouldWaiveServiceFee(paidCount),
-      customerServiceFeePercentage: resolveCustomerServiceFeePercentage(pricing),
-      driverCommissionPercentage: resolveDriverCommissionPercentage({
-        completedOrdersCount: 0,
-        tiers: pricing.driver_commission_tiers,
-        basePercentage: pricing.platform_commission_percentage,
-      }),
+      customerServiceFeePercentage: usesFlatbedScope
+        ? fare.customerServiceFeePercentage
+        : resolveCustomerServiceFeePercentage(pricing),
+      driverCommissionPercentage: usesFlatbedScope
+        ? fare.driverCommissionPercentage
+        : resolveDriverCommissionPercentage({
+            completedOrdersCount: 0,
+            tiers: pricing.driver_commission_tiers,
+            basePercentage: pricing.platform_commission_percentage,
+          }),
     })
   );
   const checkout = calculateTotal({

@@ -2,9 +2,10 @@
  * Flatbed tariff: distance is pickup → drop-off, not a fixed Al-Ahsa origin.
  * Run: npx tsx scripts/test-flatbed-tariff.ts
  */
-import { quoteFlatbed } from '../src/domain/flatbedTariff';
+import { flatbedConfigNodes, quoteFlatbed, readFlatbedTariff } from '../src/domain/flatbedTariff';
 import { computeTripFare } from '../src/domain/pricing-engine';
 import { defaultPricingForService } from '../src/lib/pricingDefaults';
+import { parseEnglishNumber, toEnglishDigits } from '../src/lib/englishDigits';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -113,6 +114,40 @@ const viaEngine = computeTripFare(pricing, {
 });
 assert(viaEngine.tripFare === 400, 'engine uses the tariff for flatbed');
 assert(viaEngine.tripType === 'outside_city', 'different cities are outside the city');
+assert(viaEngine.pricingScope === 'inter_city', 'different cities use the inter-city node');
+assert(viaEngine.driverCommissionPercentage === 15, 'inter-city driver commission defaults to 15%');
+assert(viaEngine.customerServiceFeePercentage === 5, 'inter-city customer fee defaults to 5%');
+assert(workshop.pricingScope === 'intra_city' && workshop.driverCommissionPercentage === 10, 'workshop uses the 10% intra-city commission');
+
+const separated = readFlatbedTariff({
+  flatbed_tariff: { intraBasePrice: 150, intercityBaseFee: 70 },
+  intra_city: {
+    basePrice: 180,
+    includedKm: 30,
+    extraKmRate: 2,
+    driverCommissionPercentage: 8,
+    customerServiceFeePercentage: 4,
+    taqdeerPrice: 260,
+  },
+  inter_city: {
+    basePrice: 90,
+    ratePerKm: 3,
+    minimumFare: 400,
+    driverCommissionPercentage: 12,
+    customerServiceFeePercentage: 6,
+  },
+  flatbed_modifiers: {
+    offsets: { hydraulic: 0, normal: -100, box: 250 },
+    tireDamageSurcharge: 100,
+  },
+});
+assert(separated.intraBasePrice === 180 && separated.intraIncludedKm === 30, 'intra_city node overrides the flat tariff');
+assert(separated.intercityRatePerKm === 3 && separated.intercityDriverCommissionPercentage === 12, 'inter_city node is read on its own');
+assert(separated.offsets.box === 250 && separated.intraCity.taqdeer === 260, 'modifiers and taqdeer stay attached to their nodes');
+const saved = flatbedConfigNodes(separated);
+const roundTrip = readFlatbedTariff(saved);
+assert(roundTrip.intraExtraKmRate === 2 && roundTrip.intercityCustomerServiceFeePercentage === 6, 'saved nodes round-trip');
+assert(toEnglishDigits('١٥٠') === '150' && parseEnglishNumber('٢٫٥'.replace('٫', '.')) === 2.5, 'eastern digits become English digits');
 
 const furniture = computeTripFare(defaultPricingForService('furniture_moving'), {
   distance: 30,
