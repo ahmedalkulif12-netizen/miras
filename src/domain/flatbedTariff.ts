@@ -2,8 +2,9 @@
  * Flatbed tariff. Distance is the driving kilometers between the customer's
  * pickup and drop-off — never a fixed city such as Al-Ahsa.
  *
- * Inter-city: max(minimum, base fee + rate × km), then the flatbed offset.
- * Same city: one of the fixed intra-city prices, then the same offset.
+ * Workshop and industrial trips: base price covers the included kilometers,
+ * then a rate for each kilometer beyond that. Google driving distance is the input.
+ * Taqdeer stays a fixed same-city price. Other long trips use the inter-city rate.
  * Damaged tires add the configured surcharge.
  */
 
@@ -32,6 +33,12 @@ export interface FlatbedTariff {
   sameCityRadiusKm: number;
   offsetFloor: number;
   tireDamageSurcharge: number;
+  /** Workshop and industrial base fare. Covers intraIncludedKm. */
+  intraBasePrice: number;
+  /** Kilometers included in intraBasePrice. */
+  intraIncludedKm: number;
+  /** SAR per km after intraIncludedKm for workshop and industrial trips. */
+  intraExtraKmRate: number;
   offsets: FlatbedOffsets;
   intraCity: IntraCityPrices;
 }
@@ -43,6 +50,9 @@ export const DEFAULT_FLATBED_TARIFF: FlatbedTariff = {
   sameCityRadiusKm: 40,
   offsetFloor: 50,
   tireDamageSurcharge: 100,
+  intraBasePrice: 150,
+  intraIncludedKm: 25,
+  intraExtraKmRate: 1.5,
   offsets: { hydraulic: 0, normal: -100, box: 250 },
   intraCity: { workshop: 70, general: 100, industrial: 150, taqdeer: 250 },
 };
@@ -80,6 +90,12 @@ export function readFlatbedTariff(source: unknown): FlatbedTariff {
     ),
     sameCityRadiusKm: nonNegative(row.sameCityRadiusKm ?? row.same_city_radius_km, defaults.sameCityRadiusKm),
     offsetFloor: nonNegative(row.offsetFloor ?? row.offset_floor, defaults.offsetFloor),
+    intraBasePrice: nonNegative(row.intraBasePrice ?? row.intra_base_price, defaults.intraBasePrice),
+    intraIncludedKm: nonNegative(row.intraIncludedKm ?? row.intra_included_km, defaults.intraIncludedKm),
+    intraExtraKmRate: nonNegative(
+      row.intraExtraKmRate ?? row.intra_extra_km_rate,
+      defaults.intraExtraKmRate
+    ),
     tireDamageSurcharge: nonNegative(
       row.tireDamageSurcharge ?? row.tire_damage_surcharge,
       defaults.tireDamageSurcharge
@@ -154,6 +170,9 @@ export interface FlatbedQuote {
   ratePerKm: number;
   baseFee: number;
   distanceFare: number;
+  includedKm: number;
+  /** Kilometers billed above includedKm. */
+  billableKm: number;
   intraCityService: IntraCityService | null;
   flatbedKind: keyof FlatbedOffsets;
   offset: number;
@@ -173,14 +192,27 @@ export function quoteFlatbed(input: FlatbedQuoteInput): FlatbedQuote {
   });
   const kind = normalizeFlatbedKind(input.truckType);
   const offset = tariff.offsets[kind];
+  const requestedMode = normalizeIntraCityService(input.intraCityService);
+  const usesKmThreshold = requestedMode === 'workshop' || requestedMode === 'industrial';
   let distanceFare = 0;
   let intra: IntraCityService | null = null;
-  if (sameCity) {
-    intra = normalizeIntraCityService(input.intraCityService);
+  let includedKm = 0;
+  let billableKm = 0;
+  let ratePerKm = 0;
+  if (usesKmThreshold) {
+    intra = requestedMode;
+    includedKm = tariff.intraIncludedKm;
+    billableKm = Math.max(0, Math.round((distanceKm - includedKm) * 10) / 10);
+    ratePerKm = tariff.intraExtraKmRate;
+    distanceFare = Math.round((tariff.intraBasePrice + billableKm * ratePerKm) * 100) / 100;
+  } else if (sameCity) {
+    intra = requestedMode;
     distanceFare = tariff.intraCity[intra];
   } else {
     const metered = tariff.intercityBaseFee + tariff.intercityRatePerKm * distanceKm;
     distanceFare = Math.max(tariff.intercityMinimumFare, Math.round(metered * 100) / 100);
+    ratePerKm = tariff.intercityRatePerKm;
+    billableKm = distanceKm;
   }
   const shifted = Math.round((distanceFare + offset) * 100) / 100;
   const fareBeforeTire = offset < 0 ? Math.max(tariff.offsetFloor, shifted) : Math.max(0, shifted);
@@ -189,9 +221,11 @@ export function quoteFlatbed(input: FlatbedQuoteInput): FlatbedQuote {
     tripType: sameCity ? 'inside_city' : 'outside_city',
     sameCity,
     distanceKm,
-    ratePerKm: sameCity ? 0 : tariff.intercityRatePerKm,
-    baseFee: sameCity ? distanceFare : tariff.intercityBaseFee,
+    ratePerKm,
+    baseFee: usesKmThreshold ? tariff.intraBasePrice : sameCity ? distanceFare : tariff.intercityBaseFee,
     distanceFare,
+    includedKm,
+    billableKm,
     intraCityService: intra,
     flatbedKind: kind,
     offset,

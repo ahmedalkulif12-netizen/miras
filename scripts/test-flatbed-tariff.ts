@@ -60,7 +60,19 @@ const workshop = quoteFlatbed({
   truckType: 'hydraulic',
   intraCityService: 'workshop',
 });
-assert(workshop.sameCity && workshop.tripFare === 70, 'same-city workshop is 70');
+assert(workshop.sameCity && workshop.tripFare === 150, `8 km workshop stays on the 150 base, got ${workshop.tripFare}`);
+
+const workshopExtra = quoteFlatbed({
+  distanceKm: 40,
+  pickupCity: 'Riyadh',
+  dropoffCity: 'الرياض',
+  truckType: 'hydraulic',
+  intraCityService: 'workshop',
+});
+assert(
+  workshopExtra.billableKm === 15 && workshopExtra.tripFare === 172.5,
+  `40 km workshop should be 172.5, got ${workshopExtra.tripFare}`
+);
 
 const industrial = quoteFlatbed({
   distanceKm: 18,

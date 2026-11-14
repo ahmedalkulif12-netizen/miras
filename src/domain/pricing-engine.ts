@@ -194,10 +194,10 @@ export function computeTripFare(
       tiresIntact,
     });
     tripType = quoted.tripType;
-    includedKm = 0;
+    includedKm = quoted.includedKm;
     base = quoted.fareBeforeTire;
     rate = quoted.ratePerKm;
-    extraKm = quoted.sameCity ? 0 : quoted.distanceKm;
+    extraKm = quoted.billableKm;
     extraKmCost = quoted.tireSurcharge;
     tripFare = quoted.tripFare;
   }

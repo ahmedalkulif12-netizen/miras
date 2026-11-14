@@ -27,6 +27,7 @@ export type { PricingConfig };
 
 const firebaseConfig = getFirebaseClientConfig();
 const app = initializeApp(firebaseConfig);
+export const firebaseApp = app;
 
 /**
  * Device-local Auth persistence — phone OTP is remembered until explicit logout.

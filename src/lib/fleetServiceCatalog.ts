@@ -73,9 +73,9 @@ export const FLEET_SERVICE_CATEGORIES: FleetServiceCategory[] = [
     ar: 'السطحات',
     en: 'Towing & Flatbeds',
     options: [
-      { id: 'hydraulic', ar: 'سطحة هيدروليك', en: 'Hydraulic Flatbed' },
-      { id: 'normal', ar: 'سطحة عادي', en: 'Standard Flatbed' },
-      { id: 'box', ar: 'سطحة بوكس', en: 'Box Flatbed' },
+      { id: 'hydraulic', ar: 'سطحة هيدروليك فل داون', en: 'Hydraulic Full-Down' },
+      { id: 'normal', ar: 'سطحة عادية', en: 'Standard Flatbed' },
+      { id: 'box', ar: 'سطحة مغلقة / بوكس', en: 'Enclosed / Box Flatbed' },
     ],
   },
   {

@@ -57,7 +57,10 @@ import { resolveDriverPhoneFromOrder } from '@/lib/orderChat';
 
 import { SERVICE_OPTIONS, OPTION_LABELS, SERVICE_KEY_MAP } from '@/constants';
 
-import { LocationAutocomplete } from '@/components/LocationAutocomplete';
+import { LocationAutocomplete, type SelectedPlace } from '@/components/LocationAutocomplete';
+import { FlatbedBookingSteps } from '@/components/flatbed/FlatbedBookingSteps';
+import { composePlate, flatbedVehicleError, type FlatbedServiceMode } from '@/domain/flatbedBooking';
+import { uploadIstimaraImage } from '@/lib/istimaraUpload';
 import { BookingLocationMap, type BookingPinTarget } from '@/components/BookingLocationMap';
 import { useMap, useMapsLibrary } from '@vis.gl/react-google-maps';
 import { getCurrentPosition, locationFailureCode, PRECISE_POSITION_OPTIONS } from '@/lib/geolocation';
@@ -186,9 +189,17 @@ const CustomerDashboard: React.FC = () => {
     extraNotes: '',
   });
   const [tiresIntact, setTiresIntact] = useState<boolean | null>(null);
-  const [intraCityService, setIntraCityService] = useState<
-    'workshop' | 'general' | 'industrial' | 'taqdeer'
-  >('general');
+  const [intraCityService, setIntraCityService] = useState<FlatbedServiceMode>('workshop');
+  const [vehicleMakeModel, setVehicleMakeModel] = useState('');
+  const [plateLetters, setPlateLetters] = useState('');
+  const [plateDigits, setPlateDigits] = useState('');
+  const [serialNumber, setSerialNumber] = useState('');
+  const [chassisNumber, setChassisNumber] = useState('');
+  const [istimaraUrl, setIstimaraUrl] = useState('');
+  const [istimaraPath, setIstimaraPath] = useState('');
+  const [istimaraName, setIstimaraName] = useState('');
+  const [istimaraUploading, setIstimaraUploading] = useState(false);
+  const [industrialWorkshop, setIndustrialWorkshop] = useState('');
   // Now fixed to inside/outside based on calculation result only, or just hidden from direct manual toggle
   const [transportType, setTransportType] = useState<'inside' | 'outside'>('inside');
   const [pickup, setPickup] = useState('');
@@ -409,6 +420,51 @@ const CustomerDashboard: React.FC = () => {
       toast.error(msg);
     } finally {
       setLocatingGps(false);
+    }
+  };
+
+  const applyFlatbedPlace = (target: 'pickup' | 'dropoff', place: SelectedPlace) => {
+    const label = place.displayName || place.formattedAddress || '';
+    const city = place.city || cityLabelFromAddress(label);
+    const coords = place.location;
+    if (!Number.isFinite(coords?.lat) || !Number.isFinite(coords?.lng)) {
+      toast.error(isRtl ? 'تعذر قراءة إحداثيات الموقع' : 'Could not read coordinates for that place');
+      return;
+    }
+    if (target === 'pickup') {
+      setPickupCoords(coords);
+      setPickup(label);
+      setPickupCity(city);
+      setActiveMapPin('pickup');
+    } else {
+      setDestinationCoords(coords);
+      setDestination(label);
+      setDropoffCity(city);
+      setActiveMapPin('destination');
+    }
+    focusMapOn(coords);
+    setIsCalculated(false);
+    setLocationPhase('summary');
+  };
+
+  const uploadFlatbedIstimara = async (file: File) => {
+    const uid = profile?.uid || auth.currentUser?.uid;
+    if (!uid) {
+      toast.error(isRtl ? 'سجّل الدخول لرفع الاستمارة' : 'Sign in to upload the istimara');
+      return;
+    }
+    setIstimaraUploading(true);
+    try {
+      const saved = await uploadIstimaraImage(uid, file);
+      setIstimaraUrl(saved.url);
+      setIstimaraPath(saved.path);
+      setIstimaraName(file.name);
+      toast.success(isRtl ? 'تم رفع صورة الاستمارة' : 'Istimara photo uploaded');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message || (isRtl ? 'تعذر رفع صورة الاستمارة' : 'Could not upload the istimara'));
+    } finally {
+      setIstimaraUploading(false);
     }
   };
 
@@ -1034,6 +1090,24 @@ const CustomerDashboard: React.FC = () => {
     }
   };
 
+  const flatbedQuoteKey = useRef('');
+  useEffect(() => {
+    if (serviceType !== 'flatbed') return;
+    if (!pickupCoords || !destinationCoords || tiresIntact == null || !serviceOption) return;
+    const key = [
+      pickupCoords.lat.toFixed(5),
+      pickupCoords.lng.toFixed(5),
+      destinationCoords.lat.toFixed(5),
+      destinationCoords.lng.toFixed(5),
+      tiresIntact ? 'yes' : 'no',
+      intraCityService,
+      serviceOption,
+    ].join('|');
+    if (flatbedQuoteKey.current === key) return;
+    flatbedQuoteKey.current = key;
+    void handleCalculate();
+  }, [serviceType, pickupCoords, destinationCoords, tiresIntact, intraCityService, serviceOption]);
+
   const handleBooking = async () => {
     if (!destination || !destinationCoords || !isCalculated) {
       toast.error(isRtl ? 'يرجى حساب السعر أولاً' : 'Please calculate price first');
@@ -1043,6 +1117,29 @@ const CustomerDashboard: React.FC = () => {
     if (!deliveryOnly && (!pickup || !pickupCoords)) {
       toast.error(isRtl ? 'يرجى تحديد نقطتي التحميل والتنزيل' : 'Please set pickup and drop-off');
       return;
+    }
+
+    const plateNumber = composePlate(plateLetters, plateDigits);
+    if (serviceType === 'flatbed') {
+      if (istimaraUploading) {
+        toast.error(isRtl ? 'انتظر اكتمال رفع الاستمارة' : 'Wait for the istimara upload to finish');
+        return;
+      }
+      const vehicleError = flatbedVehicleError({
+        vehicleMakeModel,
+        plateNumber,
+        serialNumber,
+        chassisNumber,
+        istimaraUrl,
+      });
+      if (vehicleError) {
+        toast.error(
+          isRtl
+            ? 'أكمل بيانات السيارة: النوع، اللوحة، وصورة الاستمارة أو الرقم التسلسلي / الشاصي'
+            : vehicleError
+        );
+        return;
+      }
     }
 
     // Water tanker: origin is nearest tanker (from matching), not a customer "from" pin.
@@ -1111,7 +1208,22 @@ const CustomerDashboard: React.FC = () => {
         furnitureDescription,
         vehicleFieldNotes,
         ...(canonicalService === 'flatbed'
-          ? { intraCityService, tiresIntact: tiresIntact !== false }
+          ? {
+              intraCityService,
+              tiresIntact: tiresIntact !== false,
+              vehicleMakeModel: vehicleMakeModel.trim(),
+              plateNumber,
+              serialNumber: serialNumber.trim(),
+              chassisNumber: chassisNumber.trim().toUpperCase(),
+              ...(istimaraUrl ? { istimaraUrl, istimaraStoragePath: istimaraPath } : {}),
+              ...(intraCityService === 'industrial' && industrialWorkshop.trim()
+                ? { industrialWorkshopName: industrialWorkshop.trim() }
+                : {}),
+              ...(intraCityService === 'workshop'
+                ? { pickupWorkshopName: pickup, dropoffWorkshopName: destination }
+                : {}),
+              ...(intraCityService === 'taqdeer' ? { taqdeerCenterName: destination } : {}),
+            }
           : {}),
       };
 
@@ -1436,6 +1548,13 @@ const CustomerDashboard: React.FC = () => {
                               setExtraDistanceKm(0);
                               setNearestDriver(null);
                               setIsCalculated(false);
+                              if (s.id === 'flatbed') {
+                                setIntraCityService('workshop');
+                                setDestination('');
+                                setDestinationCoords(null);
+                                setLocationPhase('pickup');
+                                flatbedQuoteKey.current = '';
+                              }
                             }}
                             className={`flex flex-col items-center gap-3 p-4 rounded-2xl border transition-all ${
                               serviceType === s.id ? 'border-primary bg-primary/5 text-black font-bold shadow-lg shadow-primary/5' : 'border-gray-100 hover:border-gray-300 text-gray-500'
@@ -1611,85 +1730,6 @@ const CustomerDashboard: React.FC = () => {
                     )
                     )}
 
-                    {serviceType === 'flatbed' && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        className="space-y-4"
-                      >
-                        <div className="space-y-2">
-                          <p className="text-sm font-bold text-gray-500">
-                            {isRtl
-                              ? 'خدمة داخل المدينة (تُستخدم عندما يكون التحميل والتنزيل في نفس المدينة)'
-                              : 'Inside the city (used when pickup and drop-off are in the same city)'}
-                          </p>
-                          <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            {(
-                              [
-                                { id: 'workshop' as const, ar: 'ورشة إلى ورشة · 70', en: 'Workshop to workshop' },
-                                { id: 'general' as const, ar: 'نقل داخلي عام', en: 'General intra-city' },
-                                { id: 'industrial' as const, ar: 'المنطقة الصناعية', en: 'Industrial area' },
-                                { id: 'taqdeer' as const, ar: 'تقدير / حادث', en: 'Taqdeer / accident' },
-                              ]
-                            ).map((item) => (
-                              <button
-                                key={item.id}
-                                type="button"
-                                onClick={() => {
-                                  setIntraCityService(item.id);
-                                  setIsCalculated(false);
-                                }}
-                                className={`px-4 py-2 rounded-xl border text-sm transition-all ${
-                                  intraCityService === item.id
-                                    ? 'bg-black text-white border-black font-bold'
-                                    : 'border-gray-200 hover:border-black font-medium'
-                                }`}
-                              >
-                                {isRtl ? item.ar : item.en}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div className="space-y-2 p-4 rounded-2xl border border-amber-100 bg-amber-50/70">
-                          <p className="text-sm font-bold text-amber-950">
-                            {isRtl ? 'هل حالة الكفرات سليمة؟' : 'Are the vehicle tires intact and rolling?'}
-                          </p>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setTiresIntact(true);
-                                setVehicleFieldNotes((prev) => ({ ...prev, tiresFlat: false }));
-                                setIsCalculated(false);
-                              }}
-                              className={`flex-1 px-4 py-3 rounded-xl border text-sm font-bold ${
-                                tiresIntact === true
-                                  ? 'bg-black text-white border-black'
-                                  : 'bg-white border-amber-200'
-                              }`}
-                            >
-                              {isRtl ? 'سليمة' : 'Intact'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setTiresIntact(false);
-                                setVehicleFieldNotes((prev) => ({ ...prev, tiresFlat: true }));
-                                setIsCalculated(false);
-                              }}
-                              className={`flex-1 px-4 py-3 rounded-xl border text-sm font-bold ${
-                                tiresIntact === false
-                                  ? 'bg-black text-white border-black'
-                                  : 'bg-white border-amber-200'
-                              }`}
-                            >
-                              {isRtl ? 'غير سليمة / تالفة' : 'Damaged'}
-                            </button>
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-
                     {serviceType === 'furniture_moving' && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-4">
                         <p className="text-sm font-bold text-gray-500">{t('furniture_moving_desc')}</p>
@@ -1704,7 +1744,7 @@ const CustomerDashboard: React.FC = () => {
                       </motion.div>
                     )}
 
-                    {(serviceType === 'flatbed' || serviceType === 'heavy_equipment') && (
+                    {serviceType === 'heavy_equipment' && (
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
@@ -1801,7 +1841,9 @@ const CustomerDashboard: React.FC = () => {
                     <div className="space-y-5">
                        <div className={`flex flex-wrap items-center justify-between gap-3 ${isRtl ? 'flex-row-reverse' : ''}`}>
                          <p className="text-base font-black text-black">
-                           {deliveryOnly
+                           {serviceType === 'flatbed'
+                             ? isRtl ? 'مسار السطحة' : 'Flatbed route'
+                             : deliveryOnly
                              ? isRtl ? 'موقع التنزيل' : 'Drop-off location'
                              : locationPhase === 'pickup'
                                ? isRtl ? 'الخطوة ١ — موقع التحميل' : 'Step 1 — Pickup location'
@@ -1813,7 +1855,56 @@ const CustomerDashboard: React.FC = () => {
                            <p className="text-sm font-bold text-amber-700">{gpsError}</p>
                          )}
                        </div>
-                       {!deliveryOnly && (
+                       {serviceType === 'flatbed' && (
+                         <FlatbedBookingSteps
+                           isRtl={isRtl}
+                           mode={intraCityService}
+                           onModeChange={(mode) => {
+                             setIntraCityService(mode);
+                             setDestination('');
+                             setDestinationCoords(null);
+                             setDropoffCity('');
+                             setIndustrialWorkshop('');
+                             setIsCalculated(false);
+                             setLocationPhase('pickup');
+                             if (mode === 'taqdeer') void locateUser(true);
+                           }}
+                           pickupCity={pickupCity}
+                           pickupCoords={pickupCoords}
+                           onPlace={(target, place) => applyFlatbedPlace(target, place)}
+                           onUseCurrentLocation={() => {
+                             setLocationPhase('pickup');
+                             void locateUser(true);
+                           }}
+                           locating={locatingGps}
+                           tiresIntact={tiresIntact}
+                           onTiresIntact={(value) => {
+                             setTiresIntact(value);
+                             setVehicleFieldNotes((prev) => ({ ...prev, tiresFlat: !value }));
+                             setIsCalculated(false);
+                           }}
+                           notes={vehicleFieldNotes.extraNotes}
+                           onNotes={(value) =>
+                             setVehicleFieldNotes((prev) => ({ ...prev, extraNotes: value }))
+                           }
+                           vehicleMakeModel={vehicleMakeModel}
+                           onVehicleMakeModel={setVehicleMakeModel}
+                           plateLetters={plateLetters}
+                           plateDigits={plateDigits}
+                           onPlateLetters={setPlateLetters}
+                           onPlateDigits={setPlateDigits}
+                           serialNumber={serialNumber}
+                           chassisNumber={chassisNumber}
+                           onSerialNumber={setSerialNumber}
+                           onChassisNumber={setChassisNumber}
+                           istimaraName={istimaraName}
+                           istimaraUploading={istimaraUploading}
+                           onIstimaraFile={(file) => void uploadFlatbedIstimara(file)}
+                           industrialWorkshop={industrialWorkshop}
+                           onIndustrialWorkshop={setIndustrialWorkshop}
+                         />
+                       )}
+                       {serviceType !== 'flatbed' && !deliveryOnly && (
                          <div className="grid grid-cols-2 gap-2">
                            <button
                              type="button"
@@ -1849,6 +1940,7 @@ const CustomerDashboard: React.FC = () => {
                            </button>
                          </div>
                        )}
+                       {serviceType !== 'flatbed' && (
                        <div className="space-y-4 relative">
                           {locationPhase !== 'summary' && (
                           <div className="rounded-[28px] border-2 border-black bg-white p-3 shadow-sm">
@@ -1924,6 +2016,8 @@ const CustomerDashboard: React.FC = () => {
                             </div>
                           </div>
                           )}
+                       </div>
+                       )}
 
                           <BookingLocationMap
                             pickupCoords={deliveryOnly ? null : pickupCoords}
@@ -1936,13 +2030,13 @@ const CustomerDashboard: React.FC = () => {
                             locating={locatingGps}
                             onRequestUserLocation={() => void locateUser(true)}
                             manualSelection={Boolean(gpsError)}
-                            centerPin={locationPhase !== 'summary'}
+                            centerPin={serviceType !== 'flatbed' && locationPhase !== 'summary'}
                             focusNonce={mapFocusNonce}
                             focusPoint={mapFocusPoint}
                             showRoute={
-                              locationPhase === 'summary' &&
                               !deliveryOnly &&
-                              Boolean(pickupCoords && destinationCoords)
+                              Boolean(pickupCoords && destinationCoords) &&
+                              (serviceType === 'flatbed' || locationPhase === 'summary')
                             }
                             onLocationPicked={(target, coords, address, city) => {
                               if (deliveryOnly || target === 'destination') {
@@ -1964,7 +2058,7 @@ const CustomerDashboard: React.FC = () => {
                             }}
                           />
 
-                          {locationPhase !== 'summary' && (
+                          {serviceType !== 'flatbed' && locationPhase !== 'summary' && (
                             <button
                               type="button"
                               onClick={() => {
@@ -2059,9 +2153,11 @@ const CustomerDashboard: React.FC = () => {
                                              ? `السعة: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · مشمول ${includedKm} كم`
                                              : `Capacity: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · ${includedKm} km included`)
                                          : serviceType === 'flatbed'
-                                         ? (tripTypeState === 'inside_city'
-                                             ? (isRtl ? 'سعر ثابت داخل المدينة' : 'Fixed price inside the city')
-                                             : (isRtl ? 'سعر بين المدن حسب مسافة الخريطة' : 'Inter-city price from the map distance'))
+                                         ? (intraCityService === 'taqdeer'
+                                             ? (isRtl ? 'سعر تقدير ثابت' : 'Fixed Taqdeer price')
+                                             : (isRtl
+                                                 ? `يشمل ${includedKm || 25} كم، ثم ${pricing.rate || 1.5} ر.س لكل كم إضافي`
+                                                 : `${includedKm || 25} km included, then ${pricing.rate || 1.5} SAR per extra km`))
                                          : (isRtl
                                              ? `الفئة: ${t(OPTION_LABELS[serviceOption] || serviceOption)} · مشمول ${includedKm} كم`
                                              : `Tier: ${t(OPTION_LABELS[serviceOption] || serviceOption)} · ${includedKm} km included`)}
@@ -2098,7 +2194,6 @@ const CustomerDashboard: React.FC = () => {
                               {isLoadingPricing ? t('waiting_calc') : t('calculate_price')}
                             </button>
                           )}
-                       </div>
                     </div>
 
                     {/* Price Summary Before Button - Only visible after calculation */}
@@ -2157,6 +2252,32 @@ const CustomerDashboard: React.FC = () => {
                             isRtl={isRtl}
                             currency={t('sar')}
                           />
+                          {serviceType === 'flatbed' && (
+                            <>
+                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                                <span className="text-gray-500">{isRtl ? 'نوع الخدمة' : 'Service'}</span>
+                                <span className="font-bold">
+                                  {intraCityService === 'workshop'
+                                    ? isRtl ? 'من ورشة إلى ورشة' : 'Workshop to workshop'
+                                    : intraCityService === 'industrial'
+                                      ? isRtl ? 'مشوار الصناعية' : 'Industrial area'
+                                      : isRtl ? 'تقدير الحوادث' : 'Taqdeer'}
+                                </span>
+                              </div>
+                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                                <span className="text-gray-500">{isRtl ? 'نوع السطحة' : 'Flatbed'}</span>
+                                <span className="font-bold">{t(OPTION_LABELS[serviceOption] || serviceOption)}</span>
+                              </div>
+                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                                <span className="text-gray-500">{isRtl ? 'الأجرة الأساسية' : 'Base fare'}</span>
+                                <span className="font-bold">{pricing.base.toFixed(2)} {t('sar')}</span>
+                              </div>
+                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                                <span className="text-gray-500">{isRtl ? 'حالة الكفرات' : 'Tire surcharge'}</span>
+                                <span className="font-bold">{pricing.extraKm.toFixed(2)} {t('sar')}</span>
+                              </div>
+                            </>
+                          )}
                           <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
                             <span className="text-gray-500">{t('distance')}</span>
                             <span className="font-bold">

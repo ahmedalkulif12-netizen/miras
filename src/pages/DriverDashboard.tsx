@@ -125,6 +125,31 @@ function OfferCustomerNotes({
 }) {
   const notes =
     order.vehicleFieldNotes || order.serviceDetails?.vehicleFieldNotes || null;
+  const details = order.serviceDetails || {};
+  const vehicleLines = [
+    typeof details.vehicleMakeModel === 'string' ? details.vehicleMakeModel.trim() : '',
+    typeof details.plateNumber === 'string'
+      ? `${isRtl ? 'اللوحة' : 'Plate'}: ${details.plateNumber}`
+      : '',
+    typeof details.serialNumber === 'string' && details.serialNumber
+      ? `${isRtl ? 'تسلسلي' : 'Serial'}: ${details.serialNumber}`
+      : '',
+    typeof details.chassisNumber === 'string' && details.chassisNumber
+      ? `${isRtl ? 'شاصي' : 'VIN'}: ${details.chassisNumber}`
+      : '',
+    details.tiresIntact === false
+      ? isRtl
+        ? 'الكفرات غير سليمة'
+        : 'Tires are not rolling'
+      : details.tiresIntact === true
+        ? isRtl
+          ? 'الكفرات سليمة'
+          : 'Tires are intact'
+        : '',
+    typeof details.industrialWorkshopName === 'string' ? details.industrialWorkshopName : '',
+    typeof details.taqdeerCenterName === 'string' ? details.taqdeerCenterName : '',
+  ].filter(Boolean);
+  const istimaraUrl = typeof details.istimaraUrl === 'string' ? details.istimaraUrl : '';
   const chips = [
     notes?.keyInside ? (isRtl ? 'المفتاح داخل السيارة' : 'Key inside') : null,
     notes?.tiresFlat ? (isRtl ? 'إطارات فارغة' : 'Flat tires') : null,
@@ -143,7 +168,7 @@ function OfferCustomerNotes({
     typeof order.serviceDetails?.furnitureDescription === 'string'
       ? order.serviceDetails.furnitureDescription.trim()
       : '';
-  if (!chips.length && !extra && !furniture) return null;
+  if (!chips.length && !extra && !furniture && !vehicleLines.length && !istimaraUrl) return null;
 
   return (
     <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 space-y-2 shadow-sm">
@@ -153,6 +178,18 @@ function OfferCustomerNotes({
           {isRtl ? 'ملاحظات العميل' : 'Customer notes'}
         </p>
       </div>
+      {vehicleLines.length > 0 && (
+        <div className={`space-y-1 text-xs font-bold text-amber-950 ${isRtl ? 'text-right' : 'text-left'}`}>
+          {vehicleLines.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      )}
+      {istimaraUrl.startsWith('https://') && (
+        <a href={istimaraUrl} target="_blank" rel="noreferrer" className="text-xs font-black underline">
+          {isRtl ? 'صورة الاستمارة' : 'Istimara photo'}
+        </a>
+      )}
       {chips.length > 0 && (
         <div className={`flex flex-wrap gap-2 ${isRtl ? '' : 'flex-row-reverse'}`}>
           {chips.map((chip) => (

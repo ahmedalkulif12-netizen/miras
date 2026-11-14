@@ -126,29 +126,32 @@ export const AdminTariffPanel: React.FC<Props> = ({ isRtl }) => {
       </section>
 
       <section className="bg-white rounded-[32px] border border-gray-100 p-8 space-y-5">
-        <h3 className="text-lg font-black">{isRtl ? 'خدمات داخل المدينة' : 'Intra-city services'}</h3>
+        <h3 className="text-lg font-black">
+          {isRtl ? 'ورشة إلى ورشة والصناعية' : 'Workshop and industrial trips'}
+        </h3>
+        <p className="text-sm text-gray-500">
+          {isRtl
+            ? 'السعر الأساسي يغطي الكيلومترات المشمولة. ما زاد عنها يُحسب بسعر الكيلومتر الإضافي من مسافة خرائط جوجل.'
+            : 'The base price covers the included kilometers. Distance beyond that uses the extra per-km rate from the Google Maps route.'}
+        </p>
+        <div className="grid gap-4 md:grid-cols-3">
+          <Field
+            label={isRtl ? 'السعر الأساسي (ر.س)' : 'Base price (SAR)'}
+            value={tariff.intraBasePrice}
+            onChange={(intraBasePrice) => setTariff((prev) => ({ ...prev, intraBasePrice }))}
+          />
+          <Field
+            label={isRtl ? 'الكيلومترات المشمولة' : 'Included kilometers'}
+            value={tariff.intraIncludedKm}
+            onChange={(intraIncludedKm) => setTariff((prev) => ({ ...prev, intraIncludedKm }))}
+          />
+          <Field
+            label={isRtl ? 'سعر الكيلومتر الإضافي' : 'Extra km rate (SAR)'}
+            value={tariff.intraExtraKmRate}
+            onChange={(intraExtraKmRate) => setTariff((prev) => ({ ...prev, intraExtraKmRate }))}
+          />
+        </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <Field
-            label={isRtl ? 'ورشة إلى ورشة' : 'Workshop to workshop'}
-            value={tariff.intraCity.workshop}
-            onChange={(workshop) =>
-              setTariff((prev) => ({ ...prev, intraCity: { ...prev.intraCity, workshop } }))
-            }
-          />
-          <Field
-            label={isRtl ? 'نقل داخلي عام' : 'General intra-city'}
-            value={tariff.intraCity.general}
-            onChange={(general) =>
-              setTariff((prev) => ({ ...prev, intraCity: { ...prev.intraCity, general } }))
-            }
-          />
-          <Field
-            label={isRtl ? 'المنطقة الصناعية' : 'Industrial area'}
-            value={tariff.intraCity.industrial}
-            onChange={(industrial) =>
-              setTariff((prev) => ({ ...prev, intraCity: { ...prev.intraCity, industrial } }))
-            }
-          />
           <Field
             label={isRtl ? 'تقدير / حادث' : 'Taqdeer / accident assessment'}
             value={tariff.intraCity.taqdeer}

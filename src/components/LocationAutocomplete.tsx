@@ -18,6 +18,8 @@ interface LocationAutocompleteProps {
   isRtl?: boolean;
   /** Controlled display value (e.g. after map pin drop). */
   value?: string;
+  /** Prefer results near this point. The search still covers all of Saudi Arabia. */
+  bias?: google.maps.LatLngLiteral | null;
 }
 
 function placeFromGeocode(
@@ -151,6 +153,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   className,
   isRtl = false,
   value,
+  bias,
 }) => {
   const placesLib = useMapsLibrary('places');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -161,15 +164,21 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
   useEffect(() => {
     if (!placesLib || !inputRef.current) return;
 
-    const saBounds = new google.maps.LatLngBounds(
-      { lat: 16.0, lng: 34.4 },
-      { lat: 32.3, lng: 55.7 }
-    );
+    const bounds =
+      bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng)
+        ? new google.maps.LatLngBounds(
+            { lat: bias.lat - 0.45, lng: bias.lng - 0.45 },
+            { lat: bias.lat + 0.45, lng: bias.lng + 0.45 }
+          )
+        : new google.maps.LatLngBounds(
+            { lat: 16.0, lng: 34.4 },
+            { lat: 32.3, lng: 55.7 }
+          );
 
     const autocomplete = new placesLib.Autocomplete(inputRef.current, {
       fields: ['formatted_address', 'geometry', 'name', 'address_components', 'place_id'],
       componentRestrictions: { country: 'sa' },
-      bounds: saBounds,
+      bounds,
       strictBounds: false,
     });
 
@@ -189,7 +198,7 @@ export const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
     return () => {
       google.maps.event.removeListener(listener);
     };
-  }, [placesLib]);
+  }, [placesLib, bias?.lat, bias?.lng]);
 
   useEffect(() => {
     if (value !== undefined && inputRef.current && inputRef.current.value !== value) {

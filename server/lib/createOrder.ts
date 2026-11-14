@@ -11,6 +11,7 @@ import { normalizeWaterServiceType } from '../../src/lib/waterTankerCatalog.ts';
 import { countPaidCustomerOrders } from './customerOrderCount.ts';
 import { normalizeTripFinancials, toPersistedOrderMoneyFields } from '../../src/domain/financials.ts';
 import { sanitizeForFirestore } from './firestoreSanitize.ts';
+import { flatbedVehicleError } from '../../src/domain/flatbedBooking.ts';
 import {
   gasQuantityRequested,
   normalizeGasQuantity,
@@ -159,6 +160,20 @@ export function validateCreateOrderPayload(body: CreateOrderPayload): void {
       exchangeQuantity,
       newCylinderQuantity,
     };
+  }
+
+  if (canonical === 'flatbed') {
+    const details = body.serviceDetails || {};
+    const vehicleError = flatbedVehicleError({
+      vehicleMakeModel: typeof details.vehicleMakeModel === 'string' ? details.vehicleMakeModel : '',
+      plateNumber: typeof details.plateNumber === 'string' ? details.plateNumber : '',
+      serialNumber: typeof details.serialNumber === 'string' ? details.serialNumber : '',
+      chassisNumber: typeof details.chassisNumber === 'string' ? details.chassisNumber : '',
+      istimaraUrl: typeof details.istimaraUrl === 'string' ? details.istimaraUrl : '',
+    });
+    if (vehicleError) {
+      throw Object.assign(new Error(vehicleError), { statusCode: 400 });
+    }
   }
 
   if (
