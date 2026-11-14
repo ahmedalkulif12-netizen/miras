@@ -24,6 +24,7 @@ export interface ServerConfig {
   waslApiBaseUrl: string;
   waslApiKey: string;
   waslClientId: string;
+  waslClientSecret: string;
   waslAppId: string;
   appCheckEnforce: boolean;
   firebaseProjectId: string;
@@ -123,6 +124,7 @@ export function getServerConfig(): ServerConfig {
     waslApiBaseUrl: readEnv('WASL_API_BASE_URL'),
     waslApiKey: readEnv('WASL_API_KEY'),
     waslClientId: readEnv('WASL_CLIENT_ID'),
+    waslClientSecret: readEnv('WASL_CLIENT_SECRET'),
     waslAppId: readEnv('WASL_APP_ID'),
     appCheckEnforce: readEnv('APP_CHECK_ENFORCE') === 'true',
     firebaseProjectId:

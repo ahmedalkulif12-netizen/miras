@@ -185,6 +185,10 @@ const CustomerDashboard: React.FC = () => {
     brokenDown: false,
     extraNotes: '',
   });
+  const [tiresIntact, setTiresIntact] = useState<boolean | null>(null);
+  const [intraCityService, setIntraCityService] = useState<
+    'workshop' | 'general' | 'industrial' | 'taqdeer'
+  >('general');
   // Now fixed to inside/outside based on calculation result only, or just hidden from direct manual toggle
   const [transportType, setTransportType] = useState<'inside' | 'outside'>('inside');
   const [pickup, setPickup] = useState('');
@@ -821,6 +825,15 @@ const CustomerDashboard: React.FC = () => {
       return;
     }
 
+    if (serviceType === 'flatbed' && tiresIntact == null) {
+      toast.error(
+        isRtl
+          ? 'يرجى الإجابة: هل حالة الكفرات سليمة؟'
+          : 'Please answer whether the tires are intact and rolling'
+      );
+      return;
+    }
+
     setIsLoadingPricing(true);
     setPricingError(null);
     try {
@@ -940,6 +953,9 @@ const CustomerDashboard: React.FC = () => {
         serviceType === 'water_tanker' ? waterType || undefined : undefined,
         serviceType === 'gas_delivery'
           ? { exchangeQuantity, newCylinderQuantity }
+          : undefined,
+        serviceType === 'flatbed'
+          ? { intraCityService, tiresIntact }
           : undefined
       );
 
@@ -1094,6 +1110,9 @@ const CustomerDashboard: React.FC = () => {
         truckCount,
         furnitureDescription,
         vehicleFieldNotes,
+        ...(canonicalService === 'flatbed'
+          ? { intraCityService, tiresIntact: tiresIntact !== false }
+          : {}),
       };
 
       // Draft only — NO Firestore `orders` write and NO driver broadcast.
@@ -1592,6 +1611,85 @@ const CustomerDashboard: React.FC = () => {
                     )
                     )}
 
+                    {serviceType === 'flatbed' && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        className="space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <p className="text-sm font-bold text-gray-500">
+                            {isRtl
+                              ? 'خدمة داخل المدينة (تُستخدم عندما يكون التحميل والتنزيل في نفس المدينة)'
+                              : 'Inside the city (used when pickup and drop-off are in the same city)'}
+                          </p>
+                          <div className={`flex flex-wrap gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
+                            {(
+                              [
+                                { id: 'workshop' as const, ar: 'ورشة إلى ورشة · 70', en: 'Workshop to workshop' },
+                                { id: 'general' as const, ar: 'نقل داخلي عام', en: 'General intra-city' },
+                                { id: 'industrial' as const, ar: 'المنطقة الصناعية', en: 'Industrial area' },
+                                { id: 'taqdeer' as const, ar: 'تقدير / حادث', en: 'Taqdeer / accident' },
+                              ]
+                            ).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => {
+                                  setIntraCityService(item.id);
+                                  setIsCalculated(false);
+                                }}
+                                className={`px-4 py-2 rounded-xl border text-sm transition-all ${
+                                  intraCityService === item.id
+                                    ? 'bg-black text-white border-black font-bold'
+                                    : 'border-gray-200 hover:border-black font-medium'
+                                }`}
+                              >
+                                {isRtl ? item.ar : item.en}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-2 p-4 rounded-2xl border border-amber-100 bg-amber-50/70">
+                          <p className="text-sm font-bold text-amber-950">
+                            {isRtl ? 'هل حالة الكفرات سليمة؟' : 'Are the vehicle tires intact and rolling?'}
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTiresIntact(true);
+                                setVehicleFieldNotes((prev) => ({ ...prev, tiresFlat: false }));
+                                setIsCalculated(false);
+                              }}
+                              className={`flex-1 px-4 py-3 rounded-xl border text-sm font-bold ${
+                                tiresIntact === true
+                                  ? 'bg-black text-white border-black'
+                                  : 'bg-white border-amber-200'
+                              }`}
+                            >
+                              {isRtl ? 'سليمة' : 'Intact'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTiresIntact(false);
+                                setVehicleFieldNotes((prev) => ({ ...prev, tiresFlat: true }));
+                                setIsCalculated(false);
+                              }}
+                              className={`flex-1 px-4 py-3 rounded-xl border text-sm font-bold ${
+                                tiresIntact === false
+                                  ? 'bg-black text-white border-black'
+                                  : 'bg-white border-amber-200'
+                              }`}
+                            >
+                              {isRtl ? 'غير سليمة / تالفة' : 'Damaged'}
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+
                     {serviceType === 'furniture_moving' && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-4">
                         <p className="text-sm font-bold text-gray-500">{t('furniture_moving_desc')}</p>
@@ -1960,6 +2058,10 @@ const CustomerDashboard: React.FC = () => {
                                          ? (isRtl
                                              ? `السعة: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · مشمول ${includedKm} كم`
                                              : `Capacity: ${tankCapacityLabel || resolveTankCapacityLabel(serviceOption)} · ${includedKm} km included`)
+                                         : serviceType === 'flatbed'
+                                         ? (tripTypeState === 'inside_city'
+                                             ? (isRtl ? 'سعر ثابت داخل المدينة' : 'Fixed price inside the city')
+                                             : (isRtl ? 'سعر بين المدن حسب مسافة الخريطة' : 'Inter-city price from the map distance'))
                                          : (isRtl
                                              ? `الفئة: ${t(OPTION_LABELS[serviceOption] || serviceOption)} · مشمول ${includedKm} كم`
                                              : `Tier: ${t(OPTION_LABELS[serviceOption] || serviceOption)} · ${includedKm} km included`)}

@@ -2,8 +2,10 @@
  * Pure trip fare calculation (distance + service tier config).
  * No Firebase or HTTP — safe to use on client for previews and on server for authority.
  *
- * Universal formula (all 6 services):
+ * Furniture, cargo, water, refrigerated, and heavy equipment:
  *   tripFare = basePrice + max(0, totalDistanceKm - 25) * extraKmRate
+ * Flatbed uses the admin tariff (distance between pickup and drop-off, or a
+ * same-city fixed price) plus the flatbed offset and tire surcharge.
  *
  * Client pays tripFare + 5% service fee (financials.ts).
  * Driver receives tripFare − 15% platform commission (financials.ts).
@@ -26,6 +28,7 @@ import {
   waterTypeMultiplier,
 } from '../lib/waterTankerCatalog';
 import { quoteGasCylinders, type GasCylinderLines } from './gasCylinders';
+import { quoteFlatbed } from './flatbedTariff';
 
 export interface PricingConfigInput {
   base_price?: number;
@@ -43,6 +46,8 @@ export interface PricingConfigInput {
   tier_prices?: Record<string, { base_price: number; price_per_km: number }>;
   /** Flat fee added to gas-cylinder service fare. */
   delivery_fee?: number;
+  /** Admin-editable flatbed inter-city and intra-city tariff. */
+  flatbed_tariff?: unknown;
 }
 
 export interface ComputeTripFareParams {
@@ -67,6 +72,12 @@ export interface ComputeTripFareParams {
    */
   exchangeQuantity?: number;
   newCylinderQuantity?: number;
+  pickupCity?: string | null;
+  dropoffCity?: string | null;
+  /** Same-city flatbed menu: workshop | general | industrial | taqdeer. */
+  intraCityService?: string | null;
+  /** False adds the damaged-tire surcharge on flatbed quotes. */
+  tiresIntact?: boolean | null;
 }
 
 export interface ComputeTripFareResult {
@@ -105,6 +116,10 @@ export function computeTripFare(
     waterType,
     exchangeQuantity,
     newCylinderQuantity,
+    pickupCity,
+    dropoffCity,
+    intraCityService,
+    tiresIntact,
   } = params;
 
   const service = normalizeServiceType(serviceType);
@@ -117,7 +132,8 @@ export function computeTripFare(
     );
   }
 
-  const tripType = safeDistance > 100 ? 'outside_city' : 'inside_city';
+  let tripType: 'inside_city' | 'outside_city' =
+    safeDistance > 100 ? 'outside_city' : 'inside_city';
 
   const tierKey = resolveTierKey(service, option || capacity, {
     capacity,
@@ -134,7 +150,7 @@ export function computeTripFare(
   let rate = Math.round((Number(tierRate.price_per_km) || 0) * typeMult * 1000) / 1000;
 
   // Always 25 km included — never inherit stale free_km: 5 from legacy docs.
-  const includedKm =
+  let includedKm =
     typeof pricing.included_km === 'number' && pricing.included_km > 0
       ? pricing.included_km
       : typeof pricing.free_km === 'number' && pricing.free_km >= INCLUDED_KM
@@ -167,6 +183,23 @@ export function computeTripFare(
     rate = 0;
     extraKmCost = deliveryFee;
     tripFare = Math.round((base + deliveryFee) * 100) / 100;
+  } else if (service === 'flatbed') {
+    const quoted = quoteFlatbed({
+      tariff: pricing,
+      distanceKm: safeDistance,
+      pickupCity,
+      dropoffCity,
+      truckType: option || truckType,
+      intraCityService,
+      tiresIntact,
+    });
+    tripType = quoted.tripType;
+    includedKm = 0;
+    base = quoted.fareBeforeTire;
+    rate = quoted.ratePerKm;
+    extraKm = quoted.sameCity ? 0 : quoted.distanceKm;
+    extraKmCost = quoted.tireSurcharge;
+    tripFare = quoted.tripFare;
   }
 
   // Optional multi-truck for cargo only (operational), applied after base formula.

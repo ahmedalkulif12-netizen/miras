@@ -27,6 +27,30 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
+function Import-DotEnvIfMissing([string]$name) {
+  if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { return }
+  $envFile = Join-Path $Root ".env"
+  if (-not (Test-Path $envFile)) { return }
+  foreach ($line in [System.IO.File]::ReadAllLines($envFile)) {
+    $trimmed = $line.Trim()
+    if ($trimmed.StartsWith("#") -or -not $trimmed.StartsWith("$name=")) { continue }
+    $value = $trimmed.Substring($name.Length + 1).Trim().Trim('"').Trim("'")
+    if ($value) { Set-Item -Path "Env:$name" -Value $value }
+    break
+  }
+}
+
+foreach ($envName in @(
+  "TAP_SECRET_KEY", "TAP_PUBLIC_KEY", "TAP_MERCHANT_ID",
+  "WASL_API_BASE_URL", "WASL_CLIENT_ID", "WASL_CLIENT_SECRET", "WASL_APP_ID"
+)) {
+  Import-DotEnvIfMissing $envName
+}
+
+if (-not $TapSecretKey) { $TapSecretKey = $env:TAP_SECRET_KEY }
+if (-not $TapPublicKey) { $TapPublicKey = $env:TAP_PUBLIC_KEY }
+if (-not $TapMerchantId -and $env:TAP_MERCHANT_ID) { $TapMerchantId = $env:TAP_MERCHANT_ID }
+
 if (-not (Get-Command gcloud -ErrorAction SilentlyContinue)) {
   Write-Error @"
 gcloud CLI not found. Install Google Cloud SDK:
@@ -64,7 +88,15 @@ if ($AppUrl -notlike "https://*") {
 }
 
 Write-Host "Enabling required APIs on $ProjectId ..."
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --project=$ProjectId
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com --project=$ProjectId --quiet
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$WaslEnv = ""
+if ($env:WASL_CLIENT_ID -and $env:WASL_CLIENT_SECRET) {
+  $WaslBase = if ($env:WASL_API_BASE_URL) { $env:WASL_API_BASE_URL } else { "https://wasl.api.elm.sa/api/tracking/v1" }
+  $WaslEnv = ",WASL_API_BASE_URL=$WaslBase,WASL_CLIENT_ID=$($env:WASL_CLIENT_ID),WASL_CLIENT_SECRET=$($env:WASL_CLIENT_SECRET)"
+  if ($env:WASL_APP_ID) { $WaslEnv += ",WASL_APP_ID=$($env:WASL_APP_ID)" }
+}
 
 Write-Host "Deploying $ServiceName to Cloud Run ($Region) ..."
 gcloud run deploy $ServiceName `
@@ -78,9 +110,12 @@ gcloud run deploy $ServiceName `
   --cpu=1 `
   --min-instances=0 `
   --max-instances=10 `
-  --set-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,TAP_MERCHANT_ID=$TapMerchantId,TAP_SECRET_KEY=$TapSecretKey,TAP_PUBLIC_KEY=$TapPublicKey"
+  --quiet `
+  --update-env-vars="NODE_ENV=production,MIRAS_PROCESS_ROLE=api,MIRAS_DEPLOY_ENV=$DeployEnv,HAMOULA_DEPLOY_ENV=$DeployEnv,FIREBASE_PROJECT_ID=$ProjectId,MIRAS_EXPECTED_FIREBASE_PROJECT=$ProjectId,HAMOULA_EXPECTED_FIREBASE_PROJECT=$ProjectId,APP_URL=$AppUrl,APP_CHECK_ENFORCE=$AppCheckEnforce,APP_STORE_APPLE_ID=6807503584,TAP_MERCHANT_ID=$TapMerchantId,TAP_SECRET_KEY=$TapSecretKey,TAP_PUBLIC_KEY=$TapPublicKey$WaslEnv"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $url = gcloud run services describe $ServiceName --project=$ProjectId --region=$Region --format="value(status.url)"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host ""
 Write-Host "Deployed: $url"
 Write-Host "Health:   $url/health"

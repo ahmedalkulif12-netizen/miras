@@ -36,6 +36,7 @@ import AdminCorporateContractsPanel from '@/components/admin/AdminCorporateContr
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
 import { AdminPricingPanel } from '@/components/admin/AdminPricingPanel';
+import { AdminTariffPanel } from '@/components/admin/AdminTariffPanel';
 import { AdminPayoutSchedule } from '@/components/admin/AdminPayoutSchedule';
 import { AdminDriverApprovals } from '@/components/admin/AdminDriverApprovals';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
@@ -543,6 +544,9 @@ const AdminDashboard: React.FC = () => {
     if (location.pathname === '/admin/pricing') {
       return isRtl ? 'تسعير الخدمات' : 'Service Pricing';
     }
+    if (location.pathname === '/admin/tariffs') {
+      return isRtl ? 'محرك التسعير والتعرفة' : 'Pricing Engine & Tariffs';
+    }
     if (location.pathname === '/admin/drivers') return t('manage_drivers');
     if (location.pathname === '/admin/directory') {
       return isRtl ? 'دليل المستخدمين والسائقين' : 'Users & drivers directory';
@@ -1013,6 +1017,7 @@ const AdminDashboard: React.FC = () => {
 
           <Route path="approvals" element={<Navigate to="/admin/drivers" replace />} />
           <Route path="pricing" element={<AdminPricingPanel isRtl={isRtl} />} />
+          <Route path="tariffs" element={<AdminTariffPanel isRtl={isRtl} />} />
 
           <Route path="drivers" element={
             <div className="space-y-8">

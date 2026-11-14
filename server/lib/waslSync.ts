@@ -6,6 +6,8 @@ import {
   buildWaslTripCompletePayload,
   buildWaslTripStartPayload,
   buildWaslVehiclePayload,
+  formatWaslTimestamp,
+  readWaslEligibility,
   validateWaslDriver,
   validateWaslTripStart,
   validateWaslVehicle,
@@ -33,6 +35,8 @@ export function driverWaslInput(data: Record<string, unknown>): WaslDriverRegist
     date_of_birth: str(data.dateOfBirth || data.date_of_birth),
     license_number: str(data.licenseNumber || data.license_number),
     mobile_number: str(data.phone || data.mobileNumber || data.mobile_number),
+    date_of_birth_hijri: str(data.dateOfBirthHijri || data.date_of_birth_hijri),
+    email: str(data.email),
   };
 }
 
@@ -62,7 +66,45 @@ export async function registerWaslDriver(
 ): Promise<WaslWireResult> {
   const invalid = validateWaslDriver(input);
   if (invalid) return { ok: false, skipped: true, reason: invalid, reference: null };
-  return callWasl('POST', '/tracking/v1/drivers', buildWaslDriverPayload(input));
+  return callWasl('POST', '/drivers', buildWaslDriverPayload(input));
+}
+
+/** TGA driver inquiry. VALID means the driver may operate. */
+export async function syncWaslDriverVerification(
+  db: admin.firestore.Firestore,
+  driverId: string
+): Promise<WaslWireResult> {
+  const snap = await db.collection('drivers').doc(driverId).get();
+  if (!snap.exists) return { ok: false, skipped: true, reason: 'DRIVER_NOT_FOUND', reference: null };
+  const input = driverWaslInput((snap.data() || {}) as Record<string, unknown>);
+  const result = await verifyWaslDriver(input.national_id);
+  await snap.ref.set(
+    {
+      waslEligibility: result.eligibility || null,
+      waslEligibilityStatus: result.ok ? 'checked' : result.skipped ? 'skipped' : 'failed',
+      waslEligibilityReason: result.reason || result.error || null,
+      waslEligibilityCheckedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+  return result;
+}
+
+export async function verifyWaslDriver(nationalId: string): Promise<WaslWireResult> {
+  const identity = String(nationalId || '').trim();
+  if (!/^[12]\d{9}$/.test(identity)) {
+    return { ok: false, skipped: true, reason: 'NATIONAL_ID_INVALID', reference: null };
+  }
+  const result = await callWasl(
+    'GET',
+    `/drivers/eligibility/${encodeURIComponent(identity)}`
+  );
+  const eligibility = readWaslEligibility(result.body);
+  return {
+    ...result,
+    eligibility,
+    reference: result.reference || eligibility,
+  };
 }
 
 export async function registerWaslVehicle(
@@ -70,27 +112,51 @@ export async function registerWaslVehicle(
 ): Promise<WaslWireResult> {
   const invalid = validateWaslVehicle(input);
   if (invalid) return { ok: false, skipped: true, reason: invalid, reference: null };
-  return callWasl('POST', '/tracking/v1/vehicles', buildWaslVehiclePayload(input));
+  return callWasl('POST', '/vehicles', buildWaslVehiclePayload(input));
 }
 
 export async function logWaslTripStart(input: WaslTripStart): Promise<WaslWireResult> {
   const invalid = validateWaslTripStart(input);
   if (invalid) return { ok: false, skipped: true, reason: invalid, reference: null };
-  return callWasl('POST', '/tracking/v1/trips', buildWaslTripStartPayload(input));
+  return callWasl('POST', '/trips', buildWaslTripStartPayload(input));
 }
 
 export async function logWaslLocation(input: WaslLocationPing): Promise<WaslWireResult> {
   if (!input.trip_number || !Number.isFinite(input.latitude) || !Number.isFinite(input.longitude)) {
     return { ok: false, skipped: true, reason: 'LOCATION_INVALID', reference: null };
   }
-  return callWasl('POST', '/tracking/v1/locations', buildWaslLocationPayload(input));
+  const ping = buildWaslLocationPayload(input);
+  const recordedAt = formatWaslTimestamp(input.recorded_at);
+  return callWasl('POST', '/locations', {
+    ...ping,
+    locations: [
+      {
+        driverIdentityNumber: String(input.national_id || '').trim(),
+        vehicleSequenceNumber: input.sequence_number,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        hasCustomer: true,
+        updatedWhen: recordedAt,
+        velocity: input.speed_kmh ?? 0,
+        vehicleStatus: input.vehicle_status,
+      },
+    ],
+  });
 }
 
 export async function logWaslTripComplete(input: WaslTripComplete): Promise<WaslWireResult> {
-  const path = input.wasl_reference
-    ? `/tracking/v1/trips/${encodeURIComponent(input.wasl_reference)}`
-    : '/tracking/v1/trips/complete';
-  return callWasl('PUT', path, buildWaslTripCompletePayload(input));
+  const payload = buildWaslTripCompletePayload(input);
+  return callWasl('PATCH', '/trips', {
+    ...payload,
+    trips: [
+      {
+        tripId: input.trip_number,
+        dropoffTimestamp: formatWaslTimestamp(input.completed_at),
+        destinationLatitude: input.latitude,
+        destinationLongitude: input.longitude,
+      },
+    ],
+  });
 }
 
 async function writeOrderWasl(
@@ -182,6 +248,7 @@ export async function syncWaslLocation(
   lastLocationSent.set(orderId, now);
   const result = await logWaslLocation({
     trip_number: str(wasl.tripReference) || orderId,
+    national_id: driverWaslInput(driver).national_id,
     sequence_number: vehicle.sequence_number,
     latitude: ping.latitude,
     longitude: ping.longitude,

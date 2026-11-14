@@ -4,6 +4,7 @@ import {
   normalizeDriverCommissionTiers,
   resolveCustomerServiceFeePercentage,
 } from '@/domain/financials';
+import { DEFAULT_FLATBED_TARIFF, readFlatbedTariff, type FlatbedTariff } from '@/domain/flatbedTariff';
 
 /**
  * Shared default pricing when Firestore `pricing/{serviceType}` docs are missing.
@@ -39,6 +40,8 @@ export interface PricingConfig {
   customer_service_fee_percentage?: number;
   /** Flat delivery fee added to gas-cylinder fares. Other services leave this at 0. */
   delivery_fee?: number;
+  /** Flatbed distance tariff, same-city menu, offsets, and tire surcharge. */
+  flatbed_tariff?: FlatbedTariff;
   /**
    * Driver commission by completed-order count.
    * When missing, the 0-order band uses platform_commission_percentage.
@@ -398,6 +401,7 @@ function configFromTiers(serviceType: string): PricingConfig {
     tier_prices: { ...tiers },
     capacity_prices: capacityPrices,
     delivery_fee: service === 'gas_delivery' ? GAS_DELIVERY_FEE : 0,
+    ...(service === 'flatbed' ? { flatbed_tariff: { ...DEFAULT_FLATBED_TARIFF, offsets: { ...DEFAULT_FLATBED_TARIFF.offsets }, intraCity: { ...DEFAULT_FLATBED_TARIFF.intraCity } } } : {}),
   };
 }
 
@@ -454,6 +458,10 @@ export function mergePricingConfig(
       typeof row.delivery_fee === 'number' && Number.isFinite(row.delivery_fee)
         ? row.delivery_fee
         : defaults.delivery_fee ?? 0,
+    flatbed_tariff:
+      normalizeServiceType(serviceType) === 'flatbed'
+        ? readFlatbedTariff(row.flatbed_tariff || defaults.flatbed_tariff)
+        : undefined,
   };
 }
 

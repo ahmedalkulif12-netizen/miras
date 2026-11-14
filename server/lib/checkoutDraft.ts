@@ -104,6 +104,13 @@ export async function createCheckoutDraft(
         }
       : undefined;
 
+  const details = body.serviceDetails || {};
+  const tiresIntact =
+    typeof details.tiresIntact === 'boolean'
+      ? details.tiresIntact
+      : body.vehicleFieldNotes?.tiresFlat
+        ? false
+        : undefined;
   const quote = await pricingService.calculatePrice({
     distance: body.distanceKm,
     serviceType,
@@ -114,6 +121,11 @@ export async function createCheckoutDraft(
     capacity,
     option: capacity || rawOption,
     waterType,
+    pickupCity: body.pickupCity,
+    dropoffCity: body.dropoffCity,
+    intraCityService:
+      typeof details.intraCityService === 'string' ? details.intraCityService : undefined,
+    tiresIntact,
     ...(gasQuantities || {}),
   });
 

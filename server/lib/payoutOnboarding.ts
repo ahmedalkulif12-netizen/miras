@@ -2,7 +2,13 @@ import admin from 'firebase-admin';
 import { getServerConfig } from '../config/env.ts';
 import { normalizeIban } from '../../src/domain/accountProfiles.ts';
 import { createTapDestination } from './tapDestinations.ts';
-import { driverWaslInput, registerWaslDriver, registerWaslVehicle, vehicleWaslInput } from './waslSync.ts';
+import {
+  driverWaslInput,
+  registerWaslDriver,
+  registerWaslVehicle,
+  syncWaslDriverVerification,
+  vehicleWaslInput,
+} from './waslSync.ts';
 import type { WaslWireResult } from '../../src/domain/wasl.ts';
 
 export interface OnboardingResult {
@@ -111,6 +117,7 @@ export async function onboardApprovedDriver(
 
   const waslDriver = await registerWaslDriver(driverWaslInput(driver));
   const waslVehicle = await registerWaslVehicle(vehicleWaslInput(driver));
+  const waslCheck = await syncWaslDriverVerification(db, uid);
   await driverRef.set(
     {
       ...(waslDriver.reference ? { waslDriverReference: waslDriver.reference } : {}),
@@ -119,6 +126,8 @@ export async function onboardApprovedDriver(
       waslVehicleStatus: waslVehicle.ok ? 'registered' : waslVehicle.skipped ? 'skipped' : 'failed',
       waslDriverReason: waslDriver.reason || waslDriver.error || null,
       waslVehicleReason: waslVehicle.reason || waslVehicle.error || null,
+      waslEligibility: waslCheck.eligibility || null,
+      waslEligibilityStatus: waslCheck.ok ? 'checked' : waslCheck.skipped ? 'skipped' : 'failed',
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }

@@ -28,7 +28,8 @@ export type PricingService = ReturnType<typeof createPricingService>;
 
 /**
  * Server-authoritative pricing (single source of truth for trip totals).
- * Formula: tripFare = base + max(0, distanceKm − 25) × tierRate
+ * Other services: tripFare = base + max(0, distanceKm − 25) × tierRate.
+ * Flatbed: admin tariff from the pickup-to-dropoff distance, or a same-city fixed price.
  * Customer total = tripFare + pricing.customer_service_fee_percentage.
  * Driver net = tripFare − the loyalty band (or profile override) on that pricing doc.
  */
@@ -89,6 +90,10 @@ export function createPricingService(db: admin.firestore.Firestore) {
     exchangeQuantity?: number;
     /** Gas new-cylinder purchase count. */
     newCylinderQuantity?: number;
+    pickupCity?: string | null;
+    dropoffCity?: string | null;
+    intraCityService?: string | null;
+    tiresIntact?: boolean | null;
   }) {
     const {
       distance,
@@ -154,6 +159,10 @@ export function createPricingService(db: admin.firestore.Firestore) {
       ...(gasQuantityMode
         ? { exchangeQuantity, newCylinderQuantity }
         : {}),
+      pickupCity: params.pickupCity,
+      dropoffCity: params.dropoffCity,
+      intraCityService: params.intraCityService,
+      tiresIntact: params.tiresIntact,
     });
 
     // Canonical subtotal from visible line items.

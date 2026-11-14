@@ -7,7 +7,10 @@
 # Starter+ required: free web services sleep and IMAP drops.
 #
 # Secrets (sync: false) must be entered in the Render dashboard:
-#   MIRAS_ADMIN_EMAIL, SMTP_USER, SMTP_PASS, IMAP_USER, IMAP_PASS
+#   MIRAS_ADMIN_EMAIL, SMTP_USER, SMTP_PASS, IMAP_USER, IMAP_PASS,
+#   WASL_CLIENT_ID, WASL_CLIENT_SECRET
+# The customer API is Cloud Run hamula-api. Set the same WASL variables there
+# so /api/orders/:id/wasl-location and driver verification can reach ELM.
 #
 # https://render.com/docs/blueprint-spec
 
@@ -73,3 +76,9 @@ services:
         value: "false"
       - key: MIRAS_SKIP_PRODUCTION_SECRETS
         value: "true"
+      - key: WASL_API_BASE_URL
+        value: "https://wasl.api.elm.sa/api/tracking/v1"
+      - key: WASL_CLIENT_ID
+        sync: false
+      - key: WASL_CLIENT_SECRET
+        sync: false

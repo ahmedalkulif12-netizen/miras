@@ -12,6 +12,9 @@ export interface WaslDriverRegistration {
   date_of_birth: string;
   license_number: string;
   mobile_number: string;
+  /** Hijri YYYY-MM-DD. Saudi national IDs are verified against this when present. */
+  date_of_birth_hijri?: string;
+  email?: string;
 }
 
 export interface WaslVehicleRegistration {
@@ -22,6 +25,7 @@ export interface WaslVehicleRegistration {
   plate_letter_left: string;
   operating_card_number: string;
   operating_card_expiry: string;
+  plate_type?: string;
 }
 
 export interface WaslTripStart {
@@ -39,6 +43,7 @@ export interface WaslTripStart {
 
 export interface WaslLocationPing {
   trip_number: string;
+  national_id?: string;
   sequence_number: string;
   latitude: number;
   longitude: number;
@@ -61,8 +66,10 @@ export interface WaslWireResult {
   skipped?: boolean;
   reason?: string;
   reference?: string | null;
+  eligibility?: string | null;
   httpStatus?: number | null;
   error?: string | null;
+  body?: unknown;
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -95,15 +102,21 @@ export function buildWaslDriverPayload(input: WaslDriverRegistration): Record<st
   const nationalId = String(input.national_id || '').trim();
   const dob = String(input.date_of_birth || '').trim();
   const license = String(input.license_number || '').trim();
+  const international = mobile.startsWith('966') ? `+${mobile}` : mobile;
+  const hijri = String(input.date_of_birth_hijri || '').trim();
+  const email = String(input.email || '').trim();
   return {
     national_id: nationalId,
     date_of_birth: dob,
     license_number: license,
     mobile_number: mobile,
     identityNumber: nationalId,
-    dateOfBirthGregorian: dob,
+    ...(hijri
+      ? { dateOfBirthHijri: hijri.replace(/-/g, '/') }
+      : { dateOfBirthGregorian: dob }),
     drivingLicenseNumber: license,
-    mobileNumber: mobile,
+    mobileNumber: international,
+    ...(email ? { emailAddress: email } : {}),
   };
 }
 
@@ -126,6 +139,7 @@ export function buildWaslVehiclePayload(input: WaslVehicleRegistration): Record<
     sequenceNumber: sequence,
     operatingCardNumber: card,
     operatingCardExpiry: expiry,
+    plateType: String(input.plate_type || '1'),
     plate: {
       number: plateNumber,
       rightLetter: right,
@@ -233,6 +247,40 @@ export function validateWaslTripStart(input: WaslTripStart): string | null {
   return null;
 }
 
+/** WASL timestamps are local Asia/Riyadh values without a timezone suffix. */
+export function formatWaslTimestamp(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return String(iso || '');
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Riyadh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const pick = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value || '00';
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
+  return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}:${pick('second')}.${ms}`;
+}
+
+export function readWaslEligibility(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const obj = body as Record<string, unknown>;
+  const result =
+    obj.result && typeof obj.result === 'object' ? (obj.result as Record<string, unknown>) : null;
+  const value =
+    result?.driverEligibility ||
+    result?.eligibility ||
+    obj.driverEligibility ||
+    obj.eligibility;
+  const text = value == null ? '' : String(value).trim();
+  return text || null;
+}
+
 export function readWaslReference(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
   const obj = body as Record<string, unknown>;
@@ -252,11 +300,10 @@ export function readWaslReference(body: unknown): string | null {
 export function waslCallSucceeded(body: unknown, httpStatus: number): boolean {
   if (httpStatus < 200 || httpStatus >= 300) return false;
   if (!body || typeof body !== 'object') return true;
-  const code = String(
-    (body as Record<string, unknown>).resultCode ||
-      (body as Record<string, unknown>).code ||
-      ''
-  )
+  const record = body as Record<string, unknown>;
+  if (record.success === false) return false;
+  if (record.success === true) return true;
+  const code = String(record.resultCode || record.code || '')
     .trim()
     .toLowerCase();
   if (!code) return true;

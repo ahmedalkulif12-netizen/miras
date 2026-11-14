@@ -155,6 +155,7 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, title, trip
                 <SidebarLink to="/admin" icon={<LayoutDashboard size={20} />} label={isRtl ? 'الطلبات والإيرادات' : 'Orders & revenue'} end />
                 <SidebarLink to="/admin/drivers" icon={<Truck size={20} />} label={t('manage_drivers')} />
                 <SidebarLink to="/admin/pricing" icon={<DollarSign size={20} />} label={isRtl ? 'تسعير الخدمات' : 'Service Pricing'} />
+                <SidebarLink to="/admin/tariffs" icon={<DollarSign size={20} />} label={isRtl ? 'محرك التسعير والتعرفة' : 'Pricing Engine & Tariffs'} />
                 <SidebarLink to="/admin/clients" icon={<Users size={20} />} label={isRtl ? 'العملاء' : 'Customers'} />
                 <SidebarLink to="/admin/finance" icon={<CreditCard size={20} />} label={isRtl ? 'الإيرادات' : 'Revenue'} />
                 <SidebarLink to="/admin/withdrawals" icon={<DollarSign size={20} />} label={isRtl ? 'طلبات السحب' : 'Payout requests'} />

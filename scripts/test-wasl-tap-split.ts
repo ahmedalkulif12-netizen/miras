@@ -19,7 +19,8 @@ import {
   validateIndividualCompliance,
 } from '../src/domain/accountProfiles.ts';
 import { splitTapCharge, tapDestinationEntry } from '../src/domain/tapSplit.ts';
-import { callWasl, isWaslConfigured } from '../server/lib/waslClient.ts';
+import { callWasl, isWaslConfigured, waslAuthHeaders } from '../server/lib/waslClient.ts';
+import { waslCallSucceeded } from '../src/domain/wasl.ts';
 
 const driver = buildWaslDriverPayload({
   national_id: '1234567890',
@@ -181,19 +182,44 @@ assert.deepEqual(tapDestinationEntry('dest_1', 85), {
 });
 assert.equal(tapDestinationEntry('', 85), null);
 
-const emptyWasl = { baseUrl: '', apiKey: '', clientId: '', appId: '' };
+const emptyWasl = { baseUrl: '', apiKey: '', clientId: '', clientSecret: '', appId: '' };
 assert.equal(isWaslConfigured(emptyWasl), false);
-const skippedWasl = await callWasl('POST', '/tracking/v1/drivers', { national_id: 'x' }, emptyWasl);
+const skippedWasl = await callWasl('POST', '/drivers', { national_id: 'x' }, emptyWasl);
 assert.equal(skippedWasl.skipped, true);
 assert.equal(skippedWasl.reason, 'WASL_NOT_CONFIGURED');
 assert.equal(
   isWaslConfigured({
-    baseUrl: 'https://wasl.tga.gov.sa/api',
+    baseUrl: 'https://wasl.api.elm.sa/api/tracking/v1',
     apiKey: '',
     clientId: '',
+    clientSecret: '',
     appId: '',
   }),
   false
 );
+assert.equal(
+  isWaslConfigured({
+    baseUrl: 'https://wasl.api.elm.sa/api/tracking/v1',
+    apiKey: '',
+    clientId: 'client-id',
+    clientSecret: 'client-secret',
+    appId: '',
+  }),
+  true
+);
+const headers = waslAuthHeaders({
+  baseUrl: 'https://wasl.api.elm.sa/api/tracking/v1',
+  apiKey: '',
+  clientId: 'client-id',
+  clientSecret: 'client-secret',
+  appId: 'app-id',
+});
+assert.equal(headers['client-id'], 'client-id');
+assert.equal(headers['X-IBM-Client-Id'], 'client-id');
+assert.equal(headers['X-IBM-Client-Secret'], 'client-secret');
+assert.equal(headers['app-key'], 'client-secret');
+assert.equal(headers['app-id'], 'app-id');
+assert.equal(waslCallSucceeded({ success: false, resultCode: 'bad_request' }, 200), false);
+assert.equal(waslCallSucceeded({ success: true }, 200), true);
 
 console.log('wasl + tap split checks passed');

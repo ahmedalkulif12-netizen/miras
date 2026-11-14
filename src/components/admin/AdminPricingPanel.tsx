@@ -91,10 +91,12 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
     }
     setSavingId(serviceId);
     try {
+      const seeded = defaultPricingForService(serviceId);
+      const { flatbed_tariff: _keepTariff, ...seededWithoutTariff } = seeded;
       await setDoc(
         doc(db, 'pricing', serviceId),
         {
-          ...defaultPricingForService(serviceId),
+          ...seededWithoutTariff,
           tier_prices: tierPrices,
           delivery_fee: Number(config.delivery_fee) || 0,
           customer_service_fee_percentage: feeOrDefault(

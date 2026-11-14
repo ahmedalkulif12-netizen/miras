@@ -90,6 +90,8 @@ export interface CalculateOrderPriceOptions {
   truckCount?: number;
   pickupCity?: string;
   dropoffCity?: string;
+  intraCityService?: string;
+  tiresIntact?: boolean | null;
 }
 
 /** Local quote using the same engine as the server (bypass / offline). */
@@ -120,6 +122,10 @@ function buildLocalDevPrice(
           newCylinderQuantity: options.newCylinderQuantity,
         }
       : {}),
+    pickupCity: options.pickupCity,
+    dropoffCity: options.dropoffCity,
+    intraCityService: options.intraCityService,
+    tiresIntact: options.tiresIntact,
   });
   const lineSubtotal = Math.round((fare.base + fare.extraKmCost) * 100) / 100;
   const truckCount = options.truckCount ?? 1;
@@ -197,7 +203,8 @@ export const calculateOrderPrice = async (
   capacity?: string,
   option?: string,
   waterType?: string,
-  gasQuantities?: { exchangeQuantity: number; newCylinderQuantity: number }
+  gasQuantities?: { exchangeQuantity: number; newCylinderQuantity: number },
+  flatbed?: { intraCityService?: string; tiresIntact?: boolean | null }
 ): Promise<CalculatedPrice> => {
   const service = normalizeServiceType(serviceType) as LogisticsServiceType;
   const normalizedCapacity =
@@ -230,6 +237,8 @@ export const calculateOrderPrice = async (
         serviceType: service,
         pickupCity,
         dropoffCity,
+        ...(flatbed?.intraCityService ? { intraCityService: flatbed.intraCityService } : {}),
+        ...(flatbed && flatbed.tiresIntact != null ? { tiresIntact: flatbed.tiresIntact } : {}),
         truckType,
         truckCount,
         previousOrdersCount: paidCount,
@@ -264,6 +273,8 @@ export const calculateOrderPrice = async (
       truckCount,
       pickupCity,
       dropoffCity,
+      intraCityService: flatbed?.intraCityService,
+      tiresIntact: flatbed?.tiresIntact,
     });
   }
 };

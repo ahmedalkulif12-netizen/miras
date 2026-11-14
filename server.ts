@@ -111,6 +111,7 @@ import {
 import { upsertOperatorRegistration } from './server/lib/operatorRegistration.ts';
 import { assignFleetDriver } from './server/lib/fleetRoster.ts';
 import {
+  syncWaslDriverVerification,
   syncWaslLocation,
   syncWaslTripComplete,
   syncWaslTripStart,
@@ -2422,6 +2423,38 @@ async function startServer() {
       console.error('Complete order error:', error);
       res.status(error?.statusCode ?? 500).json({
         error: error?.message || 'Failed to complete order',
+      });
+    }
+  });
+
+  app.post('/api/wasl/drivers/verify', ...secureApi, async (req: AuthenticatedRequest, res: any) => {
+    try {
+      const requestedId = String(req.body?.driverId || '').trim();
+      const token = req.firebaseToken as { admin?: boolean; role?: string; superuser?: boolean } | undefined;
+      const isAdmin =
+        token?.admin === true ||
+        token?.superuser === true ||
+        token?.role === 'admin' ||
+        token?.role === 'superuser';
+      const driverId = requestedId || req.firebaseUid || '';
+      if (!driverId) return res.status(401).json({ error: 'Sign-in required' });
+      if (!isAdmin && driverId !== req.firebaseUid) {
+        return res.status(403).json({ error: 'You can only verify your own driver profile' });
+      }
+      const result = await syncWaslDriverVerification(db, driverId);
+      res.json({
+        ok: result.ok,
+        skipped: result.skipped || false,
+        reason: result.reason || null,
+        reference: result.reference || null,
+        eligibility: result.eligibility || null,
+        httpStatus: result.httpStatus ?? null,
+        error: result.error || null,
+      });
+    } catch (error: any) {
+      console.error('[wasl] driver verification failed', error?.message);
+      res.status(error?.statusCode ?? 500).json({
+        error: error?.message || 'Failed to verify driver with WASL',
       });
     }
   });
