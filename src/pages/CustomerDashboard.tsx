@@ -10,13 +10,16 @@ import { toast } from 'sonner';
 import { useTranslation } from 'react-i18next';
 import { doc, onSnapshot, collection, query, where, limit, orderBy, getDoc } from 'firebase/firestore';
 import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
-import { prepareCheckoutDraft, clearCheckoutDraft, loadCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
+import { prepareCheckoutDraft, clearCheckoutDraft, loadDemoOrderFromSession } from '@/lib/checkoutDraft';
 import {
+  dropLocalBroadcastOrders,
+  isGhostOrderId,
   loadLocalBroadcastOrders,
   LOCAL_ORDERS_CHANGED_EVENT,
   subscribeLocalBroadcastOrders,
   upsertLocalBroadcastOrder,
 } from '@/lib/localOrderBridge';
+import { CustomerTripInvoice } from '@/components/CustomerTripInvoice';
 import { mapOrderStatusToTrackingUI, normalizeOrderStatus, isActiveTripStatus, clientTimelineStep, preferFresherOrderStatus, getDriverNavPhase, isAwaitingDriverAccept, canOpenLiveTracking } from '@/domain/order-status';
 import { FREE_SERVICE_FEE_ORDERS, buildTripFinancials, coerceMoney, normalizeTripFinancials, CUSTOMER_SERVICE_FEE_RATE, roundMoney } from '@/domain/financials';
 import { ensureSignedInFirebaseUid } from '@/lib/firebaseAuthSession';
@@ -96,7 +99,6 @@ import {
 } from '@/domain/dispatchMatching';
 import { isWaterTankerService } from '@/domain/waterTanker';
 import { getFleetOptions } from '@/lib/fleetServiceCatalog';
-import { GasCylinderInvoice } from '@/components/GasCylinderInvoice';
 import type { GasCylinderLines } from '@/domain/gasCylinders';
 import { buildClientOrdersPath } from '@/lib/authRouting';
 
@@ -2241,61 +2243,23 @@ const CustomerDashboard: React.FC = () => {
                         exit={{ opacity: 0, y: 10 }}
                         className={`bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6 ${isRtl ? 'text-right' : 'text-left'}`}
                       >
-                        <div className={`p-2 mb-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2 text-[10px] text-blue-700 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                          <Info size={14} className="flex-shrink-0" />
-                          <span className="font-bold">{isRtl ? 'التسعير يعتمد على نوع الخدمة المختارة' : 'Pricing depends on the selected service type'}</span>
-                        </div>
-                        <h3 className={`font-bold flex items-center gap-2 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}><CreditCard size={20} /> {t('price_details')}</h3>
-                        <div className="space-y-3 text-sm">
-                          <GasCylinderInvoice
-                            lines={pricing.gasLines}
-                            isRtl={isRtl}
-                            currency={t('sar')}
-                          />
-                          {serviceType === 'flatbed' && (
-                            <>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{isRtl ? 'نوع الخدمة' : 'Service'}</span>
-                                <span className="font-bold">
-                                  {intraCityService === 'workshop'
-                                    ? isRtl ? 'من ورشة إلى ورشة' : 'Workshop to workshop'
-                                    : intraCityService === 'industrial'
-                                      ? isRtl ? 'مشوار الصناعية' : 'Industrial area'
-                                      : isRtl ? 'تقدير الحوادث' : 'Taqdeer'}
-                                </span>
-                              </div>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{isRtl ? 'نوع السطحة' : 'Flatbed'}</span>
-                                <span className="font-bold">{t(OPTION_LABELS[serviceOption] || serviceOption)}</span>
-                              </div>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{isRtl ? 'الأجرة الأساسية' : 'Base fare'}</span>
-                                <span className="font-bold">{pricing.base.toFixed(2)} {t('sar')}</span>
-                              </div>
-                              <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                                <span className="text-gray-500">{isRtl ? 'حالة الكفرات' : 'Tire surcharge'}</span>
-                                <span className="font-bold">{pricing.extraKm.toFixed(2)} {t('sar')}</span>
-                              </div>
-                            </>
-                          )}
-                          <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span className="text-gray-500">{t('distance')}</span>
-                            <span className="font-bold">
-                              {routeDistanceKm.toFixed(1)} {t('km')}
-                            </span>
-                          </div>
-                          <div className={`flex justify-between ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span className="text-gray-500">{t('service_fee')}</span>
-                            <div className={`flex flex-col ${isRtl ? 'items-end' : 'items-start'}`}>
-                              <span className={pricing.isServiceFeeFree ? "line-through text-gray-300" : ""}>{listedServiceFee.toFixed(2)} {t('sar')}</span>
-                              {pricing.isServiceFeeFree && <span className="text-[10px] text-green-500 font-bold">{t('free')} ({t('first_3_orders')})</span>}
-                            </div>
-                          </div>
-                          <div className={`pt-3 border-t border-dashed flex justify-between font-bold text-lg ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <span>{t('total')}</span>
-                            <span className="text-primary">{checkoutTotal.toFixed(2)} {t('sar')}</span>
-                          </div>
-                        </div>
+                        <CustomerTripInvoice
+                          isRtl={isRtl}
+                          service={formatOrderServiceLabel(serviceType, { type: serviceOption, waterType, capacity: tankCapacityLabel }, t as never).title}
+                          detail={[
+                            serviceType === 'flatbed' && intraCityService === 'workshop' ? (isRtl ? 'من ورشة إلى ورشة' : 'Workshop to workshop') : '',
+                            serviceType === 'flatbed' && intraCityService === 'industrial' ? (isRtl ? 'مشوار الصناعية' : 'Industrial area') : '',
+                            serviceType === 'flatbed' && intraCityService === 'taqdeer' ? (isRtl ? 'تقدير الحوادث' : 'Taqdeer') : '',
+                            serviceOption ? t(OPTION_LABELS[serviceOption] || serviceOption) : '',
+                          ].filter(Boolean).join(' · ')}
+                          from={serviceType === 'water_tanker' ? '' : pickup}
+                          to={destination}
+                          fare={tripFareDisplay}
+                          fee={listedServiceFee}
+                          total={checkoutTotal}
+                          currency={t('sar')}
+                          feeWaived={pricing.isServiceFeeFree}
+                        />
                         {pricingError ? (
                           <p className="text-xs text-red-500 font-bold">{pricingError}</p>
                         ) : isLoadingPricing ? (
@@ -2405,41 +2369,18 @@ const CustomerDashboard: React.FC = () => {
                  <div className="space-y-6">
                     <div className={`bg-white p-8 rounded-[40px] shadow-sm border border-gray-100 space-y-6 relative overflow-hidden ${isRtl ? 'text-right' : 'text-left'}`}>
                       <div className={`absolute top-0 ${isRtl ? 'left-0' : 'right-0'} w-24 h-24 bg-primary/10 rounded-br-[60px] -translate-x-6 -translate-y-6`}></div>
-                      <h3 className="font-bold text-xl border-b pb-4">{t('order_summary')}</h3>
-                      
-                      <div className="space-y-4">
-                        <GasCylinderInvoice
-                          lines={pricing.gasLines}
-                          isRtl={isRtl}
-                          currency={t('sar')}
-                        />
-                        <div className="flex justify-between text-sm text-gray-500">
-                          <span>{t('distance')}</span>
-                          <span className="font-bold text-neutral-800">
-                            {routeDistanceKm.toFixed(1)} {t('km')}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm text-gray-500">
-                          <span>{t('service_fee')}</span>
-                          <span className={pricing.isServiceFeeFree ? 'line-through text-gray-300' : ''}>
-                            {listedServiceFee.toFixed(2)} {t('sar')}
-                          </span>
-                        </div>
-                        {pricing.isServiceFeeFree && (
-                          <div className="flex justify-between text-sm text-green-600 font-bold">
-                            <span>{t('first_3_orders')}</span>
-                            <span>{t('free')}</span>
-                          </div>
-                        )}
-
-                        <div className="pt-6 border-t border-dashed flex justify-between items-end">
-                          <div>
-                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">{t('total_final')}</p>
-                            <p className="text-3xl font-black text-black">{checkoutTotal.toFixed(2)} <span className="text-xs font-medium">{t('sar')}</span></p>
-                          </div>
-                          <CheckCircle2 size={32} className="text-primary mb-1" />
-                        </div>
-                      </div>
+                      <CustomerTripInvoice
+                        isRtl={isRtl}
+                        service={formatOrderServiceLabel(serviceType, { type: serviceOption, waterType, capacity: tankCapacityLabel }, t as never).title}
+                        detail={serviceOption ? t(OPTION_LABELS[serviceOption] || serviceOption) : ''}
+                        from={serviceType === 'water_tanker' ? '' : pickup}
+                        to={destination}
+                        fare={tripFareDisplay}
+                        fee={listedServiceFee}
+                        total={checkoutTotal}
+                        currency={t('sar')}
+                        feeWaived={pricing.isServiceFeeFree}
+                      />
 
                       <button 
                        onClick={handlePayment}
@@ -3101,6 +3042,8 @@ type HistoryRow = {
   dropoffLng?: number;
   driverName?: string;
   paymentStatus?: string;
+  tripFare?: number;
+  serviceFee?: number;
 };
 
 function formatCreatedAtLabel(created: unknown): string {
@@ -3158,6 +3101,8 @@ function mapOrderHistoryRow(id: string, data: Record<string, unknown>): HistoryR
       ?? coerceLatLng(data.destinationCoords)?.lng,
     driverName: String(driver?.name || data.driverName || data.driverPhone || ''),
     paymentStatus: String(data.paymentStatus || ''),
+    tripFare: coerceMoney(financials.tripFare ?? data.tripFare ?? data.price),
+    serviceFee: coerceMoney(financials.serviceFee ?? data.serviceFee),
   };
 }
 
@@ -3206,28 +3151,11 @@ function mergeHistoryRows(rows: HistoryRow[]): HistoryRow[] {
       dropoffLng: row.dropoffLng ?? prev.dropoffLng,
       driverName: row.driverName || prev.driverName,
       paymentStatus: row.paymentStatus || prev.paymentStatus,
+      tripFare: row.tripFare || prev.tripFare,
+      serviceFee: row.serviceFee || prev.serviceFee,
     });
   }
   return Array.from(byId.values()).sort((a, b) => b.sortMs - a.sortMs);
-}
-
-function sessionFallbackRow(orderId: string): HistoryRow | null {
-  const demo = loadDemoOrderFromSession(orderId);
-  if (!demo) return null;
-  const draftCreatedAt = loadCheckoutDraft(orderId)?.createdAt;
-  return mapOrderHistoryRow(orderId, {
-    serviceType: demo.serviceType,
-    financials: demo.financials,
-    status: 'broadcasting',
-    createdAt: draftCreatedAt,
-    serviceDetails: demo.serviceDetails || {},
-    totalPrice: demo.financials?.customerTotal,
-    price: demo.financials?.customerTotal,
-    pickupLat: demo.pickupLat,
-    pickupLng: demo.pickupLng,
-    dropoffLat: demo.dropoffLat,
-    dropoffLng: demo.dropoffLng,
-  });
 }
 
 /** Real order history — live Firestore feed so new paid orders appear immediately. */
@@ -3284,19 +3212,16 @@ const CustomerOrderHistory: React.FC<{
         publishNow();
       });
     };
+    let sawLiveOrders = false;
     const publishNow = () => {
       if (cancelled) return;
-      const localRows = loadLocalBroadcastOrders()
-        .filter((entry) => ownerMatches(entry.data, matchUid))
-        .map((entry) => mapOrderHistoryRow(entry.id, entry.data));
-      const placedRow = placedId ? sessionFallbackRow(placedId) : null;
-      setOrders(
-        mergeHistoryRows([
-          ...firestoreRows.values(),
-          ...localRows,
-          ...(placedRow ? [placedRow] : []),
-        ])
-      );
+      const live = [...firestoreRows.values()].filter((row) => !isGhostOrderId(row.id));
+      const liveIds = new Set(live.map((row) => row.id));
+      const ghosts = loadLocalBroadcastOrders()
+        .map((entry) => entry.id)
+        .filter((id) => isGhostOrderId(id) || (sawLiveOrders && !liveIds.has(id)));
+      if (ghosts.length) dropLocalBroadcastOrders(ghosts);
+      setOrders(mergeHistoryRows(live));
       setLoading(false);
     };
 
@@ -3305,6 +3230,7 @@ const CustomerOrderHistory: React.FC<{
     };
 
     const remember = (id: string, data: Record<string, unknown>) => {
+      if (isGhostOrderId(id)) return;
       if (matchUid && !ownerMatches(data, matchUid)) return;
       firestoreRows.set(id, mapOrderHistoryRow(id, data));
       if (matchUid) rememberCustomerOrderId(matchUid, id);
@@ -3421,6 +3347,7 @@ const CustomerOrderHistory: React.FC<{
         onSnapshot(
           q,
           (snap) => {
+            sawLiveOrders = true;
             snap.docs.forEach((d) => remember(d.id, d.data() as Record<string, unknown>));
             publish();
           },
@@ -3439,6 +3366,7 @@ const CustomerOrderHistory: React.FC<{
             limit(50)
           ),
           (snap) => {
+            sawLiveOrders = true;
             snap.docs.forEach((d) => remember(d.id, d.data() as Record<string, unknown>));
             publish();
           },
@@ -3457,6 +3385,7 @@ const CustomerOrderHistory: React.FC<{
             limit(50)
           ),
           (snap) => {
+            sawLiveOrders = true;
             snap.docs.forEach((d) => remember(d.id, d.data() as Record<string, unknown>));
             publish();
           },
@@ -3650,29 +3579,27 @@ const CustomerOrderHistory: React.FC<{
               </button>
             </div>
 
-            <div className="space-y-3 text-sm">
-              {selected.pickupAddress ? (
-                <p>
-                  <span className="text-stone-400 font-bold">{isRtl ? 'من' : 'From'}: </span>
-                  {selected.pickupAddress}
-                </p>
-              ) : null}
-              {selected.dropoffAddress ? (
-                <p>
-                  <span className="text-stone-400 font-bold">{isRtl ? 'إلى' : 'To'}: </span>
-                  {selected.dropoffAddress}
-                </p>
-              ) : null}
-              {selected.driverName ? (
-                <p>
-                  <span className="text-stone-400 font-bold">{isRtl ? 'السائق' : 'Driver'}: </span>
-                  {selected.driverName}
-                </p>
-              ) : null}
-              <p className="font-black">
-                {selected.amount.toFixed(2)} {t('sar')}
-              </p>
-            </div>
+            <CustomerTripInvoice
+              isRtl={isRtl}
+              service={formatOrderServiceLabel(selected.serviceType, { waterType: selected.waterType, capacity: selected.capacity, type: selected.type }, t as never).title}
+              detail={selected.driverName ? (isRtl ? `السائق: ${selected.driverName}` : `Driver: ${selected.driverName}`) : ''}
+              from={selected.pickupAddress}
+              to={selected.dropoffAddress}
+              fare={selected.tripFare || selected.amount}
+              fee={selected.serviceFee || 0}
+              total={selected.amount}
+              currency={t('sar')}
+              feeWaived={!selected.serviceFee}
+            />
+            {canOpenLiveTracking(selected.status) && (
+              <button
+                type="button"
+                onClick={() => navigate(`/b2c/client?track=${encodeURIComponent(selected.id)}`)}
+                className="w-full py-3 rounded-2xl bg-black text-white text-sm font-black"
+              >
+                {isRtl ? 'تتبع السائق' : 'Follow the driver'}
+              </button>
+            )}
 
             {(selected.pickupAddress || selected.dropoffAddress) && (
               <div className="grid grid-cols-2 gap-2">

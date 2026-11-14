@@ -44,8 +44,27 @@ export function normalizeIban(raw: string): string {
     .toUpperCase();
 }
 
+/** ISO 13616 checksum. A Saudi IBAN is valid only when this remainder is 1. */
+export function ibanChecksumRemainder(iban: string): number | null {
+  const compact = normalizeIban(iban);
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]+$/.test(compact)) return null;
+  const rearranged = compact.slice(4) + compact.slice(0, 4);
+  let expanded = '';
+  for (const ch of rearranged) {
+    const code = ch.charCodeAt(0);
+    expanded += code >= 65 && code <= 90 ? String(code - 55) : ch;
+  }
+  let remainder = 0;
+  for (const digit of expanded) {
+    remainder = (remainder * 10 + Number(digit)) % 97;
+  }
+  return remainder;
+}
+
 export function isValidSaudiIban(iban: string): boolean {
-  return /^SA\d{22}$/.test(normalizeIban(iban));
+  const compact = normalizeIban(iban);
+  if (!/^SA\d{22}$/.test(compact)) return false;
+  return ibanChecksumRemainder(compact) === 1;
 }
 
 export function isIsoDate(value: string): boolean {

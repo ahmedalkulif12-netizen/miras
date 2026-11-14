@@ -9,6 +9,10 @@
  */
 
 import { cityCenterFromName } from '../lib/cityCoordinates';
+import {
+  normalizeDriverCommissionTiers,
+  type DriverCommissionTier,
+} from './financials';
 
 export const INTRA_CITY_SERVICES = ['workshop', 'general', 'industrial', 'taqdeer'] as const;
 export type IntraCityService = (typeof INTRA_CITY_SERVICES)[number];
@@ -27,6 +31,23 @@ export interface IntraCityPrices {
 }
 
 export type FlatbedPricingScope = 'intra_city' | 'inter_city';
+export type FlatbedKind = keyof FlatbedOffsets;
+
+/** One flatbed type's price for either inside the city or outside it. */
+export interface FlatbedScopeRate {
+  basePrice: number;
+  includedKm: number;
+  extraKmRate: number;
+  /** Used on inter-city quotes. Intra-city quotes ignore it. */
+  minimumFare: number;
+}
+
+export interface FlatbedTypeRates {
+  intra: FlatbedScopeRate;
+  inter: FlatbedScopeRate;
+}
+
+export type FlatbedTypeTable = Record<FlatbedKind, FlatbedTypeRates>;
 
 export interface FlatbedTariff {
   intercityBaseFee: number;
@@ -43,14 +64,20 @@ export interface FlatbedTariff {
   intraExtraKmRate: number;
   /** Percent of the intra-city trip fare kept from the driver. */
   intraDriverCommissionPercentage: number;
+  /** Loyalty bands for inside-city trips. The first band is the starting commission. */
+  intraDriverCommissionTiers: DriverCommissionTier[];
   /** Percent of the intra-city trip fare charged to the customer. */
   intraCustomerServiceFeePercentage: number;
   /** Percent of the inter-city trip fare kept from the driver. */
   intercityDriverCommissionPercentage: number;
+  /** Loyalty bands for outside-city trips. The first band is the starting commission. */
+  intercityDriverCommissionTiers: DriverCommissionTier[];
   /** Percent of the inter-city trip fare charged to the customer. */
   intercityCustomerServiceFeePercentage: number;
   offsets: FlatbedOffsets;
   intraCity: IntraCityPrices;
+  /** Direct price for each flatbed type, split into inside-city and outside-city. */
+  types: FlatbedTypeTable;
 }
 
 export const DEFAULT_FLATBED_TARIFF: FlatbedTariff = {
@@ -64,11 +91,27 @@ export const DEFAULT_FLATBED_TARIFF: FlatbedTariff = {
   intraIncludedKm: 25,
   intraExtraKmRate: 1.5,
   intraDriverCommissionPercentage: 10,
+  intraDriverCommissionTiers: normalizeDriverCommissionTiers(undefined, 10),
   intraCustomerServiceFeePercentage: 5,
   intercityDriverCommissionPercentage: 15,
+  intercityDriverCommissionTiers: normalizeDriverCommissionTiers(undefined, 15),
   intercityCustomerServiceFeePercentage: 5,
   offsets: { hydraulic: 0, normal: -100, box: 250 },
   intraCity: { workshop: 70, general: 100, industrial: 150, taqdeer: 250 },
+  types: {
+    hydraulic: {
+      intra: { basePrice: 150, includedKm: 25, extraKmRate: 1.5, minimumFare: 0 },
+      inter: { basePrice: 70, includedKm: 0, extraKmRate: 2.2, minimumFare: 350 },
+    },
+    normal: {
+      intra: { basePrice: 50, includedKm: 25, extraKmRate: 1.5, minimumFare: 0 },
+      inter: { basePrice: 0, includedKm: 0, extraKmRate: 2, minimumFare: 250 },
+    },
+    box: {
+      intra: { basePrice: 400, includedKm: 25, extraKmRate: 1.5, minimumFare: 0 },
+      inter: { basePrice: 320, includedKm: 0, extraKmRate: 2.2, minimumFare: 600 },
+    },
+  },
 };
 
 function money(value: unknown, fallback: number): number {
@@ -93,6 +136,15 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function readScopeRate(source: Record<string, unknown>, fallback: FlatbedScopeRate): FlatbedScopeRate {
+  return {
+    basePrice: money(source.basePrice ?? source.base_price, fallback.basePrice),
+    includedKm: nonNegative(source.includedKm ?? source.included_km, fallback.includedKm),
+    extraKmRate: nonNegative(source.extraKmRate ?? source.extra_km_rate, fallback.extraKmRate),
+    minimumFare: nonNegative(source.minimumFare ?? source.minimum_fare, fallback.minimumFare),
+  };
+}
+
 export function readFlatbedTariff(source: unknown): FlatbedTariff {
   const root = asRecord(source);
   const nested = asRecord(root.flatbed_tariff);
@@ -103,6 +155,28 @@ export function readFlatbedTariff(source: unknown): FlatbedTariff {
   const offsets = { ...asRecord(row.offsets), ...asRecord(mods.offsets) };
   const intraPrices = asRecord(row.intraCity);
   const defaults = DEFAULT_FLATBED_TARIFF;
+  const storedTypes = asRecord(row.types);
+  const intraTypes = asRecord(intraNode.types);
+  const interTypes = asRecord(interNode.types);
+  const kinds: FlatbedKind[] = ['hydraulic', 'normal', 'box'];
+  const types = {} as FlatbedTypeTable;
+  for (const kind of kinds) {
+    const storedKind = asRecord(storedTypes[kind]);
+    types[kind] = {
+      intra: readScopeRate(
+        asRecord(intraTypes[kind]).basePrice != null || asRecord(intraTypes[kind]).base_price != null
+          ? asRecord(intraTypes[kind])
+          : asRecord(storedKind.intra),
+        defaults.types[kind].intra
+      ),
+      inter: readScopeRate(
+        asRecord(interTypes[kind]).basePrice != null || asRecord(interTypes[kind]).base_price != null
+          ? asRecord(interTypes[kind])
+          : asRecord(storedKind.inter),
+        defaults.types[kind].inter
+      ),
+    };
+  }
   return {
     intercityBaseFee: nonNegative(
       interNode.basePrice ?? interNode.base_price ?? row.intercityBaseFee ?? row.intercity_base_fee,
@@ -140,6 +214,13 @@ export function readFlatbedTariff(source: unknown): FlatbedTariff {
       intraNode.driverCommissionPercentage ?? intraNode.driver_commission_percentage ?? row.intraDriverCommissionPercentage,
       defaults.intraDriverCommissionPercentage
     ),
+    intraDriverCommissionTiers: normalizeDriverCommissionTiers(
+      intraNode.driver_commission_tiers ?? intraNode.driverCommissionTiers ?? row.intraDriverCommissionTiers,
+      percent(
+        intraNode.driverCommissionPercentage ?? intraNode.driver_commission_percentage ?? row.intraDriverCommissionPercentage,
+        defaults.intraDriverCommissionPercentage
+      )
+    ),
     intraCustomerServiceFeePercentage: percent(
       intraNode.customerServiceFeePercentage ?? intraNode.customer_service_fee_percentage ?? row.intraCustomerServiceFeePercentage,
       defaults.intraCustomerServiceFeePercentage
@@ -147,6 +228,13 @@ export function readFlatbedTariff(source: unknown): FlatbedTariff {
     intercityDriverCommissionPercentage: percent(
       interNode.driverCommissionPercentage ?? interNode.driver_commission_percentage ?? row.intercityDriverCommissionPercentage,
       defaults.intercityDriverCommissionPercentage
+    ),
+    intercityDriverCommissionTiers: normalizeDriverCommissionTiers(
+      interNode.driver_commission_tiers ?? interNode.driverCommissionTiers ?? row.intercityDriverCommissionTiers,
+      percent(
+        interNode.driverCommissionPercentage ?? interNode.driver_commission_percentage ?? row.intercityDriverCommissionPercentage,
+        defaults.intercityDriverCommissionPercentage
+      )
     ),
     intercityCustomerServiceFeePercentage: percent(
       interNode.customerServiceFeePercentage ?? interNode.customer_service_fee_percentage ?? row.intercityCustomerServiceFeePercentage,
@@ -170,6 +258,7 @@ export function readFlatbedTariff(source: unknown): FlatbedTariff {
         defaults.intraCity.taqdeer
       ),
     },
+    types,
   };
 }
 
@@ -182,8 +271,14 @@ export function flatbedConfigNodes(tariff: FlatbedTariff): Record<string, unknow
       includedKm: next.intraIncludedKm,
       extraKmRate: next.intraExtraKmRate,
       driverCommissionPercentage: next.intraDriverCommissionPercentage,
+      driver_commission_tiers: next.intraDriverCommissionTiers,
       customerServiceFeePercentage: next.intraCustomerServiceFeePercentage,
       taqdeerPrice: next.intraCity.taqdeer,
+      types: {
+        hydraulic: next.types.hydraulic.intra,
+        normal: next.types.normal.intra,
+        box: next.types.box.intra,
+      },
     },
     inter_city: {
       basePrice: next.intercityBaseFee,
@@ -191,7 +286,13 @@ export function flatbedConfigNodes(tariff: FlatbedTariff): Record<string, unknow
       minimumFare: next.intercityMinimumFare,
       sameCityRadiusKm: next.sameCityRadiusKm,
       driverCommissionPercentage: next.intercityDriverCommissionPercentage,
+      driver_commission_tiers: next.intercityDriverCommissionTiers,
       customerServiceFeePercentage: next.intercityCustomerServiceFeePercentage,
+      types: {
+        hydraulic: next.types.hydraulic.inter,
+        normal: next.types.normal.inter,
+        box: next.types.box.inter,
+      },
     },
     flatbed_modifiers: {
       offsets: next.offsets,
@@ -200,6 +301,15 @@ export function flatbedConfigNodes(tariff: FlatbedTariff): Record<string, unknow
     },
     flatbed_tariff: next,
   };
+}
+
+export function flatbedDriverTiersForScope(
+  tariff: FlatbedTariff,
+  scope: FlatbedPricingScope
+): DriverCommissionTier[] {
+  return scope === 'inter_city'
+    ? tariff.intercityDriverCommissionTiers
+    : tariff.intraDriverCommissionTiers;
 }
 
 export function flatbedFeesForScope(tariff: FlatbedTariff, scope: FlatbedPricingScope): {
@@ -318,40 +428,24 @@ export function quoteFlatbed(input: FlatbedQuoteInput): FlatbedQuote {
     radiusKm: tariff.sameCityRadiusKm,
   });
   const kind = normalizeFlatbedKind(input.truckType);
-  const offset = tariff.offsets[kind];
   const requestedMode = normalizeIntraCityService(input.intraCityService);
-  const usesKmThreshold = requestedMode === 'workshop' || requestedMode === 'industrial';
-  let distanceFare = 0;
-  let intra: IntraCityService | null = null;
-  let includedKm = 0;
-  let billableKm = 0;
-  let ratePerKm = 0;
-  if (usesKmThreshold) {
-    intra = requestedMode;
-    includedKm = tariff.intraIncludedKm;
-    billableKm = Math.max(0, Math.round((distanceKm - includedKm) * 10) / 10);
-    ratePerKm = tariff.intraExtraKmRate;
-    distanceFare = Math.round((tariff.intraBasePrice + billableKm * ratePerKm) * 100) / 100;
-  } else if (sameCity) {
-    intra = requestedMode;
-    distanceFare = tariff.intraCity[intra];
-  } else {
-    const metered = tariff.intercityBaseFee + tariff.intercityRatePerKm * distanceKm;
-    distanceFare = Math.max(tariff.intercityMinimumFare, Math.round(metered * 100) / 100);
-    ratePerKm = tariff.intercityRatePerKm;
-    billableKm = distanceKm;
-  }
-  const shifted = Math.round((distanceFare + offset) * 100) / 100;
-  const fareBeforeTire = offset < 0 ? Math.max(tariff.offsetFloor, shifted) : Math.max(0, shifted);
+  const typeRate = sameCity ? tariff.types[kind].intra : tariff.types[kind].inter;
+  const includedKm = typeRate.includedKm;
+  const billableKm = Math.max(0, Math.round((distanceKm - includedKm) * 10) / 10);
+  const ratePerKm = typeRate.extraKmRate;
+  const distanceFare = Math.round((typeRate.basePrice + billableKm * ratePerKm) * 100) / 100;
+  const offset = 0;
+  const intra: IntraCityService | null = sameCity ? requestedMode : null;
+  const fareBeforeTire = Math.max(0, distanceFare);
   const tireSurcharge = input.tiresIntact === false ? tariff.tireDamageSurcharge : 0;
-  const pricingScope: FlatbedPricingScope = usesKmThreshold || sameCity ? 'intra_city' : 'inter_city';
+  const pricingScope: FlatbedPricingScope = sameCity ? 'intra_city' : 'inter_city';
   const fees = flatbedFeesForScope(tariff, pricingScope);
   return {
     tripType: sameCity ? 'inside_city' : 'outside_city',
     sameCity,
     distanceKm,
     ratePerKm,
-    baseFee: usesKmThreshold ? tariff.intraBasePrice : sameCity ? distanceFare : tariff.intercityBaseFee,
+    baseFee: typeRate.basePrice,
     distanceFare,
     includedKm,
     billableKm,

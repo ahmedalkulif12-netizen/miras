@@ -93,7 +93,7 @@ const taqdeer = quoteFlatbed({
   truckType: 'box',
   intraCityService: 'taqdeer',
 });
-assert(taqdeer.tripFare === 500, `taqdeer box should be 500, got ${taqdeer.tripFare}`);
+assert(taqdeer.tripFare === 400, `same-city box uses the inside-city table, got ${taqdeer.tripFare}`);
 
 const shortHaul = quoteFlatbed({
   distanceKm: 20,
@@ -101,7 +101,7 @@ const shortHaul = quoteFlatbed({
   dropoffCity: 'Jeddah',
   truckType: 'hydraulic',
 });
-assert(shortHaul.tripFare === 350, 'inter-city fare respects the 350 floor');
+assert(shortHaul.tripFare === 114, `20 km hydraulic outside the city is 114, got ${shortHaul.tripFare}`);
 
 const pricing = defaultPricingForService('flatbed');
 const viaEngine = computeTripFare(pricing, {

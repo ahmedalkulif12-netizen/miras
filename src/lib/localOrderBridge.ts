@@ -143,6 +143,39 @@ export function buildSharedOrderDocument(
 const LOCAL_BROADCAST_KEY = 'miras_local_broadcast_orders';
 export const LOCAL_ORDERS_CHANGED_EVENT = 'miras-local-orders-changed';
 
+export function isGhostOrderId(id: string): boolean {
+  const value = String(id || '').toLowerCase().replace(/^driver:/, '');
+  return (
+    value === 'dev-preview' ||
+    value.startsWith('demo-') ||
+    value.startsWith('dev-') ||
+    value.startsWith('e2e-') ||
+    value.startsWith('test-')
+  );
+}
+
+/** Drop local-only orders that were never stored in Firebase. */
+export function dropLocalBroadcastOrders(ids: string[]): void {
+  if (!ids.length || typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(LOCAL_BROADCAST_KEY);
+    if (!raw) return;
+    const map = JSON.parse(raw) as Record<string, unknown>;
+    let changed = false;
+    for (const id of ids) {
+      if (id in map) {
+        delete map[id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    localStorage.setItem(LOCAL_BROADCAST_KEY, JSON.stringify(map));
+    window.dispatchEvent(new CustomEvent(LOCAL_ORDERS_CHANGED_EVENT));
+  } catch {
+    /* ignore a broken local cache */
+  }
+}
+
 export function loadLocalBroadcastOrders(): Array<{
   id: string;
   data: Record<string, unknown>;

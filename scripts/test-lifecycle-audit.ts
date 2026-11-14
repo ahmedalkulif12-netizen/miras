@@ -88,6 +88,7 @@ import {
 import {
   CORE_SERVICE_TYPES,
   aggregateServiceDistribution,
+  aggregateMonthlyPlatformIncome,
   driverMatchesOrderService,
   resolveStoredOrderServiceType,
 } from '../src/domain/serviceCategories.ts';
@@ -1008,6 +1009,38 @@ async function run(): Promise<void> {
   assert(byType.goods_transport === 1, 'cargo alias counts as goods_transport');
   assert(byType.heavy_equipment === 1, 'heavy equipment is counted');
   assert(byType.gas_delivery === 0, 'gas delivery stays in the catalog when it has no orders');
+  const month = new Date().toISOString();
+  const income = aggregateMonthlyPlatformIncome([
+    {
+      id: 'demo-old',
+      status: 'completed',
+      serviceType: 'flatbed',
+      createdAt: month,
+      financials: { platformFee: 500, serviceFee: 50 },
+    },
+    {
+      id: 'real-1',
+      status: 'completed',
+      serviceType: 'furniture_moving',
+      createdAt: month,
+      financials: { platformFee: 30, serviceFee: 10 },
+    },
+    {
+      id: 'real-2',
+      status: 'broadcasting',
+      serviceType: 'flatbed',
+      createdAt: month,
+      financials: { platformFee: 90, serviceFee: 10 },
+    },
+  ]);
+  assert(income.length === CORE_SERVICE_TYPES.length, 'monthly income lists every service');
+  assert(income.every((row) => row.serviceType !== 'flatbed' || row.incomeSar === 0), 'demo and open orders add no income');
+  const moving = income.find((row) => row.serviceType === 'furniture_moving');
+  assert(moving?.incomeSar === 40 && moving.percentage === 100, 'completed moving income is the whole month');
+  assert(
+    income.filter((row) => row.serviceType !== 'furniture_moving').every((row) => row.percentage === 0),
+    'services without this month’s income stay at 0%'
+  );
   assert(
     dist.filter((row) => row.count > 0).every((row) => row.percentage > 0),
     'mixed catalog does not collapse to 100% moving'

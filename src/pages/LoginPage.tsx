@@ -33,6 +33,16 @@ import {
 import { APP_ROLES, REGISTRABLE_ROLES, ROLE_META } from '@/domain/user-schema';
 import { B2B_MODULES_ENABLED, isB2bSurfaceRole } from '@/lib/launchFlags';
 import {
+  FLEET_BODY_TYPES,
+  ibanOwnershipMessage,
+  individualStepError,
+  normalizeFleetPlan,
+  verifyIbanOwnership,
+  type FleetBodyTypeId,
+} from '@/domain/partnerTracks';
+import { readIstimaraImage } from '@/lib/istimaraOcr';
+import { stampPartnerRegistration } from '@/lib/stampPartnerRegistration';
+import {
   getDriverValidationMessage,
   formatSaudiPlateForDisplay,
   normalizeNationalId,
@@ -143,6 +153,16 @@ const LoginPage: React.FC<{
   const [accountHolderName, setAccountHolderName] = useState('');
   const [transferIdentification, setTransferIdentification] = useState('');
   const [crFile, setCrFile] = useState<File | null>(null);
+  const [trackStep, setTrackStep] = useState<1 | 2 | 3>(1);
+  const [vehicleModel, setVehicleModel] = useState('');
+  const [holderNationalId, setHolderNationalId] = useState('');
+  const [transportLicense, setTransportLicense] = useState('');
+  const [fleetCounts, setFleetCounts] = useState<Record<FleetBodyTypeId, number>>({
+    hydraulic: 0,
+    normal: 0,
+    closed: 0,
+  });
+  const [ocrBusy, setOcrBusy] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -557,6 +577,17 @@ const LoginPage: React.FC<{
         toast.error(profileFieldMessage(complianceCode, isRtl));
         return false;
       }
+      const ownership = verifyIbanOwnership({
+        legalName: name,
+        accountHolderName,
+        iban,
+        nationalId,
+        accountHolderNationalId: holderNationalId,
+      });
+      if (ownership) {
+        toast.error(ibanOwnershipMessage(ownership, isRtl));
+        return false;
+      }
     }
 
     if (isB2BRole && companyName.trim().length < 2) {
@@ -572,6 +603,31 @@ const LoginPage: React.FC<{
       });
       if (companyCode) {
         toast.error(profileFieldMessage(companyCode, isRtl));
+        return false;
+      }
+      const companyOwnership = verifyIbanOwnership({
+        legalName: companyName,
+        accountHolderName,
+        iban,
+      });
+      if (companyOwnership) {
+        toast.error(ibanOwnershipMessage(companyOwnership, isRtl));
+        return false;
+      }
+      const fleetPlan = normalizeFleetPlan({
+        totalVehicles: fleetCounts.hydraulic + fleetCounts.normal + fleetCounts.closed,
+        types: fleetCounts,
+      });
+      if (!fleetPlan) {
+        toast.error(
+          isRtl
+            ? 'أدخل عدد سيارات الأسطول، ومجموع الأنواع يجب أن يساوي الإجمالي.'
+            : 'Enter the fleet counts. The type totals must equal the fleet size.'
+        );
+        return false;
+      }
+      if (transportLicense.trim().length < 4) {
+        toast.error(isRtl ? 'أدخل رقم الترخيص النظامي' : 'Enter the operating license number');
         return false;
       }
       if (!crFile) {
@@ -685,6 +741,42 @@ const LoginPage: React.FC<{
         name,
         extraData,
       });
+      try {
+        if (isDriverRole) {
+          await stampPartnerRegistration({
+            uid: finalProfile.uid,
+            track: 'individual',
+            vehicleModel,
+            ibanVerification: {
+              status: 'matched',
+              method: 'name_and_id_exact',
+              legalName: name.trim(),
+              accountHolderName: accountHolderName.trim(),
+              nationalId: nationalId.replace(/\D/g, ''),
+            },
+          });
+        }
+        if (isOperatorRole) {
+          await stampPartnerRegistration({
+            uid: finalProfile.uid,
+            track: 'company',
+            fleetPlan: normalizeFleetPlan({
+              totalVehicles: fleetCounts.hydraulic + fleetCounts.normal + fleetCounts.closed,
+              types: fleetCounts,
+            }),
+            transportLicense,
+            ibanVerification: {
+              status: 'matched',
+              method: 'company_name_exact',
+              legalName: companyName.trim(),
+              accountHolderName: accountHolderName.trim(),
+              commercialRegistration: commercialRegistration.replace(/\D/g, ''),
+            },
+          });
+        }
+      } catch (stampError) {
+        console.error('[login] partner track stamp failed:', stampError);
+      }
 
       if (role === APP_ROLES.B2C_DRIVER) {
         setStep('review');
@@ -707,8 +799,90 @@ const LoginPage: React.FC<{
     }
   };
 
+  const usesPartnerTrack = isDriverRole || isOperatorRole;
+
+  const advancePartnerTrack = () => {
+    if (isDriverRole) {
+      const code = individualStepError({
+        step: trackStep,
+        name,
+        nationalId,
+        dateOfBirth,
+        vehicleType,
+        plateNumber,
+        registrationSerial,
+        hasIstimara: Boolean(documentFiles.registration),
+        bankName,
+        iban,
+        accountHolderName,
+        accountHolderNationalId: holderNationalId,
+      });
+      if (code === 'STEP_INCOMPLETE') {
+        toast.error(isRtl ? 'أكمل حقول هذه الخطوة أولاً' : 'Complete this step first');
+        return;
+      }
+      if (code) {
+        toast.error(ibanOwnershipMessage(code, isRtl));
+        return;
+      }
+    }
+    if (isOperatorRole && trackStep === 1) {
+      if (name.trim().length < 3 || companyName.trim().length < 2 || commercialRegistration.length !== 10 || !crFile || transportLicense.trim().length < 4) {
+        toast.error(isRtl ? 'أكمل بيانات المنشأة والسجل والترخيص' : 'Complete the company, CR, and license fields');
+        return;
+      }
+    }
+    if (isOperatorRole && trackStep === 2) {
+      const plan = normalizeFleetPlan({
+        totalVehicles: fleetCounts.hydraulic + fleetCounts.normal + fleetCounts.closed,
+        types: fleetCounts,
+      });
+      if (!plan) {
+        toast.error(isRtl ? 'مجموع أنواع السيارات يجب أن يساوي إجمالي الأسطول' : 'Vehicle types must add up to the fleet total');
+        return;
+      }
+    }
+    setTrackStep((current) => (current < 3 ? ((current + 1) as 2 | 3) : current));
+  };
+
+  const readIstimara = async (file: File | null) => {
+    if (!file) return;
+    const fileCheck = await inspectDriverDocumentFile(file);
+    if (!fileCheck.ok) {
+      toast.error(getDriverValidationMessage({ ...fileCheck, invalidDoc: 'registration' }, locale));
+      return;
+    }
+    setDocumentFiles((prev) => ({ ...prev, registration: file }));
+    setDocumentUploadStatuses((prev) => ({ ...prev, registration: 'uploaded' }));
+    setOcrBusy(true);
+    try {
+      const extracted = await readIstimaraImage(file);
+      if (extracted.plate) setPlateNumber(formatSaudiPlateForDisplay(extracted.plate));
+      if (extracted.serial) setRegistrationSerial(normalizeRegistrationSerial(extracted.serial).slice(0, 15));
+      if (extracted.model) setVehicleModel(extracted.model.slice(0, 40));
+      toast.success(
+        extracted.plate || extracted.serial
+          ? isRtl
+            ? 'قُرئت الاستمارة. راجع اللوحة والرقم والموديل قبل المتابعة.'
+            : 'Istimara read. Review the plate, serial, and model before continuing.'
+          : isRtl
+            ? 'تعذر استخراج الحقول. أكملها يدوياً.'
+            : 'Could not extract the fields. Complete them manually.'
+      );
+    } catch (error) {
+      console.error('[login] istimara OCR failed:', error);
+      toast.error(isRtl ? 'تعذرت القراءة الآلية. أكمل بيانات الاستمارة يدوياً.' : 'Automatic reading failed. Enter the Istimara manually.');
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (usesPartnerTrack && trackStep < 3) {
+      advancePartnerTrack();
+      return;
+    }
     await submitRegistration();
   };
 
@@ -1153,7 +1327,7 @@ const LoginPage: React.FC<{
                   />
                 </div>
                 <div className="space-y-4">
-                  <div className="space-y-2">
+                  <div className={`space-y-2 ${usesPartnerTrack && trackStep > 1 ? 'hidden' : ''}`}>
                     <label className="text-sm font-bold text-neutral-700">{t('full_name')}</label>
                     <div className="relative">
                       <User className={`absolute ${isRtl ? 'right-4' : 'left-4'} top-1/2 -translate-y-1/2 text-stone-300`} size={18} />
@@ -1167,7 +1341,28 @@ const LoginPage: React.FC<{
                     </div>
                   </div>
 
-                  {isB2BRole && (
+                  {usesPartnerTrack && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: 1 as const, ar: 'البيانات', en: 'Identity' },
+                        { id: 2 as const, ar: isDriverRole ? 'المركبة' : 'الأسطول', en: isDriverRole ? 'Vehicle' : 'Fleet' },
+                        { id: 3 as const, ar: 'الآيبان', en: 'IBAN' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            if (item.id < trackStep) setTrackStep(item.id);
+                          }}
+                          className={`rounded-2xl px-2 py-3 text-[11px] font-black ${trackStep === item.id ? 'bg-neutral-900 text-white' : 'bg-stone-50 text-stone-500'}`}
+                        >
+                          {item.id}. {isRtl ? item.ar : item.en}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {isB2BRole && (!isOperatorRole || trackStep === 1) && (
                     <div className="space-y-4 pt-2">
                       <div className="space-y-2">
                         <label className="text-sm font-bold text-neutral-700">
@@ -1222,35 +1417,62 @@ const LoginPage: React.FC<{
                               onChange={(e) => setCrFile(e.target.files?.[0] || null)}
                             />
                           </label>
+                          <input
+                            type="text"
+                            value={transportLicense}
+                            onChange={(e) => setTransportLicense(e.target.value.slice(0, 40))}
+                            placeholder={isRtl ? 'رقم الترخيص النظامي' : 'Operating license number'}
+                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 outline-none font-medium"
+                          />
                           <p className="text-[11px] font-bold text-stone-500 leading-relaxed">
                             {isRtl
-                              ? 'أرباح رحلات سائقي الشركة تُحوَّل إلى الآيبان المؤسسي.'
-                              : 'Trips run by company drivers pay out to this corporate IBAN.'}
+                              ? 'عوائد كل سيارات الأسطول تُحوَّل لاحقاً إلى الآيبان التجاري للمنشأة.'
+                              : 'Every fleet vehicle’s earnings are paid later to the company IBAN.'}
                           </p>
-                          <input
-                            type="text"
-                            value={bankName}
-                            onChange={(e) => setBankName(e.target.value)}
-                            placeholder={isRtl ? 'اسم البنك' : 'Bank name'}
-                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
-                          />
-                          <input
-                            type="text"
-                            value={accountHolderName}
-                            onChange={(e) => setAccountHolderName(e.target.value)}
-                            placeholder={isRtl ? 'اسم صاحب الحساب' : 'Account holder name'}
-                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
-                          />
-                          <input
-                            type="text"
-                            value={iban}
-                            onChange={(e) => setIban(e.target.value.toUpperCase())}
-                            placeholder="SA00..."
-                            dir="ltr"
-                            className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium tracking-wider"
-                          />
                         </>
                       )}
+                    </div>
+                  )}
+
+                  {isOperatorRole && trackStep === 2 && (
+                    <div className="space-y-3 rounded-2xl border border-stone-100 p-4">
+                      <p className="text-sm font-bold">{isRtl ? 'سيارات المنشأة' : 'Company vehicles'}</p>
+                      <p className="text-[11px] font-bold text-stone-500">
+                        {isRtl
+                          ? `الإجمالي: ${fleetCounts.hydraulic + fleetCounts.normal + fleetCounts.closed} سيارة تحت حساب المنشأة.`
+                          : `Total: ${fleetCounts.hydraulic + fleetCounts.normal + fleetCounts.closed} vehicles under the company account.`}
+                      </p>
+                      {FLEET_BODY_TYPES.map((kind) => (
+                        <label key={kind.id} className="flex items-center justify-between gap-3 text-sm font-bold">
+                          {isRtl ? kind.ar : kind.en}
+                          <input
+                            type="number"
+                            min={0}
+                            value={fleetCounts[kind.id]}
+                            onChange={(e) =>
+                              setFleetCounts((prev) => ({
+                                ...prev,
+                                [kind.id]: Math.max(0, Math.floor(Number(e.target.value) || 0)),
+                              }))
+                            }
+                            className="w-24 rounded-xl border px-3 py-2"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {isOperatorRole && trackStep === 3 && (
+                    <div className="space-y-3 rounded-2xl border border-stone-100 p-4">
+                      <p className="text-sm font-bold">{isRtl ? 'الآيبان التجاري' : 'Company IBAN'}</p>
+                      <p className="text-[11px] font-bold text-stone-500">
+                        {isRtl
+                          ? `اسم صاحب الحساب يجب أن يطابق اسم المنشأة: ${companyName || '—'}`
+                          : `The account holder must match the company name: ${companyName || '—'}`}
+                      </p>
+                      <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder={isRtl ? 'اسم البنك' : 'Bank name'} className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium" />
+                      <input value={accountHolderName} onChange={(e) => setAccountHolderName(e.target.value)} placeholder={isRtl ? 'اسم صاحب الحساب كما في البنك' : 'Account holder as registered at the bank'} className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium" />
+                      <input value={iban} onChange={(e) => setIban(e.target.value.toUpperCase())} placeholder="SA..." dir="ltr" className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium tracking-wider" />
                     </div>
                   )}
 
@@ -1264,7 +1486,7 @@ const LoginPage: React.FC<{
                             : 'Note: As a driver partner, your data will be reviewed within 24 hours.'}
                         </p>
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className={`grid grid-cols-2 gap-3 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <div className="space-y-2">
                           <label className="text-sm font-bold text-neutral-700">{isRtl ? 'نوع الخدمة' : 'Service Type'}</label>
                           <select
@@ -1306,7 +1528,7 @@ const LoginPage: React.FC<{
                           </select>
                         </div>
                       </div>
-                      <div className="space-y-2">
+                      <div className={`space-y-2 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <label className="text-sm font-bold text-neutral-700">{t('plate_number')}</label>
                         <input
                           type="text"
@@ -1318,7 +1540,7 @@ const LoginPage: React.FC<{
                           className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800 tracking-[0.2em]"
                         />
                       </div>
-                      <div className="space-y-2">
+                      <div className={`space-y-2 ${trackStep === 1 ? '' : 'hidden'}`}>
                         <label className="text-sm font-bold text-neutral-700">
                           {isRtl ? 'رقم الهوية / الإقامة' : 'National ID / Iqama'}
                         </label>
@@ -1333,7 +1555,16 @@ const LoginPage: React.FC<{
                           className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-medium text-neutral-800 tracking-widest"
                         />
                       </div>
-                      <div className="space-y-2">
+                      <div className={`space-y-2 ${trackStep === 2 ? '' : 'hidden'}`}>
+                        <label className="rounded-2xl border-2 border-dashed border-stone-200 p-4 flex flex-col gap-1 cursor-pointer">
+                          <span className="text-sm font-bold">{ocrBusy ? (isRtl ? 'جاري قراءة الاستمارة...' : 'Reading the Istimara...') : isRtl ? 'رفع أو تصوير الاستمارة' : 'Upload or photograph the Istimara'}</span>
+                          <span className="text-[11px] text-stone-400 font-bold">{isRtl ? 'تُملأ اللوحة والرقم والموديل تلقائياً، ويمكن تعديلها يدوياً' : 'Plate, serial, and model fill automatically and stay editable'}</span>
+                          <input type="file" accept="image/jpeg,image/png" capture="environment" className="hidden" onChange={(e) => void readIstimara(e.target.files?.[0] || null)} />
+                        </label>
+                        <label className="text-sm font-bold text-neutral-700">{isRtl ? 'الموديل' : 'Model'}</label>
+                        <input value={vehicleModel} onChange={(e) => setVehicleModel(e.target.value.slice(0, 40))} className="w-full px-4 py-4 rounded-2xl border border-stone-200 outline-none font-medium" />
+                      </div>
+                      <div className={`space-y-2 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <label className="text-sm font-bold text-neutral-700">
                           {isRtl ? 'رقم الاستمارة / الإمارة' : 'Istimara / Emarah serial'}
                         </label>
@@ -1350,7 +1581,7 @@ const LoginPage: React.FC<{
                         />
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-2">
+                        <div className={`space-y-2 ${trackStep === 1 ? '' : 'hidden'}`}>
                           <label className="text-sm font-bold text-neutral-700">
                             {isRtl ? 'تاريخ الميلاد' : 'Date of birth'}
                           </label>
@@ -1361,7 +1592,7 @@ const LoginPage: React.FC<{
                             className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
                           />
                         </div>
-                        <div className="space-y-2">
+                        <div className={`space-y-2 ${trackStep === 2 ? '' : 'hidden'}`}>
                           <label className="text-sm font-bold text-neutral-700">
                             {isRtl ? 'رقم رخصة القيادة' : 'License number'}
                           </label>
@@ -1373,7 +1604,7 @@ const LoginPage: React.FC<{
                           />
                         </div>
                       </div>
-                      <div className="space-y-2">
+                      <div className={`space-y-2 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <label className="text-sm font-bold text-neutral-700">
                           {isRtl ? 'رقم كرت التشغيل' : 'Operating card number'}
                         </label>
@@ -1384,9 +1615,14 @@ const LoginPage: React.FC<{
                           className="w-full px-4 py-4 rounded-2xl border border-stone-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none font-medium"
                         />
                       </div>
-                      <div className="space-y-3 rounded-2xl border border-stone-100 p-4">
+                      <div className={`space-y-3 rounded-2xl border border-stone-100 p-4 ${trackStep === 3 ? '' : 'hidden'}`}>
                         <p className="text-sm font-bold text-neutral-700">
                           {isRtl ? 'الحساب البنكي للتحويل' : 'Payout bank account'}
+                        </p>
+                        <p className="text-[11px] font-bold text-stone-500">
+                          {isRtl
+                            ? `اسم صاحب الحساب ورقم هويته يجب أن يطابقا الاسم والهوية: ${name || '—'}`
+                            : `Account holder name and ID must match: ${name || '—'}`}
                         </p>
                         <input
                           type="text"
@@ -1399,8 +1635,16 @@ const LoginPage: React.FC<{
                           type="text"
                           value={accountHolderName}
                           onChange={(e) => setAccountHolderName(e.target.value)}
-                          placeholder={isRtl ? 'اسم صاحب الحساب' : 'Account holder name'}
+                          placeholder={isRtl ? 'اسم صاحب الحساب كما في البنك' : 'Account holder name at the bank'}
                           className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium"
+                        />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={holderNationalId}
+                          onChange={(e) => setHolderNationalId(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          placeholder={isRtl ? 'هوية صاحب الحساب' : 'Account holder national ID'}
+                          className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium tracking-widest"
                         />
                         <input
                           type="text"
@@ -1418,7 +1662,7 @@ const LoginPage: React.FC<{
                           className="w-full px-4 py-3 rounded-2xl border border-stone-200 outline-none font-medium"
                         />
                       </div>
-                      <div className="space-y-3">
+                      <div className={`space-y-3 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <label className="text-sm font-bold text-neutral-700">
                           {isRtl ? 'تواريخ انتهاء المستندات' : 'Document expiry dates'}
                         </label>
@@ -1450,7 +1694,7 @@ const LoginPage: React.FC<{
                           ))}
                         </div>
                       </div>
-                      <div className="space-y-3">
+                      <div className={`space-y-3 ${trackStep === 2 ? '' : 'hidden'}`}>
                         <RequiredDriverDocumentsFields
                           isRtl={isRtl}
                           files={documentFiles}
@@ -1489,16 +1733,31 @@ const LoginPage: React.FC<{
                     </div>
                   )}
 
-                  <TermsConsent checked={acceptedTerms} onChange={setAcceptedTerms} disabled={isSubmitting} />
+                  {(!usesPartnerTrack || trackStep === 3) && (
+                    <TermsConsent checked={acceptedTerms} onChange={setAcceptedTerms} disabled={isSubmitting} />
+                  )}
                 </div>
+                {usesPartnerTrack && trackStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setTrackStep((current) => (current > 1 ? ((current - 1) as 1 | 2) : current))}
+                    className="w-full py-3 text-sm font-bold text-stone-500"
+                  >
+                    {isRtl ? 'رجوع' : 'Back'}
+                  </button>
+                )}
                 <button
                   type="submit"
-                  disabled={isSubmitting || !acceptedTerms}
+                  disabled={isSubmitting || (( !usesPartnerTrack || trackStep === 3) && !acceptedTerms)}
                   className="w-full py-5 bg-neutral-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-neutral-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-neutral-900/10 active:scale-[0.98]"
                 >
                   {isSubmitting
                     ? t('creating_account')
-                    : !user
+                    : usesPartnerTrack && trackStep < 3
+                      ? isRtl
+                        ? 'التالي'
+                        : 'Next'
+                      : !user
                       ? t('send_otp')
                       : t('create_account')}
                   <LogIn size={20} className="text-primary" />

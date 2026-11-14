@@ -12,6 +12,8 @@ import { EnglishNumberInput } from '@/components/admin/EnglishNumberInput';
 
 interface Props {
   isRtl: boolean;
+  /** Rendered inside the single pricing page, without a second page title. */
+  embedded?: boolean;
 }
 
 function Field({
@@ -44,7 +46,7 @@ function Field({
   );
 }
 
-export const AdminTariffPanel: React.FC<Props> = ({ isRtl }) => {
+export const AdminTariffPanel: React.FC<Props> = ({ isRtl, embedded = false }) => {
   const [tariff, setTariff] = useState<FlatbedTariff>(DEFAULT_FLATBED_TARIFF);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -67,6 +69,70 @@ export const AdminTariffPanel: React.FC<Props> = ({ isRtl }) => {
       cancelled = true;
     };
   }, [isRtl]);
+
+  const patchType = (
+    kind: 'hydraulic' | 'normal' | 'box',
+    scope: 'intra' | 'inter',
+    patch: Partial<FlatbedTariff['types']['hydraulic']['intra']>
+  ) => {
+    setTariff((prev) => ({
+      ...prev,
+      types: {
+        ...prev.types,
+        [kind]: {
+          ...prev.types[kind],
+          [scope]: { ...prev.types[kind][scope], ...patch },
+        },
+      },
+    }));
+  };
+
+  const setDriverRate = (scope: 'intra' | 'inter', value: number) => {
+    setTariff((prev) => {
+      const current = scope === 'intra' ? prev.intraDriverCommissionTiers : prev.intercityDriverCommissionTiers;
+      const tiers = current.map((tier, index) =>
+        index === 0 && tier.min_completed_orders === 0 ? { ...tier, commission_percentage: value } : tier
+      );
+      return scope === 'intra'
+        ? { ...prev, intraDriverCommissionPercentage: value, intraDriverCommissionTiers: tiers }
+        : { ...prev, intercityDriverCommissionPercentage: value, intercityDriverCommissionTiers: tiers };
+    });
+  };
+
+  const setTierRow = (
+    scope: 'intra' | 'inter',
+    index: number,
+    patch: Partial<{ min_completed_orders: number; commission_percentage: number }>
+  ) => {
+    setTariff((prev) => {
+      const current = scope === 'intra' ? prev.intraDriverCommissionTiers : prev.intercityDriverCommissionTiers;
+      const tiers = current.map((tier, rowIndex) => (rowIndex === index ? { ...tier, ...patch } : tier));
+      const starting =
+        tiers[0]?.min_completed_orders === 0 ? tiers[0].commission_percentage : undefined;
+      return scope === 'intra'
+        ? {
+            ...prev,
+            intraDriverCommissionTiers: tiers,
+            intraDriverCommissionPercentage: starting ?? prev.intraDriverCommissionPercentage,
+          }
+        : {
+            ...prev,
+            intercityDriverCommissionTiers: tiers,
+            intercityDriverCommissionPercentage: starting ?? prev.intercityDriverCommissionPercentage,
+          };
+    });
+  };
+
+  const setIncludedKm = (scope: 'intra' | 'inter', includedKm: number) => {
+    setTariff((prev) => ({
+      ...prev,
+      types: {
+        hydraulic: { ...prev.types.hydraulic, [scope]: { ...prev.types.hydraulic[scope], includedKm } },
+        normal: { ...prev.types.normal, [scope]: { ...prev.types.normal[scope], includedKm } },
+        box: { ...prev.types.box, [scope]: { ...prev.types.box[scope], includedKm } },
+      },
+    }));
+  };
 
   const save = async () => {
     setSaving(true);
@@ -93,173 +159,161 @@ export const AdminTariffPanel: React.FC<Props> = ({ isRtl }) => {
     return <p className="text-sm text-gray-400">{isRtl ? 'جاري تحميل التعرفة...' : 'Loading tariff...'}</p>;
   }
 
+  const kinds = [
+    ['hydraulic', isRtl ? 'سطحة هيدروليك فل داون' : 'Hydraulic full-down'],
+    ['normal', isRtl ? 'سطحة عادية' : 'Standard flatbed'],
+    ['box', isRtl ? 'سطحة مغلقة / بوكس' : 'Enclosed / box'],
+  ] as const;
+
+  const tables = [
+    {
+      scope: 'intra' as const,
+      title: isRtl ? 'تسعير داخل المدينة' : 'Inside-city pricing',
+      included: tariff.types.hydraulic.intra.includedKm,
+      driver: tariff.intraDriverCommissionPercentage,
+      customer: tariff.intraCustomerServiceFeePercentage,
+      tiers: tariff.intraDriverCommissionTiers,
+    },
+    {
+      scope: 'inter' as const,
+      title: isRtl ? 'تسعير خارج المدينة' : 'Outside-city pricing',
+      included: tariff.types.hydraulic.inter.includedKm,
+      driver: tariff.intercityDriverCommissionPercentage,
+      customer: tariff.intercityCustomerServiceFeePercentage,
+      tiers: tariff.intercityDriverCommissionTiers,
+    },
+  ];
+
   return (
     <div className="space-y-8" lang="en">
       <div>
-        <h2 className="text-2xl font-black">
-          {isRtl ? 'محرك التسعير والتعرفة' : 'Pricing Engine & Tariffs'}
-        </h2>
+        {embedded ? null : (
+          <h2 className="text-2xl font-black">{isRtl ? 'تسعير السطحات' : 'Flatbed pricing'}</h2>
+        )}
         <p className="text-sm text-gray-500 mt-1">
           {isRtl
-            ? 'داخل المدينة وخارجها إعدادان منفصلان. التطبيق يقرأ intra_city أو inter_city من pricing/flatbed حسب نوع الرحلة. الأرقام تُعرض بالإنجليزية.'
-            : 'Intra-city and inter-city are separate settings. The app reads intra_city or inter_city on pricing/flatbed for the trip. Numbers stay in English digits.'}
+            ? 'قسمان مستقلان: داخل المدينة وخارجها. كل قسم فيه أنواع السطحات، السعر الأساسي، سعر الكيلومتر، الكيلومترات المشمولة، رسوم العميل، عمولة السائق، وشرائح العمولة. الحفظ يكتب مباشرة في Firebase.'
+            : 'Two separate sections: inside the city and outside it. Each has the flatbed types, base price, per-km rate, included kilometers, customer fee, driver commission, and commission bands. Save writes straight to Firebase.'}
         </p>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section className="bg-white rounded-[32px] border border-emerald-100 p-8 space-y-5">
+      {tables.map((table) => (
+        <section key={table.scope} className="rounded-[28px] border border-gray-200 bg-white p-5 space-y-4">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-widest text-emerald-700">Intra-City</p>
-            <h3 className="text-lg font-black">{isRtl ? 'تسعير داخل المدينة' : 'Intra-city pricing'}</h3>
+            <h3 className="text-lg font-black">{table.title}</h3>
             <p className="text-sm text-gray-500 mt-1">
               {isRtl
-                ? 'السعر الأساسي يغطي الكيلومترات المشمولة. ما زاد عنها يُحسب بسعر الكيلومتر الإضافي.'
-                : 'The base price covers the included kilometers. Distance beyond that uses the extra per-km rate.'}
+                ? 'الأجرة = السعر الأساسي + ما زاد عن الكيلومترات المشمولة × سعر الكيلومتر.'
+                : 'Fare = base price + kilometers beyond the included distance × the per-km rate.'}
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label={isRtl ? 'السعر الأساسي (ر.س)' : 'Base price (SAR)'}
-              value={tariff.intraBasePrice}
-              onChange={(intraBasePrice) => setTariff((prev) => ({ ...prev, intraBasePrice }))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-widest text-gray-400">
+                  <th className="py-2 text-start">{isRtl ? 'نوع السطحة' : 'Flatbed type'}</th>
+                  <th className="py-2 text-start">{isRtl ? 'السعر الأساسي' : 'Base price'}</th>
+                  <th className="py-2 text-start">{isRtl ? 'لكل كم' : 'Per km'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {kinds.map(([kind, label]) => {
+                  const rate = tariff.types[kind][table.scope];
+                  return (
+                    <tr key={kind} className="border-t border-gray-50">
+                      <td className="py-3 font-bold">{label}</td>
+                      <td className="py-3">
+                        <EnglishNumberInput
+                          value={rate.basePrice}
+                          onChange={(basePrice) => patchType(kind, table.scope, { basePrice })}
+                          className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                          ariaLabel={isRtl ? 'السعر الأساسي' : 'Base price'}
+                        />
+                      </td>
+                      <td className="py-3">
+                        <EnglishNumberInput
+                          value={rate.extraKmRate}
+                          onChange={(extraKmRate) => patchType(kind, table.scope, { extraKmRate })}
+                          className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                          ariaLabel={isRtl ? 'لكل كم' : 'Per km'}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <label className="block max-w-xs space-y-1 text-xs font-bold text-gray-500">
+            {isRtl ? 'الكيلومترات المشمولة في السعر الأساسي' : 'Kilometers included in the base price'}
+            <EnglishNumberInput
+              value={table.included}
+              onChange={(includedKm) => setIncludedKm(table.scope, includedKm)}
+              ariaLabel={isRtl ? 'الكيلومترات المشمولة' : 'Included kilometers'}
             />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
             <Field
-              label={isRtl ? 'حد الكيلومترات المشمولة' : 'Included km threshold'}
-              hint={isRtl ? 'افتراضي 25 كم' : 'Default 25 km'}
-              value={tariff.intraIncludedKm}
-              onChange={(intraIncludedKm) => setTariff((prev) => ({ ...prev, intraIncludedKm }))}
-            />
-            <Field
-              label={isRtl ? 'سعر الكيلومتر الإضافي' : 'Extra price per km'}
-              value={tariff.intraExtraKmRate}
-              onChange={(intraExtraKmRate) => setTariff((prev) => ({ ...prev, intraExtraKmRate }))}
+              label={isRtl ? 'رسوم العميل %' : 'Customer fee %'}
+              max={100}
+              value={table.customer}
+              onChange={(value) =>
+                setTariff((prev) =>
+                  table.scope === 'intra'
+                    ? { ...prev, intraCustomerServiceFeePercentage: value }
+                    : { ...prev, intercityCustomerServiceFeePercentage: value }
+                )
+              }
             />
             <Field
               label={isRtl ? 'عمولة السائق %' : 'Driver commission %'}
-              hint={isRtl ? 'مثال 10%' : 'Example 10%'}
               max={100}
-              value={tariff.intraDriverCommissionPercentage}
-              onChange={(intraDriverCommissionPercentage) =>
-                setTariff((prev) => ({ ...prev, intraDriverCommissionPercentage }))
-              }
-            />
-            <Field
-              label={isRtl ? 'رسوم خدمة العميل %' : 'Customer service fee %'}
-              hint={isRtl ? 'مثال 5%' : 'Example 5%'}
-              max={100}
-              value={tariff.intraCustomerServiceFeePercentage}
-              onChange={(intraCustomerServiceFeePercentage) =>
-                setTariff((prev) => ({ ...prev, intraCustomerServiceFeePercentage }))
-              }
-            />
-            <Field
-              label={isRtl ? 'تقدير / حادث (ر.س)' : 'Taqdeer / accident (SAR)'}
-              value={tariff.intraCity.taqdeer}
-              onChange={(taqdeer) =>
-                setTariff((prev) => ({ ...prev, intraCity: { ...prev.intraCity, taqdeer } }))
-              }
+              value={table.driver}
+              onChange={(value) => setDriverRate(table.scope, value)}
             />
           </div>
-        </section>
-
-        <section className="bg-white rounded-[32px] border border-sky-100 p-8 space-y-5">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-widest text-sky-700">Inter-City</p>
-            <h3 className="text-lg font-black">
-              {isRtl ? 'تسعير خارج المدينة' : 'Inter-city / long-distance pricing'}
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-              {isRtl
-                ? 'يبدأ من سعر الانطلاق ثم سعر الكيلومتر لمسافة خرائط جوجل بين المدن.'
-                : 'Starts from the long-distance base, then the per-km rate on the Google Maps distance.'}
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-gray-400">
+              {isRtl ? 'شرائح عمولة السائق' : 'Driver commission bands'}
             </p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field
-              label={isRtl ? 'سعر بداية المسافة الطويلة (ر.س)' : 'Long-distance starting price (SAR)'}
-              value={tariff.intercityBaseFee}
-              onChange={(intercityBaseFee) => setTariff((prev) => ({ ...prev, intercityBaseFee }))}
-            />
-            <Field
-              label={isRtl ? 'سعر الكيلومتر للمسافة الطويلة' : 'Long-distance rate per km'}
-              value={tariff.intercityRatePerKm}
-              onChange={(intercityRatePerKm) => setTariff((prev) => ({ ...prev, intercityRatePerKm }))}
-            />
-            <Field
-              label={isRtl ? 'الحد الأدنى بين المدن (ر.س)' : 'Inter-city minimum (SAR)'}
-              value={tariff.intercityMinimumFare}
-              onChange={(intercityMinimumFare) => setTariff((prev) => ({ ...prev, intercityMinimumFare }))}
-            />
-            <Field
-              label={isRtl ? 'نطاق نفس المدينة (كم)' : 'Same-city radius (km)'}
-              value={tariff.sameCityRadiusKm}
-              onChange={(sameCityRadiusKm) => setTariff((prev) => ({ ...prev, sameCityRadiusKm }))}
-            />
-            <Field
-              label={isRtl ? 'عمولة السائق %' : 'Driver commission %'}
-              hint={isRtl ? 'مثال 15%' : 'Example 15%'}
-              max={100}
-              value={tariff.intercityDriverCommissionPercentage}
-              onChange={(intercityDriverCommissionPercentage) =>
-                setTariff((prev) => ({ ...prev, intercityDriverCommissionPercentage }))
-              }
-            />
-            <Field
-              label={isRtl ? 'رسوم خدمة العميل %' : 'Customer service fee %'}
-              hint={isRtl ? 'مثال 5%' : 'Example 5%'}
-              max={100}
-              value={tariff.intercityCustomerServiceFeePercentage}
-              onChange={(intercityCustomerServiceFeePercentage) =>
-                setTariff((prev) => ({ ...prev, intercityCustomerServiceFeePercentage }))
-              }
-            />
+            <p className="text-[11px] text-gray-400">
+              {isRtl
+                ? 'من 0 إلى 150 طلب تنزل العمولة إلى 12%. بعد 300 طلب تنزل إلى 10%.'
+                : 'From 0 to 150 orders the commission drops to 12%. After 300 orders it drops to 10%.'}
+            </p>
+            {table.tiers.map((tier, index) => (
+              <div key={`${table.scope}-${tier.min_completed_orders}-${index}`} className="flex gap-2">
+                <EnglishNumberInput
+                  value={tier.min_completed_orders}
+                  onChange={(nextValue) =>
+                    setTierRow(table.scope, index, { min_completed_orders: Math.floor(nextValue) })
+                  }
+                  className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                  ariaLabel={isRtl ? 'عدد الطلبات' : 'Completed orders'}
+                />
+                <EnglishNumberInput
+                  max={100}
+                  value={tier.commission_percentage}
+                  onChange={(nextValue) => setTierRow(table.scope, index, { commission_percentage: nextValue })}
+                  className="w-28 p-2 rounded-xl bg-gray-50 font-mono tabular-nums"
+                  ariaLabel={isRtl ? 'نسبة العمولة' : 'Commission percent'}
+                />
+              </div>
+            ))}
           </div>
         </section>
-      </div>
+      ))}
 
-      <section className="bg-white rounded-[32px] border border-gray-100 p-8 space-y-5">
-        <h3 className="text-lg font-black">{isRtl ? 'فئات السطحات والكفرات' : 'Flatbed types and tires'}</h3>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field
-            label={isRtl ? 'هيدروليك فل داون (إضافة 0)' : 'Hydraulic full-down (offset 0)'}
-            value={tariff.offsets.hydraulic}
-            allowNegative
-            onChange={(hydraulic) =>
-              setTariff((prev) => ({ ...prev, offsets: { ...prev.offsets, hydraulic } }))
-            }
-          />
-          <Field
-            label={isRtl ? 'سطحة عادية (إضافة -100)' : 'Standard flatbed (offset -100)'}
-            value={tariff.offsets.normal}
-            allowNegative
-            onChange={(normal) => setTariff((prev) => ({ ...prev, offsets: { ...prev.offsets, normal } }))}
-          />
-          <Field
-            label={isRtl ? 'سطحة مغلقة / بوكس (إضافة +250)' : 'Enclosed / box (offset +250)'}
-            value={tariff.offsets.box}
-            allowNegative
-            onChange={(box) => setTariff((prev) => ({ ...prev, offsets: { ...prev.offsets, box } }))}
-          />
-          <Field
-            label={isRtl ? 'الحد الأدنى بعد الخصم' : 'Floor after a discount'}
-            value={tariff.offsetFloor}
-            onChange={(offsetFloor) => setTariff((prev) => ({ ...prev, offsetFloor }))}
-          />
-          <Field
-            label={isRtl ? 'كفرات تالفة (+100)' : 'Damaged tires (+100)'}
-            value={tariff.tireDamageSurcharge}
-            onChange={(tireDamageSurcharge) => setTariff((prev) => ({ ...prev, tireDamageSurcharge }))}
-          />
-        </div>
+      <div>
         <button
           type="button"
           onClick={() => void save()}
           disabled={saving}
           className="px-6 py-3 rounded-2xl bg-black text-white font-bold disabled:opacity-50"
         >
-          {saving ? (isRtl ? 'جاري الحفظ...' : 'Saving...') : isRtl ? 'حفظ التعرفة' : 'Save tariff'}
+          {saving ? (isRtl ? 'جاري الحفظ في Firebase...' : 'Saving to Firebase...') : isRtl ? 'حفظ في Firebase' : 'Save to Firebase'}
         </button>
-      </section>
+      </div>
     </div>
   );
 };

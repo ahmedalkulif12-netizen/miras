@@ -367,6 +367,8 @@ export interface ServiceDistributionRow {
   serviceType: CoreServiceType;
   count: number;
   percentage: number;
+  /** Platform income this month: driver commission plus customer service fee. */
+  incomeSar?: number;
 }
 
 /** Counts all six platform services from a full order set (not a 40-row feed). */
@@ -392,4 +394,106 @@ export function aggregateServiceDistribution(
     count: counts[serviceType],
     percentage: classified > 0 ? Math.round((counts[serviceType] / total) * 100) : 0,
   })).sort((a, b) => b.count - a.count || a.serviceType.localeCompare(b.serviceType));
+}
+
+function readOrderTime(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string') {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'object') {
+    const row = value as { toDate?: () => Date; seconds?: number; _seconds?: number };
+    if (typeof row.toDate === 'function') {
+      const ms = row.toDate().getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const seconds = row.seconds ?? row._seconds;
+    if (typeof seconds === 'number' && Number.isFinite(seconds)) return seconds * 1000;
+  }
+  return null;
+}
+
+/** Calendar month in Asia/Riyadh, so a UTC timestamp still lands in the Saudi month. */
+export function isCurrentRiyadhMonth(value: unknown, now = new Date()): boolean {
+  const ms = readOrderTime(value);
+  if (ms == null) return false;
+  const monthKey = (date: Date) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+    }).format(date);
+  return monthKey(new Date(ms)) === monthKey(now);
+}
+
+function platformIncomeSar(order: Record<string, unknown>): number {
+  const financials =
+    order.financials && typeof order.financials === 'object'
+      ? (order.financials as Record<string, unknown>)
+      : {};
+  const platform = Number(financials.platformFee ?? order.platformFee ?? order.commission_amount);
+  const service = Number(financials.serviceFee ?? order.serviceFee);
+  const platformFee = Number.isFinite(platform) && platform > 0 ? platform : 0;
+  const serviceFee = Number.isFinite(service) && service > 0 ? service : 0;
+  return Math.round((platformFee + serviceFee) * 100) / 100;
+}
+
+/**
+ * Share of this month's platform income across every app service.
+ * Services with no completed income this month stay at 0. Order counts are not the percentage.
+ */
+export function aggregateMonthlyPlatformIncome(
+  orders: Array<Record<string, unknown> | null | undefined>,
+  now = new Date()
+): ServiceDistributionRow[] {
+  const income = Object.fromEntries(CORE_SERVICE_TYPES.map((key) => [key, 0])) as Record<
+    CoreServiceType,
+    number
+  >;
+  const counts = Object.fromEntries(CORE_SERVICE_TYPES.map((key) => [key, 0])) as Record<
+    CoreServiceType,
+    number
+  >;
+  for (const order of orders) {
+    if (!order) continue;
+    if (String(order.kind || '') === 'driver_registration') continue;
+    const id = String(order.id || '').toLowerCase();
+    if (/^(demo-|dev-|e2e-|test-)/.test(id)) continue;
+    const status = String(order.status || '').toLowerCase();
+    if (status !== 'completed') continue;
+    const when = order.completedAt || order.completed_at || order.updatedAt || order.createdAt;
+    if (!isCurrentRiyadhMonth(when, now)) continue;
+    const serviceType = resolveStoredOrderServiceType(order);
+    if (!serviceType) continue;
+    const earned = platformIncomeSar(order);
+    if (earned <= 0) continue;
+    income[serviceType] = Math.round((income[serviceType] + earned) * 100) / 100;
+    counts[serviceType] += 1;
+  }
+  const total = CORE_SERVICE_TYPES.reduce((sum, key) => sum + income[key], 0);
+  const rows = CORE_SERVICE_TYPES.map((serviceType) => ({
+    serviceType,
+    count: counts[serviceType],
+    incomeSar: Math.round(income[serviceType] * 100) / 100,
+    percentage: 0,
+  }));
+  if (total <= 0) {
+    return rows.sort((a, b) => a.serviceType.localeCompare(b.serviceType));
+  }
+  let assigned = 0;
+  const ranked = [...rows].sort((a, b) => income[b.serviceType] - income[a.serviceType]);
+  ranked.forEach((row, index) => {
+    if (index === ranked.length - 1) {
+      row.percentage = Math.max(0, 100 - assigned);
+      return;
+    }
+    row.percentage = Math.round((income[row.serviceType] / total) * 100);
+    assigned += row.percentage;
+  });
+  return rows.sort(
+    (a, b) => b.incomeSar! - a.incomeSar! || a.serviceType.localeCompare(b.serviceType)
+  );
 }

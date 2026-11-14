@@ -36,19 +36,24 @@ import AdminCorporateContractsPanel from '@/components/admin/AdminCorporateContr
 import { B2B_MODULES_ENABLED } from '@/lib/launchFlags';
 import { AdminDirectoryPanel } from '@/components/admin/AdminDirectoryPanel';
 import { AdminPricingPanel } from '@/components/admin/AdminPricingPanel';
-import { AdminTariffPanel } from '@/components/admin/AdminTariffPanel';
 import { AdminPayoutSchedule } from '@/components/admin/AdminPayoutSchedule';
 import { AdminDriverApprovals } from '@/components/admin/AdminDriverApprovals';
+import { AdminPartnerReview } from '@/components/admin/AdminPartnerReview';
+import { AdminSettlementReport } from '@/components/admin/AdminSettlementReport';
+import { AdminB2BPricingPanel } from '@/components/admin/AdminB2BPricingPanel';
 import { formatOrderServiceLabel } from '@/lib/serviceLabels';
 import { AdminUserAvatar } from '@/components/AdminUserAvatar';
 import { isReviewQueueDriverStatus } from '@/domain/driver-review';
 import { formatSaudiPlateForDisplay } from '@/lib/driverDocumentValidation';
 import {
   CORE_SERVICE_TYPES,
-  aggregateServiceDistribution,
+  aggregateMonthlyPlatformIncome,
 } from '@/domain/serviceCategories';
 import { DASHBOARD_POLL_INTERVAL_MS } from '@/lib/dashboardPoll';
 import { readAdminOverviewCache } from '@/lib/adminOverviewCache';
+import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { db, ensureFirebaseReady } from '@/lib/firebase';
+import { isGhostOrderId } from '@/lib/localOrderBridge';
 
 interface Driver {
   id: string;
@@ -101,11 +106,24 @@ function isSyntheticAdminFeed(order: { id: string; userId?: string; customerName
   return /^(e2e\s|dev\s|test\s|dummy\s)/i.test(name);
 }
 
+function adminEventTime(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'object' && value && typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    try {
+      return (value as { toDate: () => Date }).toDate().toISOString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function mapOrderRowStatus(
   status: string,
-  kind?: 'order' | 'driver_registration'
+  kind?: 'order' | 'driver_registration' | 'corporate_registration' | 'operator_registration'
 ): 'completed' | 'active' | 'pending' | 'cancelled' {
-  if (kind === 'driver_registration') return 'pending';
+  if (kind && kind !== 'order') return 'pending';
   const normalized = normalizeOrderStatus(status);
   if (normalized === 'completed') return 'completed';
   if (normalized === 'cancelled') return 'cancelled';
@@ -143,6 +161,7 @@ const AdminDashboard: React.FC = () => {
   const [rejectReason, setRejectReason] = useState('');
   const [observedPlate, setObservedPlate] = useState('');
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(() => readAdminOverviewCache());
+  const [liveEvents, setLiveEvents] = useState<AdminOverviewResponse['recentOrders']>([]);
   const [loadingOverview, setLoadingOverview] = useState(() => !readAdminOverviewCache());
   const [loadingDrivers, setLoadingDrivers] = useState(false);
   const [driversFetched, setDriversFetched] = useState(false);
@@ -257,6 +276,100 @@ const AdminDashboard: React.FC = () => {
     if (authLoading || !user) return;
     void loadOverview();
   }, [authLoading, user, loadOverview]);
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    const stops: Array<() => void> = [];
+    const buckets: Record<'orders' | 'corporates' | 'operators', AdminOverviewResponse['recentOrders']> = {
+      orders: [],
+      corporates: [],
+      operators: [],
+    };
+    const publish = () => {
+      if (cancelled) return;
+      setLiveEvents(
+        [...buckets.orders, ...buckets.corporates, ...buckets.operators]
+          .filter((row) => !isSyntheticAdminFeed(row) && !isGhostOrderId(row.id))
+          .sort((a, b) => (Date.parse(b.createdAt || '') || 0) - (Date.parse(a.createdAt || '') || 0))
+          .slice(0, 40)
+      );
+    };
+    void ensureFirebaseReady().then(() => {
+      if (cancelled) return;
+      stops.push(
+        onSnapshot(
+          query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(25)),
+          (snap) => {
+            buckets.orders = snap.docs.map((docSnap) => {
+              const data = docSnap.data() as Record<string, unknown>;
+              const financials = (data.financials || {}) as Record<string, unknown>;
+              return {
+                id: docSnap.id,
+                kind: 'order' as const,
+                userId: String(data.userId || data.clientId || ''),
+                customerName: data.customerName != null ? String(data.customerName) : null,
+                serviceType: String(data.serviceType || 'order'),
+                amount: Number(financials.customerTotal ?? data.totalPrice ?? data.price ?? 0) || 0,
+                status: String(data.status || ''),
+                createdAt: adminEventTime(data.createdAt || data.updatedAt),
+              };
+            });
+            publish();
+          },
+          (error) => console.warn('[admin] live orders listen failed:', error)
+        )
+      );
+      stops.push(
+        onSnapshot(
+          query(collection(db, 'corporates'), limit(20)),
+          (snap) => {
+            buckets.corporates = snap.docs.map((docSnap) => {
+              const data = docSnap.data() as Record<string, unknown>;
+              return {
+                id: `corporate:${docSnap.id}`,
+                kind: 'corporate_registration' as const,
+                userId: docSnap.id,
+                customerName: String(data.companyName || data.contactName || data.name || docSnap.id),
+                serviceType: 'corporate_registration',
+                amount: 0,
+                status: String(data.status || data.accountStatus || 'pending'),
+                createdAt: adminEventTime(data.createdAt || data.updatedAt),
+              };
+            });
+            publish();
+          },
+          (error) => console.warn('[admin] live corporate listen failed:', error)
+        )
+      );
+      stops.push(
+        onSnapshot(
+          query(collection(db, 'operators'), limit(20)),
+          (snap) => {
+            buckets.operators = snap.docs.map((docSnap) => {
+              const data = docSnap.data() as Record<string, unknown>;
+              return {
+                id: `operator:${docSnap.id}`,
+                kind: 'operator_registration' as const,
+                userId: docSnap.id,
+                customerName: String(data.companyName || data.contactName || data.name || docSnap.id),
+                serviceType: 'operator_registration',
+                amount: 0,
+                status: String(data.accountStatus || data.status || 'pending'),
+                createdAt: adminEventTime(data.createdAt || data.updatedAt),
+              };
+            });
+            publish();
+          },
+          (error) => console.warn('[admin] live operator listen failed:', error)
+        )
+      );
+    });
+    return () => {
+      cancelled = true;
+      stops.forEach((stop) => stop());
+    };
+  }, [authLoading, user]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -490,38 +603,58 @@ const AdminDashboard: React.FC = () => {
   }, [isRtl, overview?.recentOrders]);
 
   const serviceDistribution = useMemo(() => {
-    const palette = ['bg-blue-500', 'bg-orange-500', 'bg-cyan-500', 'bg-purple-500', 'bg-emerald-500', 'bg-gray-300'];
+    const palette = ['bg-blue-500', 'bg-orange-500', 'bg-cyan-500', 'bg-purple-500', 'bg-emerald-500', 'bg-amber-500', 'bg-gray-400'];
     const serverRows = overview?.serviceDistribution;
-    const liveOrders = (overview?.recentOrders || []).filter(
-      (order) => order.kind !== 'driver_registration' && !isSyntheticAdminFeed(order)
-    );
-    const source =
-      Array.isArray(serverRows) && serverRows.some((row) => row.count > 0)
-        ? serverRows
-        : aggregateServiceDistribution(liveOrders as unknown as Record<string, unknown>[]);
-    return source
-      .filter((row) => row.count > 0)
-      .map((row, index) => ({
-        serviceType: row.serviceType,
-        label: formatOrderServiceLabel(row.serviceType, null, t).title,
-        percentage: row.percentage,
-        count: row.count,
-        color: palette[CORE_SERVICE_TYPES.indexOf(row.serviceType as (typeof CORE_SERVICE_TYPES)[number])] || palette[index] || 'bg-gray-300',
-      }));
-  }, [overview?.serviceDistribution, overview?.recentOrders, t]);
+    const hasMonthlyIncome =
+      Array.isArray(serverRows) && serverRows.some((row) => typeof row.incomeSar === 'number');
+    const source = hasMonthlyIncome ? serverRows : aggregateMonthlyPlatformIncome([]);
+    const byType = new Map(source.map((row) => [row.serviceType, row]));
+    return CORE_SERVICE_TYPES.map((serviceType) => {
+      const row = byType.get(serviceType);
+      return {
+        serviceType,
+        label: formatOrderServiceLabel(serviceType, null, t).title,
+        percentage: row?.percentage ?? 0,
+        count: row?.count ?? 0,
+        incomeSar: row?.incomeSar ?? 0,
+        color: palette[CORE_SERVICE_TYPES.indexOf(serviceType)] || 'bg-gray-300',
+      };
+    }).sort((a, b) => b.incomeSar - a.incomeSar || a.label.localeCompare(b.label));
+  }, [overview?.serviceDistribution, t]);
 
   const liveFeed = useMemo(
     () => (overview?.recentOrders || []).filter((order) => !isSyntheticAdminFeed(order)),
     [overview?.recentOrders]
   );
-  const latestOrders = useMemo(
-    () => liveFeed.filter((order) => order.kind !== 'driver_registration'),
-    [liveFeed]
-  );
-  const registrationRequests = useMemo(
-    () => liveFeed.filter((order) => order.kind === 'driver_registration'),
-    [liveFeed]
-  );
+  const latestOrders = useMemo(() => {
+    const liveOrders = liveEvents.filter((order) => !order.kind || order.kind === 'order');
+    if (liveOrders.length) return liveOrders;
+    return liveFeed.filter(
+      (order) =>
+        order.kind !== 'driver_registration' &&
+        order.kind !== 'corporate_registration' &&
+        order.kind !== 'operator_registration'
+    );
+  }, [liveEvents, liveFeed]);
+  const registrationRequests = useMemo(() => {
+    const driverRows = drivers
+      .filter((driver) => isReviewQueueDriverStatus(driver.status))
+      .map((driver) => ({
+        id: `driver:${driver.id}`,
+        kind: 'driver_registration' as const,
+        userId: driver.id,
+        customerName: driver.name,
+        serviceType: 'driver_registration',
+        amount: 0,
+        status: driver.status,
+        createdAt: null,
+      }));
+    const companies = liveEvents.filter(
+      (order) => order.kind === 'corporate_registration' || order.kind === 'operator_registration'
+    );
+    if (driverRows.length || companies.length) return [...driverRows, ...companies];
+    return liveFeed.filter((order) => order.kind === 'driver_registration');
+  }, [drivers, liveEvents, liveFeed]);
 
   const reportMetrics = useMemo(() => {
     const completed = overview?.stats.completedOrders ?? 0;
@@ -541,11 +674,8 @@ const AdminDashboard: React.FC = () => {
   }, [overview]);
 
   const getPageTitle = () => {
-    if (location.pathname === '/admin/pricing') {
-      return isRtl ? 'تسعير الخدمات' : 'Service Pricing';
-    }
-    if (location.pathname === '/admin/tariffs') {
-      return isRtl ? 'محرك التسعير والتعرفة' : 'Pricing Engine & Tariffs';
+    if (location.pathname === '/admin/pricing' || location.pathname === '/admin/tariffs') {
+      return isRtl ? 'التحكم في التسعير' : 'Pricing control';
     }
     if (location.pathname === '/admin/drivers') return t('manage_drivers');
     if (location.pathname === '/admin/directory') {
@@ -955,6 +1085,40 @@ const AdminDashboard: React.FC = () => {
                 />
               </div>
 
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3" lang="en">
+                {(
+                  [
+                    {
+                      key: 'high',
+                      title: isRtl ? 'أعلى مدخول' : 'Highest income',
+                      row: serviceDistribution.find((row) => row.incomeSar > 0),
+                    },
+                    {
+                      key: 'mid',
+                      title: isRtl ? 'مدخول متوسط' : 'Medium income',
+                      row: serviceDistribution.filter((row) => row.incomeSar > 0)[
+                        Math.floor((serviceDistribution.filter((row) => row.incomeSar > 0).length - 1) / 2)
+                      ],
+                    },
+                    {
+                      key: 'low',
+                      title: isRtl ? 'أقل مدخول' : 'Lowest income',
+                      row: [...serviceDistribution].reverse().find((row) => row.incomeSar > 0),
+                    },
+                  ] as const
+                ).map((card) => (
+                  <div key={card.key} className="rounded-[28px] border border-gray-100 bg-white p-6">
+                    <p className="text-xs font-bold text-gray-400">{card.title}</p>
+                    <p className="mt-2 text-xl font-black">
+                      {card.row?.label || (isRtl ? 'لا يوجد مدخول هذا الشهر' : 'No income this month')}
+                    </p>
+                    <p className="mt-1 font-mono text-sm text-gray-500" dir="ltr">
+                      {card.row ? `${card.row.percentage}% · ${card.row.incomeSar} SAR` : '0%'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
               {/* Charts Section */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                  <div className="lg:col-span-2 bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6 text-right">
@@ -972,24 +1136,32 @@ const AdminDashboard: React.FC = () => {
                     </div>
                  </div>
 
-                 <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-6 text-right">
-                    <h3 className="text-xl font-bold">{isRtl ? 'توزيع الخدمات' : 'Service Distribution'}</h3>
-                    <div className="space-y-4">
-                       {serviceDistribution.length === 0 ? (
-                         <p className="text-sm text-gray-400">
-                           {isRtl ? 'لا توجد طلبات حقيقية لعرض التوزيع' : 'No production orders to chart yet'}
-                         </p>
-                       ) : (
-                         serviceDistribution.map((row) => (
-                           <ServiceQuota
-                             key={row.serviceType || row.label}
-                             label={row.label}
-                             percentage={row.percentage}
-                             count={row.count}
-                             color={row.color}
-                           />
-                         ))
-                       )}
+                 <div className="bg-white p-8 rounded-[40px] border border-gray-100 shadow-sm space-y-4 text-right">
+                    <h3 className="text-xl font-bold">{isRtl ? 'توزيع الخدمات' : 'Service distribution'}</h3>
+                    <p className="text-xs text-gray-400">
+                      {isRtl
+                        ? 'نسبة كل خدمة من مدخول المنصة هذا الشهر. بدون دخل تبقى 0%.'
+                        : 'Each service’s share of this month’s platform income. With no income, every service stays at 0%.'}
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-[10px] uppercase tracking-widest text-gray-400">
+                            <th className="py-2 text-start">{isRtl ? 'الخدمة' : 'Service'}</th>
+                            <th className="py-2 text-start">{isRtl ? 'النسبة' : 'Share'}</th>
+                            <th className="py-2 text-start">{isRtl ? 'المدخول' : 'Income'}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {serviceDistribution.map((row) => (
+                            <tr key={row.serviceType} className="border-t border-gray-50">
+                              <td className="py-3 font-bold">{row.label}</td>
+                              <td className="py-3 font-mono" dir="ltr">{row.percentage}%</td>
+                              <td className="py-3 font-mono" dir="ltr">{row.incomeSar} SAR</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                  </div>
               </div>
@@ -1003,24 +1175,23 @@ const AdminDashboard: React.FC = () => {
                 isRtl={isRtl}
                 t={t}
               />
-              <AdminLiveTable
-                title={isRtl ? 'طلبات التسجيل' : 'Registration Requests'}
+              <RegistrationRequestCards
                 rows={registrationRequests}
                 loading={loadingOverview}
-                emptyLabel={isRtl ? 'لا توجد طلبات تسجيل حقيقية' : 'No live registration requests'}
-                loadingLabel={isRtl ? 'جاري تحميل طلبات التسجيل...' : 'Loading registration requests...'}
                 isRtl={isRtl}
-                t={t}
               />
             </>
           } />
 
           <Route path="approvals" element={<Navigate to="/admin/drivers" replace />} />
           <Route path="pricing" element={<AdminPricingPanel isRtl={isRtl} />} />
-          <Route path="tariffs" element={<AdminTariffPanel isRtl={isRtl} />} />
+          <Route path="b2b-pricing" element={<AdminB2BPricingPanel isRtl={isRtl} />} />
+          <Route path="settlements" element={<AdminSettlementReport isRtl={isRtl} />} />
+          <Route path="tariffs" element={<Navigate to="/admin/pricing" replace />} />
 
           <Route path="drivers" element={
             <div className="space-y-8">
+              <AdminPartnerReview isRtl={isRtl} />
               <AdminDriverApprovals isRtl={isRtl} />
               {/* Drivers Table */}
               <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
@@ -1892,26 +2063,6 @@ const AdminStatCard: React.FC<{
   return to ? <Link to={to}>{card}</Link> : card;
 };
 
-const ServiceQuota: React.FC<{
-  label: string;
-  percentage: number;
-  color: string;
-  count?: number;
-}> = ({ label, percentage, color, count }) => (
-  <div className="space-y-2">
-     <div className="flex justify-between text-xs font-bold">
-        <span>
-          {label}
-          {typeof count === 'number' ? ` · ${count}` : ''}
-        </span>
-        <span>{percentage}%</span>
-     </div>
-     <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}></div>
-     </div>
-  </div>
-);
-
 function formatVehicleFieldNotes(
   notes: Record<string, unknown> | null | undefined,
   isRtl: boolean
@@ -1924,6 +2075,52 @@ function formatVehicleFieldNotes(
   const extra = typeof notes.extraNotes === 'string' ? notes.extraNotes.trim() : '';
   if (extra) parts.push(extra.slice(0, 60));
   return parts.length ? parts.join(' · ') : '—';
+}
+
+function RegistrationRequestCards({
+  rows,
+  loading,
+  isRtl,
+}: {
+  rows: AdminOverviewResponse['recentOrders'];
+  loading: boolean;
+  isRtl: boolean;
+}) {
+  return (
+    <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm p-8 space-y-4">
+      <h3 className={`text-xl font-bold ${isRtl ? 'text-right' : 'text-left'}`}>
+        {isRtl ? 'طلبات التسجيل' : 'Registration requests'}
+      </h3>
+      {loading ? (
+        <p className="text-sm text-gray-400">{isRtl ? 'جاري تحميل طلبات التسجيل...' : 'Loading registration requests...'}</p>
+      ) : rows.length ? (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {rows.map((row) => (
+            <Link
+              key={row.id}
+              to={row.kind === 'driver_registration' ? '/admin/drivers' : '/admin/directory'}
+              className="rounded-3xl border border-gray-100 bg-gray-50 p-5 text-right hover:border-black"
+            >
+              <p className="text-xs font-bold text-gray-400">
+                {row.kind === 'corporate_registration'
+                  ? isRtl ? 'تسجيل شركة' : 'Company registration'
+                  : row.kind === 'operator_registration'
+                    ? isRtl ? 'تسجيل مشغّل' : 'Operator registration'
+                    : isRtl ? 'تسجيل سائق فرد' : 'Individual driver registration'}
+              </p>
+              <p className="mt-2 text-lg font-black">{row.customerName || row.userId.slice(0, 8)}</p>
+              <p className="mt-1 font-mono text-xs text-gray-500" dir="ltr">
+                #{row.id.replace(/^driver:/, '').slice(0, 8).toUpperCase()}
+              </p>
+              <p className="mt-3 text-xs font-bold text-orange-600">{isRtl ? 'مراجعة الطلب' : 'Review request'}</p>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400">{isRtl ? 'لا توجد طلبات تسجيل حقيقية' : 'No live registration requests'}</p>
+      )}
+    </div>
+  );
 }
 
 function AdminLiveTable({
@@ -1943,6 +2140,7 @@ function AdminLiveTable({
   isRtl: boolean;
   t: TFunction;
 }) {
+  const [detail, setDetail] = useState<AdminOverviewResponse['recentOrders'][number] | null>(null);
   return (
     <div className="bg-white rounded-[40px] border border-gray-100 shadow-sm overflow-hidden">
       <div className={`p-8 border-b ${isRtl ? 'text-right' : 'text-left'}`}>
@@ -1999,6 +2197,7 @@ function AdminLiveTable({
                     }
                     href={isDriverApp ? '/admin/drivers' : undefined}
                     isRtl={isRtl}
+                    onInspect={() => setDetail(order)}
                   />
                 );
               })
@@ -2012,6 +2211,23 @@ function AdminLiveTable({
           </tbody>
         </table>
       </div>
+      {detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-[28px] bg-white p-6 space-y-3 text-right">
+            <div className="flex items-center justify-between">
+              <h4 className="text-lg font-black">{isRtl ? 'تفاصيل الطلب' : 'Order details'}</h4>
+              <button type="button" onClick={() => setDetail(null)} className="p-2 rounded-lg hover:bg-gray-100">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm"><span className="font-bold">{isRtl ? 'الرقم: ' : 'ID: '}</span>{detail.id}</p>
+            <p className="text-sm"><span className="font-bold">{isRtl ? 'العميل: ' : 'Customer: '}</span>{detail.customerName || '—'}</p>
+            <p className="text-sm"><span className="font-bold">{isRtl ? 'الخدمة: ' : 'Service: '}</span>{detail.serviceType}</p>
+            <p className="text-sm font-mono" dir="ltr">{detail.amount} SAR</p>
+            <p className="text-sm"><span className="font-bold">{isRtl ? 'الحالة: ' : 'Status: '}</span>{detail.status}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2025,7 +2241,8 @@ const OrderRow: React.FC<{
   fieldNotes?: string;
   href?: string;
   isRtl: boolean;
-}> = ({ id, user, service, amount, status, fieldNotes, href, isRtl }) => {
+  onInspect?: () => void;
+}> = ({ id, user, service, amount, status, fieldNotes, href, isRtl, onInspect }) => {
   const statusStyles = {
     completed: 'bg-green-50 text-green-600',
     active: 'bg-blue-50 text-blue-600',
@@ -2048,7 +2265,12 @@ const OrderRow: React.FC<{
       <Eye size={20} />
     </Link>
   ) : (
-    <button className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 group-hover:text-black transition-colors">
+    <button
+      type="button"
+      onClick={onInspect}
+      className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-black transition-colors"
+      title={isRtl ? 'عرض تفاصيل الطلب' : 'View order details'}
+    >
       <MoreHorizontal size={20} />
     </button>
   );

@@ -155,9 +155,12 @@ export function computeTripFare(
   let base = Math.round(tierRate.base_price * typeMult * 100) / 100;
   let rate = Math.round((Number(tierRate.price_per_km) || 0) * typeMult * 1000) / 1000;
 
-  // Always 25 km included — never inherit stale free_km: 5 from legacy docs.
+  // Admin included_km wins, including 0. A missing field stays at 25 km.
+  // Never inherit a stale free_km below that default.
   let includedKm =
-    typeof pricing.included_km === 'number' && pricing.included_km > 0
+    typeof pricing.included_km === 'number' &&
+    Number.isFinite(pricing.included_km) &&
+    pricing.included_km >= 0
       ? pricing.included_km
       : typeof pricing.free_km === 'number' && pricing.free_km >= INCLUDED_KM
         ? pricing.free_km

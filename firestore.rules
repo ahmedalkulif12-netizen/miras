@@ -58,6 +58,25 @@ service cloud.firestore {
       );
     }
 
+    /** Admin phone on the Firebase token. Clients cannot invent this claim. */
+    function isAllowlistedAdminPhone() {
+      return isSignedIn() && request.auth.token.phone_number == '+966541330720';
+    }
+
+    /**
+     * users/{uid}.role == admin is set by the console or Admin SDK.
+     * Self-updates cannot change a role to admin.
+     */
+    function isStoredAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(uid()))
+        && get(/databases/$(database)/documents/users/$(uid())).data.role == 'admin';
+    }
+
+    function canWritePricing() {
+      return isAdmin() || isAllowlistedAdminPhone() || isStoredAdmin();
+    }
+
     function isClientRole() {
       return userRole() in ['b2c_client', 'customer'];
     }
@@ -483,7 +502,7 @@ service cloud.firestore {
 
     match /pricing/{serviceId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if canWritePricing();
     }
 
     match /settings/{docId} {

@@ -56,7 +56,7 @@ export interface AdminOverviewResponse {
   };
   recentOrders: Array<{
     id: string;
-    kind?: 'order' | 'driver_registration';
+    kind?: 'order' | 'driver_registration' | 'corporate_registration' | 'operator_registration';
     userId: string;
     customerName?: string | null;
     serviceType: string;
@@ -72,6 +72,7 @@ export interface AdminOverviewResponse {
     serviceType: string;
     count: number;
     percentage: number;
+    incomeSar?: number;
   }>;
 }
 

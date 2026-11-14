@@ -423,7 +423,7 @@ export function mergePricingConfig(
   if (!data || typeof data !== 'object') return defaults;
   const row = data as Partial<PricingConfig>;
   const included =
-    typeof row.included_km === 'number' && row.included_km > 0
+    typeof row.included_km === 'number' && Number.isFinite(row.included_km) && row.included_km >= 0
       ? row.included_km
       : defaults.included_km || INCLUDED_KM;
   return {

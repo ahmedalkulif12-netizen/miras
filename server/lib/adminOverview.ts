@@ -11,7 +11,7 @@ import {
   mergeAdminFeed,
   type AdminFeedItem,
 } from './adminOrders.ts';
-import { aggregateServiceDistribution } from '../../src/domain/serviceCategories.ts';
+import { aggregateMonthlyPlatformIncome } from '../../src/domain/serviceCategories.ts';
 
 export interface AdminOverviewResult {
   stats: {
@@ -37,6 +37,7 @@ export interface AdminOverviewResult {
     serviceType: string;
     count: number;
     percentage: number;
+    incomeSar: number;
   }>;
 }
 
@@ -111,9 +112,14 @@ export async function getAdminOverview(db: admin.firestore.Firestore): Promise<A
       pendingDriverRows.map(mapDriverApplicationToFeedItem),
       40
     );
-    const serviceDistribution = aggregateServiceDistribution(
-      liveOrders.map((doc) => doc.data() as Record<string, unknown>)
-    );
+    const serviceDistribution = aggregateMonthlyPlatformIncome(
+      liveOrders.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }))
+    ).map((row) => ({
+      serviceType: row.serviceType,
+      count: row.count,
+      percentage: row.percentage,
+      incomeSar: row.incomeSar ?? 0,
+    }));
 
     return {
       stats: {

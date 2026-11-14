@@ -79,6 +79,8 @@ import { resolveOrderRequiredVehicleType, resolveOrderServiceOption } from '@/do
 import { vehicleMatchesService } from '@/lib/fleetServiceCatalog';
 import { nearestDispatchCity } from '@/lib/cityCoordinates';
 import {
+  dropLocalBroadcastOrders,
+  isGhostOrderId,
   listLocalBroadcastingOrders,
   loadLocalBroadcastOrders,
   subscribeLocalBroadcastOrders,
@@ -683,28 +685,18 @@ const DriverDashboard: React.FC = () => {
     if (!isOnline) return;
 
     const applyLocalOffers = () => {
-      const locals = excludeIgnoredOffers<Order>(
-        listLocalBroadcastingOrders()
-          .map((entry) => ({ id: entry.id, ...entry.data } as Order))
-          .filter(
-            (order) =>
-              isOpenOfferStatus(order.status) &&
-              !isTerminalOrderStatus(order.status) &&
-              driverMatchesOffer(profile?.vehicleType, profile?.vehicleOption, order)
-          ),
-        ignoredOfferIds
-      );
-      setBroadcastPool((prev) => {
-        const remote = prev.filter(
+      const ghosts = listLocalBroadcastingOrders()
+        .map((entry) => entry.id)
+        .filter((id) => isGhostOrderId(id));
+      if (ghosts.length) dropLocalBroadcastOrders(ghosts);
+      setBroadcastPool((prev) =>
+        prev.filter(
           (order) =>
-            locals.every((local) => local.id !== order.id) &&
+            !isGhostOrderId(order.id) &&
             isOpenOfferStatus(order.status) &&
             !isTerminalOrderStatus(order.status)
-        );
-        return [...remote, ...locals].sort(
-          (a, b) => orderCreatedAtMs(b) - orderCreatedAtMs(a)
-        );
-      });
+        )
+      );
     };
 
     applyLocalOffers();
@@ -728,6 +720,7 @@ const DriverDashboard: React.FC = () => {
     const evaluated = excludeIgnoredOffers<Order>(broadcastPool, ignoredOfferIds)
       .filter(
         (order) =>
+          !isGhostOrderId(order.id) &&
           isOpenOfferStatus(order.status) &&
           !isTerminalOrderStatus(order.status) &&
           driverMatchesOffer(profile?.vehicleType, profile?.vehicleOption, order)
@@ -1950,126 +1943,20 @@ const DriverDashboard: React.FC = () => {
 
                         <OfferCustomerNotes order={offerOrder} isRtl={isRtl} />
 
-                        {/* Route: Pickup → Dropoff (water tanker = drop-off only) */}
                         {offerMetrics && (
-                          <div className="rounded-3xl border border-gray-100 bg-gradient-to-b from-gray-50 to-white p-4 space-y-0">
-                            <div className={`flex gap-3 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                              {!(
-                                offerOrder.deliveryOnly ||
-                                offerOrder.serviceType === 'water_tanker'
-                              ) && (
-                                <div className="flex flex-col items-center pt-1">
-                                  <div className="w-3 h-3 rounded-full bg-teal-500 ring-4 ring-teal-500/15" />
-                                  <div className="w-0.5 flex-1 min-h-[28px] bg-gradient-to-b from-teal-400 to-orange-400 my-1" />
-                                  <div className="w-3 h-3 rounded-full bg-orange-500 ring-4 ring-orange-500/15" />
-                                </div>
-                              )}
-                              {(offerOrder.deliveryOnly ||
-                                offerOrder.serviceType === 'water_tanker') && (
-                                <div className="flex flex-col items-center pt-1">
-                                  <div className="w-3 h-3 rounded-full bg-orange-500 ring-4 ring-orange-500/15" />
-                                </div>
-                              )}
-                              <div className={`flex-1 space-y-4 ${isRtl ? 'text-right' : 'text-left'}`}>
-                                {!(
-                                  offerOrder.deliveryOnly ||
-                                  offerOrder.serviceType === 'water_tanker'
-                                ) && (
-                                  <div>
-                                    <p className="text-[10px] font-black text-teal-600 uppercase tracking-widest mb-0.5">
-                                      {isRtl ? 'موقع الاستلام / التحميل' : 'Pickup / Loading'}
-                                    </p>
-                                    <p className="text-sm font-bold text-neutral-900 leading-snug">
-                                      {offerMetrics.pickupLabel}
-                                    </p>
-                                  </div>
-                                )}
-                                <div>
-                                  <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-0.5">
-                                    {offerOrder.deliveryOnly ||
-                                    offerOrder.serviceType === 'water_tanker'
-                                      ? isRtl
-                                        ? 'موقع التنزيل (توجه مباشرة)'
-                                        : 'Drop-off (go directly)'
-                                      : isRtl
-                                        ? 'موقع التنزيل / التسليم'
-                                        : 'Dropoff / Delivery'}
-                                  </p>
-                                  <p className="text-sm font-bold text-neutral-900 leading-snug">
-                                    {offerMetrics.dropoffLabel}
-                                  </p>
-                                </div>
-                              </div>
+                          <div className={`rounded-3xl border border-stone-200 bg-stone-50 p-4 space-y-3 text-sm ${isRtl ? 'text-right' : 'text-left'}`}>
+                            {offerMetrics.pickupLabel !== '—' && (
+                              <p><span className="font-bold text-stone-400">{isRtl ? 'من' : 'From'}: </span>{offerMetrics.pickupLabel}</p>
+                            )}
+                            <p><span className="font-bold text-stone-400">{isRtl ? 'إلى' : 'To'}: </span>{offerMetrics.dropoffLabel}</p>
+                            <div className="flex justify-between gap-3 border-t border-dashed border-stone-200 pt-3">
+                              <span className="text-stone-500">{isRtl ? 'سعر الخدمة' : 'Service price'}</span>
+                              <span className="font-bold font-mono" dir="ltr">{offerMetrics.tripFare.toFixed(2)} {t('sar')}</span>
                             </div>
-                          </div>
-                        )}
-
-                        {/* Trip metrics */}
-                        {offerMetrics && (
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3.5">
-                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                <Navigation size={12} className="shrink-0" />
-                                <span className="truncate">{isRtl ? 'المسافة' : 'Distance'}</span>
-                              </div>
-                              <p className="text-xl font-black font-mono text-neutral-900">
-                                {offerMetrics.distanceKm}{' '}
-                                <span className="text-xs font-bold text-slate-400">{isRtl ? 'كم' : 'km'}</span>
-                              </p>
+                            <div className="flex justify-between gap-3 font-black">
+                              <span>{isRtl ? 'صافي ربحك' : 'Your net'}</span>
+                              <span className="font-mono text-teal-800" dir="ltr">{offerMetrics.driverNet.toFixed(2)} {t('sar')}</span>
                             </div>
-                            <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3.5">
-                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                <CreditCard size={12} className="shrink-0" />
-                                <span className="truncate">{t('client_total')}</span>
-                              </div>
-                              <p className="text-xl font-black font-mono text-neutral-900">
-                                {offerMetrics.clientTotal.toFixed(2)}{' '}
-                                <span className="text-xs font-bold text-slate-400">{t('sar')}</span>
-                              </p>
-                              <p className="text-[10px] font-bold text-slate-400 mt-1">
-                                {t('trip_fare')} {offerMetrics.tripFare.toFixed(2)} {t('sar')}
-                              </p>
-                            </div>
-                            <div className="rounded-2xl bg-amber-50/80 border border-amber-100 p-3.5">
-                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700/70 uppercase tracking-widest mb-1">
-                                <DollarSign size={12} className="shrink-0" />
-                                <span className="truncate">{t('platform_commission')}</span>
-                              </div>
-                              <p className="text-lg font-black font-mono text-amber-800">
-                                −{offerMetrics.platformFee.toFixed(2)}{' '}
-                                <span className="text-xs font-bold">{t('sar')}</span>
-                              </p>
-                            </div>
-                            <div className="rounded-2xl bg-teal-50 border border-teal-100 p-3.5">
-                              <div className="flex items-center gap-1.5 text-[10px] font-bold text-teal-700/80 uppercase tracking-widest mb-1">
-                                <Wallet size={12} className="shrink-0" />
-                                <span className="truncate">{t('driver_net_earning')}</span>
-                              </div>
-                              <p className="text-lg font-black font-mono text-teal-800">
-                                {offerMetrics.driverNet.toFixed(2)}{' '}
-                                <span className="text-xs font-bold">{t('sar')}</span>
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Net highlight before accept */}
-                        {isIncomingOffer && offerMetrics && (
-                          <div className={`rounded-2xl bg-black text-white px-4 py-3 flex items-center justify-between gap-3 ${isRtl ? 'flex-row' : 'flex-row-reverse'}`}>
-                            <div className={isRtl ? 'text-right' : 'text-left'}>
-                              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                                {isRtl ? 'ستربح من هذه الرحلة' : 'You earn from this trip'}
-                              </p>
-                              <p className="text-xs text-white/50 mt-0.5">
-                                {isRtl
-                                  ? `بعد خصم عمولة المنصة (${offerMetrics.platformFee.toFixed(2)} ر.س)`
-                                  : `After platform commission (${offerMetrics.platformFee.toFixed(2)} SAR)`}
-                              </p>
-                            </div>
-                            <p className="text-2xl font-black font-mono text-primary shrink-0">
-                              {offerMetrics.driverNet.toFixed(2)}
-                              <span className="text-xs ms-1">{t('sar')}</span>
-                            </p>
                           </div>
                         )}
                 

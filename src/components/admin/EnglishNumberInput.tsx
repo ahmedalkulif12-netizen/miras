@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { parseEnglishNumber, toEnglishDigits } from '@/lib/englishDigits';
 
 interface Props {
@@ -19,6 +19,21 @@ export const EnglishNumberInput: React.FC<Props> = ({
   className,
   ariaLabel,
 }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (Number.isFinite(value) ? String(value) : '0');
+
+  const commit = (raw: string) => {
+    const cleaned = toEnglishDigits(raw).replace(allowNegative ? /[^0-9.-]/g : /[^0-9.]/g, '');
+    if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') {
+      onChange(0);
+      return;
+    }
+    let next = parseEnglishNumber(cleaned);
+    if (!allowNegative && next < 0) next = 0;
+    if (max != null && next > max) next = max;
+    onChange(next);
+  };
+
   return (
     <input
       type="text"
@@ -28,16 +43,20 @@ export const EnglishNumberInput: React.FC<Props> = ({
       autoComplete="off"
       spellCheck={false}
       aria-label={ariaLabel}
-      value={Number.isFinite(value) ? String(value) : '0'}
+      value={shown}
+      onFocus={() => setDraft(Number.isFinite(value) ? String(value) : '')}
+      onBlur={() => {
+        commit(draft ?? shown);
+        setDraft(null);
+      }}
       onChange={(event) => {
         const cleaned = toEnglishDigits(event.target.value).replace(
           allowNegative ? /[^0-9.-]/g : /[^0-9.]/g,
           ''
         );
-        let next = parseEnglishNumber(cleaned);
-        if (!allowNegative && next < 0) next = 0;
-        if (max != null && next > max) next = max;
-        onChange(next);
+        setDraft(cleaned);
+        if (cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return;
+        commit(cleaned);
       }}
       className={className || 'w-full p-3 rounded-xl bg-gray-50 font-mono tabular-nums'}
     />

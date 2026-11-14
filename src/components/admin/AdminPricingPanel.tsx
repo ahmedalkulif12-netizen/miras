@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { db } from '@/lib/firebase';
 import { FLEET_SERVICE_CATEGORIES } from '@/lib/fleetServiceCatalog';
 import {
+  INCLUDED_KM,
   defaultPricingForService,
   mergePricingConfig,
   type PricingConfig,
@@ -14,6 +15,7 @@ import {
   type DriverCommissionTier,
 } from '@/domain/financials';
 import { EnglishNumberInput } from '@/components/admin/EnglishNumberInput';
+import { AdminTariffPanel } from '@/components/admin/AdminTariffPanel';
 
 interface Props {
   isRtl: boolean;
@@ -36,6 +38,7 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
   const [configs, setConfigs] = useState<Record<string, PricingConfig>>({});
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string>(FLEET_SERVICE_CATEGORIES[0]?.id || 'furniture_moving');
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +101,7 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
         {
           ...seededWithoutTariff,
           tier_prices: tierPrices,
+          included_km: Math.max(0, Number(config.included_km) || 0),
           delivery_fee: Number(config.delivery_fee) || 0,
           customer_service_fee_percentage: feeOrDefault(
             config.customer_service_fee_percentage,
@@ -115,7 +119,9 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
       toast.success(isRtl ? 'تم حفظ التسعير' : 'Pricing saved');
     } catch (error) {
       console.error('[admin] pricing save failed:', error);
-      toast.error(isRtl ? 'تعذر حفظ التسعير' : 'Could not save pricing');
+      const code = (error as { code?: string })?.code || '';
+      const message = error instanceof Error ? error.message : '';
+      toast.error(`${isRtl ? 'تعذر حفظ التسعير' : 'Could not save pricing'}${code || message ? `: ${code} ${message}` : ''}`);
     } finally {
       setSavingId(null);
     }
@@ -126,25 +132,81 @@ export const AdminPricingPanel: React.FC<Props> = ({ isRtl }) => {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-black">{isRtl ? 'تسعير الخدمات' : 'Service Pricing'}</h2>
+        <h2 className="text-2xl font-black">{isRtl ? 'التحكم في التسعير' : 'Pricing control'}</h2>
         <p className="text-sm text-gray-500 mt-1">
           {isRtl
-            ? 'أسعار الخدمات والعمولة فقط. جدول سحب الأرباح موجود في طلبات السحب.'
-            : 'Service rates and commission only. The earnings withdrawal schedule is under Withdrawal Requests.'}
+            ? 'كل خدمات التطبيق في صفحة واحدة. افتح المربع، عدّل السعر والكيلومترات والنسبة، ثم احفظ في Firebase.'
+            : 'Every app service is on this page. Open a box, edit the price, kilometers, and percent, then save to Firebase.'}
         </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {FLEET_SERVICE_CATEGORIES.map((service) => {
+          const active = openId === service.id;
+          return (
+            <button
+              key={service.id}
+              type="button"
+              onClick={() => setOpenId(service.id)}
+              className={`rounded-2xl border px-4 py-5 text-start font-black transition ${
+                active ? 'border-black bg-black text-white' : 'border-gray-200 bg-white text-black hover:border-black'
+              }`}
+            >
+              {isRtl ? service.ar : service.en}
+            </button>
+          );
+        })}
       </div>
       {FLEET_SERVICE_CATEGORIES.map((service) => {
         const config = configs[service.id];
-        if (!config) return null;
+        if (!config || openId !== service.id) return null;
         const tiers = copyTiers(config);
+        const includedKm = Number.isFinite(Number(config.included_km)) ? Number(config.included_km) : INCLUDED_KM;
+        if (service.id === 'flatbed') {
+          return (
+            <section key={service.id} className="bg-white rounded-[32px] border-2 border-black p-6 md:p-8 space-y-4">
+              <div>
+                <h2 className="text-xl font-black">{isRtl ? service.ar : service.en}</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {isRtl
+                    ? 'جدولان مستقلان: داخل المدينة وخارجها. كل جدول فيه السعر الأساسي والكيلومتر لكل نوع سطحة.'
+                    : 'Two separate tables: inside the city and outside it. Each table has a base price and a per-km rate for every flatbed type.'}
+                </p>
+              </div>
+              <AdminTariffPanel isRtl={isRtl} embedded />
+            </section>
+          );
+        }
         return (
-          <section key={service.id} className="bg-white rounded-[32px] border border-gray-100 p-8 space-y-5">
+          <section key={service.id} className="bg-white rounded-[32px] border-2 border-black p-6 md:p-8 space-y-5">
             <div>
               <h2 className="text-xl font-black">{isRtl ? service.ar : service.en}</h2>
-              <p className="text-xs font-mono text-gray-400">{service.id}</p>
+              <p className="text-sm text-gray-500 mt-1">
+                {service.id === 'gas_delivery'
+                  ? isRtl
+                    ? 'السعر حسب عدد الأسطوانات ورسوم التوصيل. مسافة الطريق لا تدخل في أجرة الغاز.'
+                    : 'Price is by cylinder count plus the delivery fee. Route distance is not part of the gas fare.'
+                  : isRtl
+                    ? 'الأجرة = السعر الأساسي + ما زاد عن الكيلومترات المشمولة × سعر الكيلومتر.'
+                    : 'Fare = base price + kilometers beyond the included distance × the per-km rate.'}
+              </p>
             </div>
+            {service.id !== 'gas_delivery' && (
+              <label className="block max-w-xs space-y-1 text-xs font-bold text-gray-500">
+                {isRtl ? 'الكيلومترات المشمولة في السعر الأساسي' : 'Kilometers included in the base price'}
+                <EnglishNumberInput
+                  value={includedKm}
+                  onChange={(next) =>
+                    setConfigs((prev) => ({
+                      ...prev,
+                      [service.id]: { ...config, included_km: next },
+                    }))
+                  }
+                  ariaLabel={isRtl ? 'الكيلومترات المشمولة' : 'Included kilometers'}
+                />
+              </label>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
